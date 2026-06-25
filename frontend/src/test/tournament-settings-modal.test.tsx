@@ -107,9 +107,7 @@ describe("TournamentSettingsModal – tab navigation", () => {
 
   it("opens on Ajustes tab by default", () => {
     renderModal();
-    expect(
-      screen.getByText("Requerir aprobación"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Requerir aprobación")).toBeInTheDocument();
   });
 
   it("switches to Modo de torneo tab on click and shows mode checkboxes", () => {
@@ -329,9 +327,7 @@ describe("TournamentSettingsModal – mutation states (mode tab)", () => {
     } as never);
     renderModal({ group: makeGroup({ is_premium: false }), memberCount: 6 });
     goToModeTab();
-    expect(
-      screen.getByText(/5 miembros activos/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/5 miembros activos/)).toBeInTheDocument();
   });
 
   it("shows balance error when backend reports insufficient balance", () => {
@@ -375,24 +371,41 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     vi.mocked(useMutation).mockImplementation((opts: unknown) => {
       callCount++;
       if (callCount === 1) approvalOptions = opts as Record<string, unknown>;
-      return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
+      return {
+        mutate: vi.fn(),
+        isPending: false,
+        isError: false,
+        error: null,
+      } as never;
     });
     renderModal({ group: makeGroup({ require_approval: false }) });
     expect(approvalOptions).not.toBeNull();
     await (approvalOptions!.mutationFn as () => Promise<unknown>)();
-    expect(vi.mocked(api.updateRequireApproval)).toHaveBeenCalledWith("tok", 1, false);
+    expect(vi.mocked(api.updateRequireApproval)).toHaveBeenCalledWith(
+      "tok",
+      1,
+      false,
+    );
   });
 
   it("approvalMutation onSuccess calls queryClient.setQueryData and onClose", () => {
     const setQueryData = vi.fn();
     const onClose = vi.fn();
-    vi.mocked(useQueryClient).mockReturnValue({ setQueryData, invalidateQueries: vi.fn() } as never);
+    vi.mocked(useQueryClient).mockReturnValue({
+      setQueryData,
+      invalidateQueries: vi.fn(),
+    } as never);
     let approvalOptions: Record<string, unknown> | null = null;
     let callCount = 0;
     vi.mocked(useMutation).mockImplementation((opts: unknown) => {
       callCount++;
       if (callCount === 1) approvalOptions = opts as Record<string, unknown>;
-      return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
+      return {
+        mutate: vi.fn(),
+        isPending: false,
+        isError: false,
+        error: null,
+      } as never;
     });
     renderModal({ group: makeGroup(), onClose });
     const updated = makeGroup({ require_approval: false });
@@ -408,23 +421,40 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     vi.mocked(useMutation).mockImplementation((opts: unknown) => {
       callCount++;
       if (callCount === 2) scoreOptions = opts as Record<string, unknown>;
-      return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
+      return {
+        mutate: vi.fn(),
+        isPending: false,
+        isError: false,
+        error: null,
+      } as never;
     });
     renderModal({ group: makeGroup({ score_from_zero: false }) });
     expect(scoreOptions).not.toBeNull();
     await (scoreOptions!.mutationFn as () => Promise<unknown>)();
-    expect(vi.mocked(api.updateScoreFromZero)).toHaveBeenCalledWith("tok", 1, true);
+    expect(vi.mocked(api.updateScoreFromZero)).toHaveBeenCalledWith(
+      "tok",
+      1,
+      true,
+    );
   });
 
   it("scoreFromZeroMutation onSuccess updates cache and hides confirmation panel", () => {
     const setQueryData = vi.fn();
-    vi.mocked(useQueryClient).mockReturnValue({ setQueryData, invalidateQueries: vi.fn() } as never);
+    vi.mocked(useQueryClient).mockReturnValue({
+      setQueryData,
+      invalidateQueries: vi.fn(),
+    } as never);
     let scoreOptions: Record<string, unknown> | null = null;
     let callCount = 0;
     vi.mocked(useMutation).mockImplementation((opts: unknown) => {
       callCount++;
       if (callCount === 2) scoreOptions = opts as Record<string, unknown>;
-      return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
+      return {
+        mutate: vi.fn(),
+        isPending: false,
+        isError: false,
+        error: null,
+      } as never;
     });
     renderModal({ group: makeGroup() });
     const updated = makeGroup({ score_from_zero: true });
@@ -439,28 +469,42 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     vi.mocked(useMutation).mockImplementation((opts: unknown) => {
       callCount++;
       if (callCount === 3) modeOptions = opts as Record<string, unknown>;
-      return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
+      return {
+        mutate: vi.fn(),
+        isPending: false,
+        isError: false,
+        error: null,
+      } as never;
     });
-    renderModal({ group: makeGroup({ mode_general: false, mode_round: false }) });
+    renderModal({
+      group: makeGroup({ mode_general: false, mode_round: false }),
+    });
     expect(modeOptions).not.toBeNull();
     await (modeOptions!.mutationFn as () => Promise<unknown>)();
-    expect(vi.mocked(api.setTournamentMode)).toHaveBeenCalledWith(
-      "tok",
-      1,
-      { mode_general: false, mode_round: false },
-    );
+    expect(vi.mocked(api.setTournamentMode)).toHaveBeenCalledWith("tok", 1, {
+      mode_general: false,
+      mode_round: false,
+    });
   });
 
   it("modeMutation onSuccess calls queryClient.setQueryData and onClose", () => {
     const setQueryData = vi.fn();
     const onClose = vi.fn();
-    vi.mocked(useQueryClient).mockReturnValue({ setQueryData, invalidateQueries: vi.fn() } as never);
+    vi.mocked(useQueryClient).mockReturnValue({
+      setQueryData,
+      invalidateQueries: vi.fn(),
+    } as never);
     let modeOptions: Record<string, unknown> | null = null;
     let callCount = 0;
     vi.mocked(useMutation).mockImplementation((opts: unknown) => {
       callCount++;
       if (callCount === 3) modeOptions = opts as Record<string, unknown>;
-      return { mutate: vi.fn(), isPending: false, isError: false, error: null } as never;
+      return {
+        mutate: vi.fn(),
+        isPending: false,
+        isError: false,
+        error: null,
+      } as never;
     });
     renderModal({ group: makeGroup(), onClose });
     const updated = makeGroup({ mode_general: true });
@@ -483,10 +527,18 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     renderModal({ group: makeGroup({ score_from_zero: false }) });
     const checkboxes = screen.getAllByRole("checkbox");
     fireEvent.click(checkboxes[1]);
-    expect(screen.getByText(/todos los miembros actuales/i)).toBeInTheDocument();
-    expect(screen.getByText(/Esta acción no puede revertirse/i)).toBeInTheDocument();
-    expect(screen.getByText(/también comenzarán con 0 puntos en este grupo/i)).toBeInTheDocument();
-    expect(screen.getByText(/otros grupos no se verán afectados/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/todos los miembros actuales/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Esta acción no puede revertirse/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/también comenzarán con 0 puntos en este grupo/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/otros grupos no se verán afectados/i),
+    ).toBeInTheDocument();
   });
 
   it("score_from_zero Cancelar button hides the confirmation panel", () => {
@@ -513,7 +565,12 @@ describe("TournamentSettingsModal – mutation callbacks", () => {
     vi.mocked(useMutation).mockImplementation(() => {
       callCount++;
       const isError = callCount % 3 === 2;
-      return { mutate: vi.fn(), isPending: false, isError, error: null } as never;
+      return {
+        mutate: vi.fn(),
+        isPending: false,
+        isError,
+        error: null,
+      } as never;
     });
     renderModal({ group: makeGroup({ score_from_zero: false }) });
     const checkboxes = screen.getAllByRole("checkbox");

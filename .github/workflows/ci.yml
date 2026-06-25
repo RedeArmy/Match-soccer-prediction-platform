@@ -36,7 +36,7 @@
 #          exercise the full HTTP stack. Runs in parallel with test to keep
 #          total wall-clock time close to the slower of the two.
 #
-# benchmark: runs each benchmark three times (count=3) and compares against
+# benchmark: runs each benchmark six times (count=6) and compares against
 #          .bench/baseline.txt with benchstat. A statistically significant
 #          regression blocks the PR; update the baseline with make bench-save.
 #
@@ -433,13 +433,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # count=3 gives benchstat enough samples to compute confidence intervals
-      # and produce a meaningful delta table.  benchtime=1x keeps each iteration
-      # fast (one function call); the wall-clock overhead is ~3× a single run,
-      # well within the job's time budget.
+      # count=6 matches the baseline sample count so benchstat can compute
+      # two-sided confidence intervals (needs n≥6 per side).  benchtime=1x
+      # keeps each iteration fast; the ~6× wall-clock overhead is well within
+      # the job's time budget.
       - name: Run benchmarks
         run: |
-          go test -bench=. -benchmem -benchtime=1x -count=3 -run='^$' \
+          go test -bench=. -benchmem -benchtime=1x -count=6 -run='^$' \
             ./internal/notification/... \
             ./internal/service/... \
             ./internal/api/... \

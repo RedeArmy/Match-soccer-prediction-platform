@@ -8,7 +8,11 @@ import {
   initials,
   cn,
 } from "@/lib/utils";
-import { isKnockoutPlaceholder, isPhaseVisible, visibleKnockoutPhases } from "@/lib/feature-flags";
+import {
+  isKnockoutPlaceholder,
+  isPhaseVisible,
+  visibleKnockoutPhases,
+} from "@/lib/feature-flags";
 
 describe("cn (class name merger)", () => {
   it("merges class names", () => {
@@ -208,7 +212,9 @@ describe("visibleKnockoutPhases", () => {
   });
 
   it("returns empty array when only group_stage matches present", () => {
-    expect(visibleKnockoutPhases([{ phase: "group_stage" }, { phase: null }])).toEqual([]);
+    expect(
+      visibleKnockoutPhases([{ phase: "group_stage" }, { phase: null }]),
+    ).toEqual([]);
   });
 
   it("returns empty array when knockout matches have no confirmed teams", () => {

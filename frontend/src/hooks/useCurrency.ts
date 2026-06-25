@@ -5,7 +5,7 @@ import { useI18n } from "@/lib/i18n";
 import { formatGTQ, formatUSD, gtqToUSD, usdToGTQ } from "@/lib/utils";
 
 const FALLBACK_SELL_RATE = "7.75";
-const FALLBACK_BUY_RATE  = "7.75";
+const FALLBACK_BUY_RATE = "7.75";
 
 /**
  * Returns a `fmt(cents)` function that formats a balance amount in the
@@ -24,7 +24,7 @@ export function useCurrency(balanceCurrency = "GTQ") {
   const { data: rate } = useExchangeRate();
   const isUSD = locale === "en";
   const sellRate = rate?.sell_rate ?? FALLBACK_SELL_RATE;
-  const buyRate  = rate?.buy_rate  ?? FALLBACK_BUY_RATE;
+  const buyRate = rate?.buy_rate ?? FALLBACK_BUY_RATE;
 
   function fmt(cents: number): string {
     if (balanceCurrency === "USD") {

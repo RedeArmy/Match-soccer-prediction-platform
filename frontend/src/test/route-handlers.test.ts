@@ -521,7 +521,7 @@ describe("GET /api/live/today – upstream fetch throws", () => {
 
   it("returns { fixtures: [] } on network error", async () => {
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED")); // today throws
-    mockFetch.mockResolvedValueOnce(emptyAfResponse());          // tomorrow
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // tomorrow
     const { GET } = await import("@/app/api/live/today/route");
     const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
@@ -539,7 +539,7 @@ describe("GET /api/live/today – upstream non-OK", () => {
 
   it("returns { fixtures: [] } on upstream 429", async () => {
     mockFetch.mockResolvedValueOnce(new Response("", { status: 429 })); // today
-    mockFetch.mockResolvedValueOnce(emptyAfResponse());                  // tomorrow
+    mockFetch.mockResolvedValueOnce(emptyAfResponse()); // tomorrow
     const { GET } = await import("@/app/api/live/today/route");
     const res = await GET(new Request("http://localhost/api/live/today"));
     expect(res.status).toBe(200);
@@ -825,7 +825,11 @@ describe("GET /api/live/fixture/[id] – venue country lookup", () => {
             id: 55,
             date: "2026-06-12T20:00:00Z",
             status: { short: "1H", elapsed: 22 },
-            venue: { id: 9876, name: "MetLife Stadium", city: "East Rutherford" },
+            venue: {
+              id: 9876,
+              name: "MetLife Stadium",
+              city: "East Rutherford",
+            },
           },
           league: { round: "Group Stage - 1", country: "World" },
           teams: {
@@ -838,9 +842,21 @@ describe("GET /api/live/fixture/[id] – venue country lookup", () => {
       ],
     };
     const venuePayload = {
-      response: [{ id: 9876, name: "MetLife Stadium", city: "East Rutherford", country: "USA" }],
+      response: [
+        {
+          id: 9876,
+          name: "MetLife Stadium",
+          city: "East Rutherford",
+          country: "USA",
+        },
+      ],
     };
-    mockFixtureCalls(fixturePayload, { response: [] }, { response: [] }, venuePayload);
+    mockFixtureCalls(
+      fixturePayload,
+      { response: [] },
+      { response: [] },
+      venuePayload,
+    );
     const { GET } = await import("@/app/api/live/fixture/[id]/route");
     const res = await GET(
       makeReq("http://localhost/api/live/fixture/55"),
@@ -875,9 +891,15 @@ describe("GET /api/live/fixture/[id] – venue country lookup", () => {
     };
     // fixture + events + lineups succeed; venue call returns 500
     mockFetch
-      .mockResolvedValueOnce(new Response(JSON.stringify(fixturePayload), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ response: [] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ response: [] }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(fixturePayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ response: [] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ response: [] }), { status: 200 }),
+      )
       .mockResolvedValueOnce(new Response("", { status: 500 }));
     const { GET } = await import("@/app/api/live/fixture/[id]/route");
     const res = await GET(
@@ -1316,7 +1338,9 @@ describe("GET /api/geo – public IP, ip-api.com primary", () => {
 
   it("returns countryCode from ip-api.com for a public IP", async () => {
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ status: "success", countryCode: "US" }), { status: 200 }),
+      new Response(JSON.stringify({ status: "success", countryCode: "US" }), {
+        status: 200,
+      }),
     );
     const { GET } = await import("@/app/api/geo/route");
     const req = makeReq("http://localhost/api/geo", {
@@ -1333,7 +1357,9 @@ describe("GET /api/geo – public IP, ip-api.com primary", () => {
 
   it("uses the first IP when X-Forwarded-For contains multiple addresses", async () => {
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ status: "success", countryCode: "MX" }), { status: 200 }),
+      new Response(JSON.stringify({ status: "success", countryCode: "MX" }), {
+        status: 200,
+      }),
     );
     const { GET } = await import("@/app/api/geo/route");
     const req = makeReq("http://localhost/api/geo", {
@@ -1349,7 +1375,9 @@ describe("GET /api/geo – public IP, ip-api.com primary", () => {
   it("falls back to ipapi.co when ip-api.com returns non-OK status", async () => {
     // ip-api.com fails → ipapi.co succeeds
     mockFetch
-      .mockResolvedValueOnce(new Response("Service Unavailable", { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response("Service Unavailable", { status: 503 }),
+      )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ country_code: "DE" }), { status: 200 }),
       );
@@ -1368,7 +1396,10 @@ describe("GET /api/geo – public IP, ip-api.com primary", () => {
   it("falls back to ipapi.co when ip-api.com returns status=fail", async () => {
     mockFetch
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: "fail", message: "private range" }), { status: 200 }),
+        new Response(
+          JSON.stringify({ status: "fail", message: "private range" }),
+          { status: 200 },
+        ),
       )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ country_code: "GB" }), { status: 200 }),
@@ -1429,7 +1460,9 @@ describe("GET /api/geo – public IP, ip-api.com primary", () => {
 
   it("sets Cache-Control: private, max-age=3600", async () => {
     mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ status: "success", countryCode: "GT" }), { status: 200 }),
+      new Response(JSON.stringify({ status: "success", countryCode: "GT" }), {
+        status: 200,
+      }),
     );
     const { GET } = await import("@/app/api/geo/route");
     const req = makeReq("http://localhost/api/geo", {
@@ -1447,7 +1480,15 @@ describe("GET /api/public/standings – upstream success", () => {
 
   it("returns matches from upstream", async () => {
     const matches = [
-      { id: 1, home_team: "Brazil", away_team: "Germany", home_score: null, away_score: null, status: "scheduled", group_label: "A" },
+      {
+        id: 1,
+        home_team: "Brazil",
+        away_team: "Germany",
+        home_score: null,
+        away_score: null,
+        status: "scheduled",
+        group_label: "A",
+      },
     ];
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify(matches), { status: 200 }),

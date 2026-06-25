@@ -38,7 +38,11 @@ interface DepositSuccessProps {
   readonly backLabel: string;
 }
 
-export function DepositSuccess({ title, desc, backLabel }: DepositSuccessProps) {
+export function DepositSuccess({
+  title,
+  desc,
+  backLabel,
+}: DepositSuccessProps) {
   return (
     <div className="space-y-6 max-w-md mx-auto">
       <div className="flex items-start gap-3 p-5 bg-emerald-900/40 border border-emerald-700/50 rounded-xl">

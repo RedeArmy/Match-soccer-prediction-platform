@@ -170,7 +170,10 @@ class APIClient {
   ): Promise<GroupDetailResponse> {
     return this.request(
       `/api/v1/groups/${id}/require-approval`,
-      { method: "PATCH", body: JSON.stringify({ require_approval: requireApproval }) },
+      {
+        method: "PATCH",
+        body: JSON.stringify({ require_approval: requireApproval }),
+      },
       token,
     );
   }
@@ -182,7 +185,10 @@ class APIClient {
   ): Promise<GroupDetailResponse> {
     return this.request(
       `/api/v1/groups/${id}/score-from-zero`,
-      { method: "PATCH", body: JSON.stringify({ score_from_zero: scoreFromZero }) },
+      {
+        method: "PATCH",
+        body: JSON.stringify({ score_from_zero: scoreFromZero }),
+      },
       token,
     );
   }
@@ -278,7 +284,9 @@ class APIClient {
   // ── Tournament slots ──────────────────────────────────────────────────────
 
   getSlots(token?: string | null): Promise<TournamentSlotResponse[]> {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
     if (token) headers["Authorization"] = `Bearer ${token}`;
     return fetch("/api/v1/tournament/slots", { headers }).then((res) => {
       if (!res.ok) throw new Error("Failed to fetch slots");
@@ -286,7 +294,11 @@ class APIClient {
     });
   }
 
-  adminConfirmSlot(token: string, slotId: number, team: string): Promise<TournamentSlotResponse> {
+  adminConfirmSlot(
+    token: string,
+    slotId: number,
+    team: string,
+  ): Promise<TournamentSlotResponse> {
     return this.request(
       `/api/v1/tournament/slots/${slotId}`,
       { method: "PATCH", body: JSON.stringify({ team }) },
@@ -302,7 +314,13 @@ class APIClient {
   ): Promise<MatchResponse> {
     return this.request(
       `/api/v1/matches/${matchId}/slots`,
-      { method: "PATCH", body: JSON.stringify({ home_slot_id: homeSlotId, away_slot_id: awaySlotId }) },
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          home_slot_id: homeSlotId,
+          away_slot_id: awaySlotId,
+        }),
+      },
       token,
     );
   }
@@ -502,7 +520,12 @@ class APIClient {
 
   adminListPaymentIntents(
     token: string,
-    params?: { provider?: string; status?: string; page?: number; limit?: number },
+    params?: {
+      provider?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+    },
   ): Promise<PagedWithTotal<PaymentIntentAdminResponse> & { page: PageMeta }> {
     const q = new URLSearchParams();
     if (params?.provider) q.set("provider", params.provider);
@@ -1008,7 +1031,11 @@ class APIClient {
   }
 
   adminGetMetricsSummary(token: string): Promise<MetricsSummaryResponse> {
-    return this.request("/api/v1/admin/observability/metrics/summary", {}, token);
+    return this.request(
+      "/api/v1/admin/observability/metrics/summary",
+      {},
+      token,
+    );
   }
 
   adminQueryMetrics(token: string, q: string): Promise<MetricsQueryResponse> {

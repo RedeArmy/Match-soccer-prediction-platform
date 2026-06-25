@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 // ── defaultBaselinePath ───────────────────────────────────────────────────────
@@ -199,5 +202,109 @@ func TestGenerate_ContextCancelled_ReturnsError(t *testing.T) {
 	err := generate(ctx, filepath.Join(t.TempDir(), "schema.sql"))
 	if err == nil {
 		t.Fatal("expected error for cancelled context, got nil")
+	}
+}
+
+func TestGenerate_OutputPathIsDirectory_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires Docker (skipped with -short)")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	// Passing a directory instead of a file path causes os.WriteFile to fail.
+	err := generate(ctx, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error when output path is a directory, got nil")
+	}
+	if !strings.Contains(err.Error(), "write") {
+		t.Errorf("expected write error, got: %v", err)
+	}
+}
+
+func TestRun_WritesSchemaToCustomPath(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires Docker (skipped with -short)")
+	}
+
+	tmp := t.TempDir()
+	outFile := filepath.Join(tmp, "run_schema.sql")
+
+	// Isolate flag state so flag.Parse() inside run() does not conflict with
+	// the test binary's own flags.
+	oldArgs := os.Args
+	oldFlags := flag.CommandLine
+	flag.CommandLine = flag.NewFlagSet("test", flag.ContinueOnError)
+	os.Args = []string{"genschema", "-out", outFile}
+	t.Cleanup(func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlags
+	})
+
+	if err := run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if !strings.Contains(string(data), "AUTO-GENERATED") {
+		t.Error("schema written by run() must contain AUTO-GENERATED header")
+	}
+}
+
+// ── dumpSchema error paths (integration — requires Docker) ────────────────────
+
+func TestDumpSchema_NonExistentDatabase_ReturnsExitError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires Docker (skipped with -short)")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// Fresh container with default postgres credentials — no "schema" user or
+	// "quiniela_schema" database exists, so pg_dump exits with a non-zero code.
+	container, err := tcpostgres.Run(ctx, "postgres:17-alpine",
+		tcpostgres.WithDatabase("postgres"),
+		tcpostgres.WithUsername("postgres"),
+		tcpostgres.WithPassword("postgres"),
+		tcpostgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		t.Fatalf("start container: %v", err)
+	}
+	defer func() { _ = container.Terminate(ctx) }()
+
+	_, err = dumpSchema(ctx, container)
+	if err == nil {
+		t.Fatal("expected error from dumpSchema with non-existent database, got nil")
+	}
+	if !strings.Contains(err.Error(), "pg_dump exited") {
+		t.Errorf("expected pg_dump exit error, got: %v", err)
+	}
+}
+
+func TestDumpSchema_TerminatedContainer_ReturnsExecError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires Docker (skipped with -short)")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	container, err := tcpostgres.Run(ctx, "postgres:17-alpine",
+		tcpostgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		t.Fatalf("start container: %v", err)
+	}
+	// Terminate the container before calling dumpSchema so that Exec fails.
+	if tErr := container.Terminate(ctx); tErr != nil {
+		t.Fatalf("terminate container: %v", tErr)
+	}
+
+	_, err = dumpSchema(ctx, container)
+	if err == nil {
+		t.Fatal("expected error from dumpSchema against a terminated container, got nil")
 	}
 }

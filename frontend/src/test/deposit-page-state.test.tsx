@@ -51,13 +51,7 @@ describe("DepositSuccess", () => {
   });
 
   it("renders the back link pointing to /balance", () => {
-    render(
-      <DepositSuccess
-        title="OK"
-        desc="desc"
-        backLabel="Regresar"
-      />,
-    );
+    render(<DepositSuccess title="OK" desc="desc" backLabel="Regresar" />);
     const link = screen.getByRole("link", { name: /regresar/i });
     expect(link.getAttribute("href")).toBe("/balance");
   });

@@ -50,6 +50,7 @@ interface SlotRowProps {
 }
 
 function SlotRow({ slot }: SlotRowProps) {
+  const { slotDesc } = useI18n();
   const hasTeam = !!slot?.team;
   return (
     <div className="flex items-center gap-2 px-3 py-2">
@@ -59,7 +60,7 @@ function SlotRow({ slot }: SlotRowProps) {
           hasTeam ? "font-semibold text-white" : "italic text-text-muted",
         )}
       >
-        {hasTeam ? slot!.team : (slot?.description ?? "—")}
+        {hasTeam ? slot!.team : slotDesc(slot?.description)}
       </span>
       {hasTeam && (
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-gold-400" />
@@ -160,11 +161,14 @@ export function KnockoutBracket() {
   const { slots, isLoading } = useSlots();
   const byPhase = groupByPhase(slots);
 
-  // Only render phases that have at least one slot AND at least one confirmed team
-  const visiblePhases = PHASE_ORDER.filter((p) => {
-    const phaseSlots = byPhase.get(p.prefix) ?? [];
-    return phaseSlots.some((s) => s.team !== null);
-  });
+  // Show every phase that has slots, but only once the knockout stage has begun
+  // (i.e. at least one slot in any phase has a confirmed team). Phases without
+  // confirmed teams still render with their placeholder descriptions so the full
+  // bracket structure is visible as soon as the first group completes.
+  const knockoutStarted = slots.some((s) => s.team !== null);
+  const visiblePhases = knockoutStarted
+    ? PHASE_ORDER.filter((p) => (byPhase.get(p.prefix) ?? []).length > 0)
+    : [];
 
   if (isLoading) {
     return (
