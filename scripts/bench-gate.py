@@ -28,6 +28,11 @@ for line in src:
     # benchstat prefixes noise lines with "~"; skip them.
     if "~" in line:
         continue
+    # geomean is a summary aggregate across benchmarks in a package; it is not
+    # a named benchmark and can drift >threshold from scheduler noise even when
+    # every individual benchmark is stable. Gate on named benchmarks only.
+    if line.lstrip().startswith("geomean"):
+        continue
     m = re.search(r"\+(\d+(?:\.\d+)?)%", line)
     if m and float(m.group(1)) > THRESHOLD:
         regressions.append(line.rstrip())

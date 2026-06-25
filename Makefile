@@ -267,10 +267,12 @@ bench:
 		./internal/api/...
 
 ## bench-save: Run benchmarks and save results to .bench/current.txt.
+##             Uses the same -benchtime=1x -count=6 flags as the CI regression
+##             gate so that the baseline is directly comparable to CI output.
 ##             Commit the output as .bench/baseline.txt to establish a new baseline.
 bench-save:
 	@mkdir -p .bench
-	go test -bench=. -benchmem -count=6 -run='^$$' \
+	go test -bench=. -benchmem -benchtime=1x -count=6 -run='^$$' \
 		./internal/notification/... \
 		./internal/service/... \
 		./internal/api/... \
@@ -288,7 +290,7 @@ bench-compare:
 		exit 1; \
 	fi
 	@mkdir -p .bench
-	go test -bench=. -benchmem -count=6 -run='^$$' \
+	go test -bench=. -benchmem -benchtime=1x -count=6 -run='^$$' \
 		./internal/notification/... \
 		./internal/service/... \
 		./internal/api/... \
