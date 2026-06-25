@@ -177,3 +177,101 @@ func TestNew_NegativeOpenFor_ClampedToPositive(t *testing.T) {
 		t.Errorf("expected Open immediately after opening, got %s", got)
 	}
 }
+
+// ── OpenedAt ─────────────────────────────────────────────────────────────────
+
+func TestBreaker_OpenedAt_ZeroBeforeAnyFailure(t *testing.T) {
+	b := newFast(t)
+	if !b.OpenedAt().IsZero() {
+		t.Error("expected zero OpenedAt before any call")
+	}
+}
+
+func TestBreaker_OpenedAt_NonZeroAfterOpen(t *testing.T) {
+	before := time.Now()
+	b := newFast(t)
+	_ = b.Call(alwaysFail)
+	_ = b.Call(alwaysFail) // opens
+	if ts := b.OpenedAt(); ts.Before(before) || ts.IsZero() {
+		t.Errorf("expected OpenedAt >= %v, got %v", before, ts)
+	}
+}
+
+// ── SetOnStateChange ─────────────────────────────────────────────────────────
+
+func TestBreaker_SetOnStateChange_FiredOnTransition(t *testing.T) {
+	b := newFast(t)
+	var events []string
+	b.SetOnStateChange(func(name string, from, to breaker.State, _ time.Time) {
+		events = append(events, from.String()+"->"+to.String())
+	})
+	_ = b.Call(alwaysFail)
+	_ = b.Call(alwaysFail) // closed → open
+
+	if len(events) == 0 {
+		t.Fatal("expected at least one state-change event")
+	}
+	if events[len(events)-1] != "closed->open" {
+		t.Errorf("last event: got %q, want %q", events[len(events)-1], "closed->open")
+	}
+}
+
+func TestBreaker_SetOnStateChange_NilClearsHook(t *testing.T) {
+	b := newFast(t)
+	fired := false
+	b.SetOnStateChange(func(string, breaker.State, breaker.State, time.Time) { fired = true })
+	b.SetOnStateChange(nil) // clear
+	_ = b.Call(alwaysFail)
+	_ = b.Call(alwaysFail) // opens — hook must not fire
+	if fired {
+		t.Error("hook fired after being cleared with nil")
+	}
+}
+
+func TestBreaker_SetOnStateChange_PanicInHookDoesNotCrash(t *testing.T) {
+	b := newFast(t)
+	b.SetOnStateChange(func(string, breaker.State, breaker.State, time.Time) {
+		panic("deliberate panic in hook")
+	})
+	// Must not panic — safeCallHook recovers it.
+	_ = b.Call(alwaysFail)
+	_ = b.Call(alwaysFail)
+}
+
+// ── Registry ──────────────────────────────────────────────────────────────────
+
+func TestRegistry_NewRegistry_EmptyAll(t *testing.T) {
+	reg := breaker.NewRegistry()
+	if got := reg.All(); len(got) != 0 {
+		t.Errorf("expected empty registry, got %d entries", len(got))
+	}
+}
+
+func TestRegistry_Register_And_All(t *testing.T) {
+	reg := breaker.NewRegistry()
+	b1 := breaker.New("svc-a", 3, time.Second)
+	b2 := breaker.New("svc-b", 3, time.Second)
+	reg.Register(b1)
+	reg.Register(b2)
+
+	all := reg.All()
+	if len(all) != 2 {
+		t.Fatalf("expected 2 breakers, got %d", len(all))
+	}
+}
+
+func TestRegistry_Register_Replaces_SameName(t *testing.T) {
+	reg := breaker.NewRegistry()
+	old := breaker.New("svc", 3, time.Second)
+	newer := breaker.New("svc", 5, time.Second)
+	reg.Register(old)
+	reg.Register(newer)
+
+	all := reg.All()
+	if len(all) != 1 {
+		t.Fatalf("expected 1 breaker after replacement, got %d", len(all))
+	}
+	if all[0].Name() != "svc" {
+		t.Errorf("unexpected name %q", all[0].Name())
+	}
+}

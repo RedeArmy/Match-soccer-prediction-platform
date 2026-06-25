@@ -222,7 +222,7 @@ export function PredictionPanel() {
 
   useEffect(() => {
     setPage(0);
-  }, [filter, effectiveStart, effectiveEnd]);
+  }, [filter, effectiveStart, effectiveEnd, viewMode]);
 
   useEffect(() => {
     setDrafts((current) => {
@@ -313,7 +313,9 @@ export function PredictionPanel() {
       return matchDate >= effectiveStart && matchDate <= effectiveEnd;
     });
   } else if (isKnockoutPhase) {
-    baseMatches = sortedMatches.filter((match) => match.phase === viewMode);
+    baseMatches = sortedMatches.filter(
+      (match) => match.phase === viewMode && match.home_team && match.away_team,
+    );
   } else {
     baseMatches = sortedMatches.filter(
       (match) => normalizeGroup(match.group_label) === selectedGroup,
@@ -352,10 +354,12 @@ export function PredictionPanel() {
     setDrafts((current) => ({ ...current, [matchId]: value }));
   }
 
-  const totalPages = isByDay ? Math.ceil(visibleMatches.length / PAGE_SIZE) : 1;
-  const pageMatches = isByDay
-    ? visibleMatches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-    : visibleMatches;
+  const totalPages =
+    isByDay || isKnockoutPhase ? Math.ceil(visibleMatches.length / PAGE_SIZE) : 1;
+  const pageMatches =
+    isByDay || isKnockoutPhase
+      ? visibleMatches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+      : visibleMatches;
 
   function renderContent() {
     if (isLoading) return <LoadingState rows={4} />;

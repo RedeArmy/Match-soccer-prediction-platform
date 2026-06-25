@@ -43,3 +43,48 @@ func TestWithHook_BelowLevel_DoesNotCallFn(t *testing.T) {
 		t.Errorf("expected fn not called for info level, got %d", calls)
 	}
 }
+
+func TestWithLevelCounters_WarnLevel_CallsOnWarn(t *testing.T) {
+	l, err := logger.New(logger.Config{Level: "debug", Encoding: "json"})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	var warns, errs int
+	hooked := logger.WithLevelCounters(l, func() { warns++ }, func() { errs++ })
+	hooked.Warn("warn entry")
+	if warns != 1 {
+		t.Errorf("onWarn: expected 1 call, got %d", warns)
+	}
+	if errs != 0 {
+		t.Errorf("onError: expected 0 calls on Warn, got %d", errs)
+	}
+}
+
+func TestWithLevelCounters_ErrorLevel_CallsOnError(t *testing.T) {
+	l, err := logger.New(logger.Config{Level: "debug", Encoding: "json"})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	var warns, errs int
+	hooked := logger.WithLevelCounters(l, func() { warns++ }, func() { errs++ })
+	hooked.Error("error entry")
+	if errs != 1 {
+		t.Errorf("onError: expected 1 call, got %d", errs)
+	}
+	if warns != 0 {
+		t.Errorf("onWarn: expected 0 calls on Error, got %d", warns)
+	}
+}
+
+func TestWithLevelCounters_InfoLevel_CallsNeither(t *testing.T) {
+	l, err := logger.New(logger.Config{Level: "debug", Encoding: "json"})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	var warns, errs int
+	hooked := logger.WithLevelCounters(l, func() { warns++ }, func() { errs++ })
+	hooked.Info("info entry")
+	if warns != 0 || errs != 0 {
+		t.Errorf("expected no counters for Info, got warns=%d errs=%d", warns, errs)
+	}
+}
