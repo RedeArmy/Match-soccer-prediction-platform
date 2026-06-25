@@ -119,16 +119,28 @@ func newMatchStartedHandler(log *zap.Logger) func(context.Context, events.Envelo
 	}
 }
 
+// SlotAutoConfirmer drives automatic bracket slot confirmation after each match.
+// Group-stage completion confirms 1st/2nd place slots; knockout results confirm
+// winner and loser slots. Implemented by service.TournamentService.
+type SlotAutoConfirmer interface {
+	AutoConfirmGroupSlots(ctx context.Context, groupLabel string) error
+	AutoConfirmMatchResultSlots(ctx context.Context, matchCode, winner, loser string) error
+	// BackfillSlots is called once at worker startup to confirm slots for groups
+	// and knockout matches that finished before event-driven auto-confirm was deployed.
+	BackfillSlots(ctx context.Context) error
+}
+
 // postScoringDeps bundles the infrastructure dependencies for postScoringWork,
 // keeping its parameter count within the 7-param linter limit while remaining
 // straightforward to extend without changing the function signature.
 type postScoringDeps struct {
-	snapshotter  service.Snapshotter
-	predRepo     repository.PredictionRepository
-	invalidators []service.PostScoringInvalidator
-	broadcaster  LeaderboardBroadcaster
-	locker       SnapshotLocker
-	snapshot     snapshotConfig
+	snapshotter   service.Snapshotter
+	predRepo      repository.PredictionRepository
+	invalidators  []service.PostScoringInvalidator
+	broadcaster   LeaderboardBroadcaster
+	locker        SnapshotLocker
+	snapshot      snapshotConfig
+	autoConfirmer SlotAutoConfirmer
 }
 
 // newMatchFinishedHandler returns the event handler that the worker registers
@@ -173,8 +185,60 @@ func newMatchFinishedHandler(
 		log.Sugar().Infof("worker: scored match %d (%s %d-%d %s)",
 			mf.MatchID, mf.HomeTeam, mf.HomeScore, mf.AwayScore, mf.AwayTeam)
 
+		runSlotAutoConfirm(ctx, mf, deps.autoConfirmer, log)
 		postScoringWork(ctx, mf.MatchID, deps, log)
 		return nil
+	}
+}
+
+// runSlotAutoConfirm drives automatic bracket slot confirmation after a match
+// finishes. For group-stage matches it checks whether the whole group is done
+// and, if so, confirms the 1st and 2nd place slots. For knockout matches it
+// immediately confirms winner and loser slots. All errors are logged and
+// swallowed — scoring has already committed and this is a best-effort step.
+func runSlotAutoConfirm(ctx context.Context, mf events.MatchFinished, ac SlotAutoConfirmer, log *zap.Logger) {
+	if ac == nil {
+		return
+	}
+	if mf.Phase == "group_stage" && mf.GroupLabel != "" {
+		if err := ac.AutoConfirmGroupSlots(ctx, mf.GroupLabel); err != nil {
+			log.Warn("worker: auto-confirm group slots failed",
+				zap.String("group", mf.GroupLabel),
+				zap.Int("match_id", mf.MatchID),
+				zap.Error(err),
+			)
+		}
+		return
+	}
+	if mf.MatchCode != "" {
+		winner, loser := knockoutWinnerLoser(mf)
+		if err := ac.AutoConfirmMatchResultSlots(ctx, mf.MatchCode, winner, loser); err != nil {
+			log.Warn("worker: auto-confirm knockout slots failed",
+				zap.String("match_code", mf.MatchCode),
+				zap.Int("match_id", mf.MatchID),
+				zap.Error(err),
+			)
+		}
+	}
+}
+
+// knockoutWinnerLoser derives the winning and losing team names from the match
+// payload. For a draw in extra time the home team is treated as the "winner"
+// only when WinMethod is "penalties" or "extra_time" (the actual winner is
+// conveyed by the score in those cases; when they are equal, home wins on
+// penalty convention — this never occurs in regular 90-minute results).
+func knockoutWinnerLoser(mf events.MatchFinished) (winner, loser string) {
+	switch {
+	case mf.HomeScore > mf.AwayScore:
+		return mf.HomeTeam, mf.AwayTeam
+	case mf.AwayScore > mf.HomeScore:
+		return mf.AwayTeam, mf.HomeTeam
+	default:
+		// Score level after regular time; WinMethod carries who actually advanced.
+		// The "winner" here is unknown from just the score — we cannot determine it
+		// from the event alone when HomeScore == AwayScore and WinMethod is set.
+		// Return empty strings so no slot is incorrectly confirmed.
+		return "", ""
 	}
 }
 

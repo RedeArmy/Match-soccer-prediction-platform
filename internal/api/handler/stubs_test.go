@@ -295,6 +295,13 @@ func (s *stubTournamentSvc) ConfirmSlot(_ context.Context, _, _ int, _ string) (
 func (s *stubTournamentSvc) ListSlots(_ context.Context) ([]*domain.TournamentSlot, error) {
 	return s.slots, s.err
 }
+func (s *stubTournamentSvc) AutoConfirmGroupSlots(_ context.Context, _ string) error {
+	return s.err
+}
+func (s *stubTournamentSvc) AutoConfirmMatchResultSlots(_ context.Context, _, _, _ string) error {
+	return s.err
+}
+func (s *stubTournamentSvc) BackfillSlots(_ context.Context) error { return s.err }
 
 // stubMemberSvc implements service.GroupMembershipService with configurable returns.
 type stubMemberSvc struct {

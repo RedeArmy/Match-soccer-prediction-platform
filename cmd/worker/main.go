@@ -272,6 +272,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	}
 	matchSvc := service.NewMatchService(matchRepo, bus, scorer, service.NoopAuditLogger{}, log)
 	matchSyncSvc := service.NewMatchSyncService(matchRepo, matchSvc, fpClient, log)
+	tournamentRepo := repository.NewPostgresTournamentRepository(db)
+	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, params, service.NoopAuditLogger{}, log)
 
 	quinielaRepo := repository.NewPostgresQuinielaRepository(db, repository.WithQuinielaLogger(log))
 	memberRepo := repository.NewPostgresGroupMembershipRepository(db)
@@ -541,6 +543,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		cfg:            cfg,
 		bus:            bus,
 		scorer:         scorer,
+		autoConfirmer:  tournamentSvc,
 		snapshotter:    snapshotter,
 		predRepo:       predRepo,
 		invalidators:   invalidators,
@@ -983,6 +986,7 @@ type workerDeps struct {
 	cfg                        *config.Config
 	bus                        events.Bus
 	scorer                     service.MatchScorer
+	autoConfirmer              SlotAutoConfirmer
 	snapshotter                service.Snapshotter
 	predRepo                   repository.PredictionRepository
 	invalidators               []service.PostScoringInvalidator
@@ -1013,18 +1017,27 @@ type workerDeps struct {
 // lifecycle management - and the part that can be exercised in unit tests
 // by injecting an InMemoryBus, a stub scorer, and a pre-cancelled context.
 func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
+	if deps.autoConfirmer != nil {
+		if err := deps.autoConfirmer.BackfillSlots(ctx); err != nil {
+			log.Warn("worker: slot backfill failed", zap.Error(err))
+		} else {
+			log.Info("worker: slot backfill complete")
+		}
+	}
+
 	deps.bus.Subscribe(ctx, events.EventMatchStarted,
 		safeEventHandler("matchStarted", newMatchStartedHandler(log), log))
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
 	deps.bus.Subscribe(ctx, events.EventMatchFinished,
 		safeEventHandler("matchFinished", newMatchFinishedHandler(deps.scorer, postScoringDeps{
-			snapshotter:  deps.snapshotter,
-			predRepo:     deps.predRepo,
-			invalidators: deps.invalidators,
-			broadcaster:  deps.broadcaster,
-			locker:       deps.snapshotLocker,
-			snapshot:     deps.snapshotCfg,
+			snapshotter:   deps.snapshotter,
+			predRepo:      deps.predRepo,
+			invalidators:  deps.invalidators,
+			broadcaster:   deps.broadcaster,
+			locker:        deps.snapshotLocker,
+			snapshot:      deps.snapshotCfg,
+			autoConfirmer: deps.autoConfirmer,
 		}, log), log))
 	log.Sugar().Info("worker: subscribed to MatchFinished events")
 

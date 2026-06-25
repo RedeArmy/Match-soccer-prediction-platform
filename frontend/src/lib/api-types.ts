@@ -291,6 +291,7 @@ export interface TournamentSlotResponse {
   label: string;
   description: string;
   team: string | null;
+  auto_source?: string | null;
   confirmed_at?: string;
   confirmed_by_user_id?: number;
   created_at: string;

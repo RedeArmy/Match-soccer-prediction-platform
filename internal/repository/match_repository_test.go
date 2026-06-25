@@ -657,3 +657,51 @@ func TestMatchRepository_ListSyncCandidates_ZeroWindow_ReturnsAll(t *testing.T) 
 		t.Error("expected at least 1 candidate with zero prematch window")
 	}
 }
+
+// ── ListByGroupLabel ──────────────────────────────────────────────────────────
+
+func TestMatchRepository_ListByGroupLabel_ReturnsGroupMatches(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	m := seedMatch(t) // group_stage, group_label = repoGroupLabel ("A")
+
+	got, err := repo.ListByGroupLabel(context.Background(), repoGroupLabel)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 match, got %d", len(got))
+	}
+	if got[0].ID != m.ID {
+		t.Errorf(fmtIDMismatch, got[0].ID, m.ID)
+	}
+}
+
+func TestMatchRepository_ListByGroupLabel_EmptyForUnknownGroup(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	got, err := repo.ListByGroupLabel(context.Background(), "Z")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(got) != 0 {
+		t.Errorf("want 0 matches for unknown group, got %d", len(got))
+	}
+}
+
+func TestMatchRepository_ListByGroupLabel_ExcludesOtherGroups(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	seedMatch(t) // group_label = "A"
+
+	got, err := repo.ListByGroupLabel(context.Background(), "B")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(got) != 0 {
+		t.Errorf("group B should return 0 matches when only group A seeded, got %d", len(got))
+	}
+}

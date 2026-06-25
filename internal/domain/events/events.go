@@ -78,13 +78,21 @@ func (e MatchStarted) Validate() error {
 // consumers have a complete picture without a DB round-trip. WinMethod is
 // an empty string for group-stage matches or when the match was decided in
 // normal time; valid non-empty values are "normal", "extra_time", "penalties".
+//
+// Phase, GroupLabel, and MatchCode are included so the worker can drive
+// automatic slot confirmation without an extra DB round-trip:
+//   - group_stage + GroupLabel → auto-confirm 1st/2nd place slots when group complete
+//   - knockout phase + MatchCode → auto-confirm winner/loser slots immediately
 type MatchFinished struct {
-	MatchID   int
-	HomeTeam  string
-	AwayTeam  string
-	HomeScore int
-	AwayScore int
-	WinMethod string // empty = not applicable (group stage); see domain.WinMethod constants
+	MatchID    int
+	HomeTeam   string
+	AwayTeam   string
+	HomeScore  int
+	AwayScore  int
+	WinMethod  string // empty = not applicable (group stage); see domain.WinMethod constants
+	Phase      string // domain.MatchPhase value, e.g. "group_stage", "round_of_32"
+	GroupLabel string // non-empty only for group_stage matches
+	MatchCode  string // FIFA match code, e.g. "M73"; empty when not set
 }
 
 // validWinMethods is the set of non-empty WinMethod values accepted in a

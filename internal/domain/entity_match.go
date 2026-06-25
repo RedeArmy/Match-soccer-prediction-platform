@@ -98,8 +98,9 @@ type Match struct {
 	ExternalMatchID  *int64
 	LastSyncedAt     *time.Time
 
-	HomeSlotID *int // nil for group-stage matches; links to tournament_slots for knockout
-	AwaySlotID *int // nil for group-stage matches; links to tournament_slots for knockout
+	HomeSlotID *int    // nil for group-stage matches; links to tournament_slots for knockout
+	AwaySlotID *int    // nil for group-stage matches; links to tournament_slots for knockout
+	MatchCode  *string // FIFA match code e.g. "M73"; nil for non-seeded matches
 }
 
 // ── Scoring rule ──────────────────────────────────────────────────────────────
@@ -184,6 +185,7 @@ type TournamentSlot struct {
 	Label             string     // human-readable bracket position
 	Description       string     // Spanish display name seeded by migration
 	Team              *string    // nil until confirmed
+	AutoSource        *string    // bracket code used for auto-confirm (e.g. "1A", "W73"); nil for manually-created slots
 	ConfirmedAt       *time.Time // nil until confirmed
 	ConfirmedByUserID *int       // nil until confirmed
 	CreatedAt         time.Time

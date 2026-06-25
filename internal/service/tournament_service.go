@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -20,6 +21,10 @@ import (
 // CreateSlot and ConfirmSlot are admin-only operations gated by RequireRole
 // middleware. Slots represent named bracket positions (e.g. "winner_group_a")
 // that the admin fills in once FIFA announces team advancement.
+//
+// AutoConfirmGroupSlots and AutoConfirmMatchResultSlots are system-driven:
+// they are called by the worker after each MatchFinished event and do not
+// require an admin actor. The admin can still override any slot via ConfirmSlot.
 type TournamentService interface {
 	// GetAllStandings returns standings for every group keyed by group label.
 	GetAllStandings(ctx context.Context) (map[string][]*domain.GroupStanding, error)
@@ -34,6 +39,24 @@ type TournamentService interface {
 	ConfirmSlot(ctx context.Context, slotID, adminID int, team string) (*domain.TournamentSlot, error)
 	// ListSlots returns all bracket position slots.
 	ListSlots(ctx context.Context) ([]*domain.TournamentSlot, error)
+	// AutoConfirmGroupSlots checks whether every match in groupLabel is finished.
+	// If so it confirms the 1st-place and 2nd-place bracket slots for that group
+	// based on live standings. No-ops when the group is not yet complete or when
+	// the slots were already manually confirmed.
+	AutoConfirmGroupSlots(ctx context.Context, groupLabel string) error
+	// AutoConfirmMatchResultSlots confirms the winner and loser bracket slots for
+	// a knockout match identified by its FIFA match code (e.g. "M73").
+	// winner is the team that won; loser is the team that lost.
+	// No-ops when no slot carries the corresponding auto_source code or when the
+	// slot was already manually confirmed.
+	AutoConfirmMatchResultSlots(ctx context.Context, matchCode, winner, loser string) error
+	// BackfillSlots is a one-shot idempotent operation called at worker startup
+	// to confirm bracket slots for groups and knockout matches that finished before
+	// event-driven auto-confirm was deployed. It iterates groups A–L and all
+	// finished knockout matches, delegating to AutoConfirmGroupSlots and
+	// AutoConfirmMatchResultSlots. Per-slot errors are logged and skipped; the
+	// method always returns nil so startup is not blocked.
+	BackfillSlots(ctx context.Context) error
 }
 
 // tournamentService is the concrete implementation of TournamentService.
@@ -128,6 +151,141 @@ func (s *tournamentService) ConfirmSlot(ctx context.Context, slotID, adminID int
 // ListSlots returns all bracket position slots.
 func (s *tournamentService) ListSlots(ctx context.Context) ([]*domain.TournamentSlot, error) {
 	return s.tournamentRepo.ListSlots(ctx)
+}
+
+// AutoConfirmGroupSlots confirms 1st and 2nd place slots when all group matches finish.
+func (s *tournamentService) AutoConfirmGroupSlots(ctx context.Context, groupLabel string) error {
+	matches, err := s.matchRepo.ListByGroupLabel(ctx, groupLabel)
+	if err != nil {
+		return err
+	}
+	for _, m := range matches {
+		if m.Status != domain.MatchStatusFinished && m.Status != domain.MatchStatusCancelled {
+			return nil // group not yet complete
+		}
+	}
+	winPoints := s.params.GetInt(ctx, domain.ParamKeyTournamentWinPoints, domain.StandingsWinPoints)
+	grouped := buildStandings(matches, winPoints)
+	standings := grouped[groupLabel]
+	if len(standings) < 2 {
+		return nil
+	}
+
+	if err := s.autoConfirmBySource(ctx, "1"+groupLabel, standings[0].Team); err != nil {
+		s.log.Warn("auto-confirm 1st-place slot failed",
+			zap.String("group", groupLabel),
+			zap.String("team", standings[0].Team),
+			zap.Error(err),
+		)
+	}
+	if err := s.autoConfirmBySource(ctx, "2"+groupLabel, standings[1].Team); err != nil {
+		s.log.Warn("auto-confirm 2nd-place slot failed",
+			zap.String("group", groupLabel),
+			zap.String("team", standings[1].Team),
+			zap.Error(err),
+		)
+	}
+	return nil
+}
+
+// AutoConfirmMatchResultSlots confirms winner and loser slots for a knockout match.
+func (s *tournamentService) AutoConfirmMatchResultSlots(ctx context.Context, matchCode, winner, loser string) error {
+	if matchCode == "" {
+		return nil
+	}
+	// Strip leading "M" → numeric suffix used in auto_source codes (e.g. "M73" → "73").
+	num := strings.TrimPrefix(matchCode, "M")
+	if num == "" {
+		return nil
+	}
+	if winner != "" {
+		if err := s.autoConfirmBySource(ctx, "W"+num, winner); err != nil {
+			s.log.Warn("auto-confirm winner slot failed",
+				zap.String("match_code", matchCode),
+				zap.String("team", winner),
+				zap.Error(err),
+			)
+		}
+	}
+	if loser != "" {
+		if err := s.autoConfirmBySource(ctx, "L"+num, loser); err != nil {
+			s.log.Warn("auto-confirm loser slot failed",
+				zap.String("match_code", matchCode),
+				zap.String("team", loser),
+				zap.Error(err),
+			)
+		}
+	}
+	return nil
+}
+
+// BackfillSlots iterates all 12 group labels and all finished knockout matches
+// to confirm bracket slots that were never processed via the event bus.
+// Intended to run once at worker startup; fully idempotent.
+func (s *tournamentService) BackfillSlots(ctx context.Context) error {
+	for g := byte('A'); g <= 'L'; g++ {
+		if err := s.AutoConfirmGroupSlots(ctx, string([]byte{g})); err != nil {
+			s.log.Warn("slot backfill: group failed", zap.String("group", string([]byte{g})), zap.Error(err))
+		}
+	}
+
+	knockoutPhases := []domain.MatchPhase{
+		domain.PhaseRoundOf32,
+		domain.PhaseRoundOf16,
+		domain.PhaseQuarterFinal,
+		domain.PhaseSemiFinal,
+		domain.PhaseThirdPlace,
+		domain.PhaseFinal,
+	}
+	for _, phase := range knockoutPhases {
+		matches, err := s.matchRepo.ListByPhase(ctx, phase)
+		if err != nil {
+			s.log.Warn("slot backfill: list matches failed", zap.String("phase", string(phase)), zap.Error(err))
+			continue
+		}
+		for _, m := range matches {
+			if m.Status != domain.MatchStatusFinished || m.MatchCode == nil {
+				continue
+			}
+			winner, loser := slotWinnerLoser(m)
+			if err := s.AutoConfirmMatchResultSlots(ctx, *m.MatchCode, winner, loser); err != nil {
+				s.log.Warn("slot backfill: knockout match failed",
+					zap.String("match_code", *m.MatchCode), zap.Error(err))
+			}
+		}
+	}
+	return nil
+}
+
+// slotWinnerLoser derives the winning and losing team from a finished match.
+// Returns empty strings when the score is tied in regulation (penalty shootouts
+// are not reflected in the score; the admin must confirm those slots manually).
+func slotWinnerLoser(m *domain.Match) (winner, loser string) {
+	if m.HomeScore == nil || m.AwayScore == nil {
+		return "", ""
+	}
+	if *m.HomeScore > *m.AwayScore {
+		return m.HomeTeam, m.AwayTeam
+	}
+	if *m.AwayScore > *m.HomeScore {
+		return m.AwayTeam, m.HomeTeam
+	}
+	return "", ""
+}
+
+func (s *tournamentService) autoConfirmBySource(ctx context.Context, autoSource, team string) error {
+	slot, err := s.tournamentRepo.FindSlotByAutoSource(ctx, autoSource)
+	if err != nil {
+		return err
+	}
+	if slot == nil {
+		return nil // no slot registered for this bracket code
+	}
+	if slot.Team != nil {
+		return nil // already confirmed (possibly by admin)
+	}
+	_, err = s.tournamentRepo.AutoConfirmSlot(ctx, slot.ID, team)
+	return err
 }
 
 // buildStandings computes group standings from a slice of group-stage matches.

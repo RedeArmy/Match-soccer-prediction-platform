@@ -91,6 +91,9 @@ func (r *stubSyncMatchRepo) UpdateSyncState(_ context.Context, _ int) error {
 func (r *stubSyncMatchRepo) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
 	return nil, nil
 }
+func (r *stubSyncMatchRepo) ListByGroupLabel(_ context.Context, _ string) ([]*domain.Match, error) {
+	return nil, nil
+}
 
 type stubSyncMatchSvc struct {
 	started   int
