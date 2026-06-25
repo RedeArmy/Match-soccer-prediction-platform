@@ -3,7 +3,14 @@
 import React, { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/nextjs";
-import { AlertTriangle, CheckCircle, Lock, Loader2, Settings, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle,
+  Lock,
+  Loader2,
+  Settings,
+  X,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import type { GroupDetailResponse } from "@/lib/api-types";
 import { useI18n } from "@/lib/i18n";
@@ -109,7 +116,9 @@ export function TournamentSettingsModal({
       <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 opacity-60">
         <Lock className="mt-0.5 h-4 w-4 shrink-0 text-gold-400" />
         <div className="min-w-0">
-          <p className="text-sm font-medium text-white">{t("group.scoreFromZeroLabel")}</p>
+          <p className="text-sm font-medium text-white">
+            {t("group.scoreFromZeroLabel")}
+          </p>
           <p className="mt-0.5 text-[11px] text-text-muted">
             {t("group.scoreFromZeroLockedDesc")}
           </p>
@@ -121,12 +130,19 @@ export function TournamentSettingsModal({
       <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-4">
         <div className="mb-3 flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-amber-400" />
-          <p className="text-sm font-semibold text-amber-300">{t("group.scoreFromZeroConfirmTitle")}</p>
+          <p className="text-sm font-semibold text-amber-300">
+            {t("group.scoreFromZeroConfirmTitle")}
+          </p>
         </div>
         <ul className="mb-4 space-y-1.5 text-[11px] leading-relaxed text-text-muted">
           <li>· {t("group.scoreFromZeroConfirmItem1")}</li>
           <li>· {t("group.scoreFromZeroConfirmItem2")}</li>
-          <li>· <strong className="text-amber-300">{t("group.scoreFromZeroConfirmItem3")}</strong></li>
+          <li>
+            ·{" "}
+            <strong className="text-amber-300">
+              {t("group.scoreFromZeroConfirmItem3")}
+            </strong>
+          </li>
           <li>· {t("group.scoreFromZeroConfirmItem4")}</li>
         </ul>
         {scoreFromZeroMutation.isError && (

@@ -734,6 +734,7 @@ interface I18nContextValue {
   phaseName: (phase: string | null | undefined) => string;
   teamName: (name: string | null | undefined) => string;
   accountTypeName: (name: string | null | undefined) => string;
+  slotDesc: (desc: string | null | undefined) => string;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -779,6 +780,43 @@ function localeForCountry(country: string): Locale {
   return SPANISH_COUNTRIES.has(country.toUpperCase()) ? "es" : "en";
 }
 
+// Translates Spanish bracket slot descriptions stored in the DB to the active
+// locale. Four patterns exist (from migration 000205):
+//   "N.° Grupo X"        → "Nth Group X"
+//   "Mejor 3.° (p.N)"   → "Best 3rd (p.N)"
+//   "Ganador PHASE MNN"  → "Winner PHASE MNN"
+//   "Perdedor PHASE MNN" → "Loser PHASE MNN"
+function englishOrdinal(n: number): string {
+  if (n === 1) return "1st";
+  if (n === 2) return "2nd";
+  if (n === 3) return "3rd";
+  return `${n}th`;
+}
+
+function translateSlotDescription(
+  desc: string | null | undefined,
+  locale: Locale,
+): string {
+  if (!desc) return "—";
+  if (locale === "es") return desc;
+
+  const groupMatch = /^(\d+)\.° Grupo ([A-L])$/.exec(desc);
+  if (groupMatch) {
+    return `${englishOrdinal(Number(groupMatch[1]))} Group ${groupMatch[2]}`;
+  }
+
+  const best3rd = /^Mejor 3\.° \(p\.(\d+)\)$/.exec(desc);
+  if (best3rd) return `Best 3rd (p.${best3rd[1]})`;
+
+  const winner = /^Ganador (.+)$/.exec(desc);
+  if (winner) return `Winner ${winner[1]}`;
+
+  const loser = /^Perdedor (.+)$/.exec(desc);
+  if (loser) return `Loser ${loser[1]}`;
+
+  return desc;
+}
+
 export function I18nProvider({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -793,9 +831,14 @@ export function I18nProvider({
     // Only skip geo detection when the user has explicitly chosen a language.
     // Auto-detected locales are not persisted so that geo data is re-evaluated
     // on each session (prevents stale/wrong country from being locked in forever).
-    const storedSource = globalThis.localStorage.getItem("quiniela-locale-source");
+    const storedSource = globalThis.localStorage.getItem(
+      "quiniela-locale-source",
+    );
     const storedLocale = globalThis.localStorage.getItem("quiniela-locale");
-    if (storedSource === "explicit" && (storedLocale === "es" || storedLocale === "en")) {
+    if (
+      storedSource === "explicit" &&
+      (storedLocale === "es" || storedLocale === "en")
+    ) {
       setLocale(storedLocale);
       document.documentElement.lang = storedLocale;
       return;
@@ -834,6 +877,7 @@ export function I18nProvider({
         translateDictionaryValue(name, teamTranslations, locale),
       accountTypeName: (name) =>
         translateDictionaryValue(name, accountTypeTranslations, locale),
+      slotDesc: (desc) => translateSlotDescription(desc, locale),
     }),
     [locale, timeZone],
   );

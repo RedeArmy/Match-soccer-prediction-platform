@@ -466,7 +466,9 @@ describe("GroupDialog", () => {
 
     await waitFor(() => {
       expect(
-        container.querySelector<HTMLButtonElement>('form button[type="submit"]'),
+        container.querySelector<HTMLButtonElement>(
+          'form button[type="submit"]',
+        ),
       ).toBeDisabled();
     });
 

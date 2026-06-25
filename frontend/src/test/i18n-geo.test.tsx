@@ -201,7 +201,9 @@ describe("I18nProvider – geo detection fallback", () => {
       expect(screen.getByTestId("locale")).toHaveTextContent("en"),
     );
     // locale-source must remain absent so next session re-runs geo detection
-    expect(globalThis.localStorage.getItem("quiniela-locale-source")).toBeNull();
+    expect(
+      globalThis.localStorage.getItem("quiniela-locale-source"),
+    ).toBeNull();
     vi.restoreAllMocks();
   });
 

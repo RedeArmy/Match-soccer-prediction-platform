@@ -9,7 +9,9 @@ import type { BankTransferResponse } from "@/lib/api-types";
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 vi.mock("@clerk/nextjs", () => ({
-  useAuth: vi.fn().mockReturnValue({ getToken: vi.fn().mockResolvedValue("tok") }),
+  useAuth: vi
+    .fn()
+    .mockReturnValue({ getToken: vi.fn().mockResolvedValue("tok") }),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -40,7 +42,9 @@ function renderTab() {
   );
 }
 
-function transfer(overrides: Partial<BankTransferResponse> = {}): BankTransferResponse {
+function transfer(
+  overrides: Partial<BankTransferResponse> = {},
+): BankTransferResponse {
   return {
     id: 1,
     user_id: 42,
@@ -63,7 +67,9 @@ function transfer(overrides: Partial<BankTransferResponse> = {}): BankTransferRe
 
 describe("BankTransfersTab – loading state", () => {
   it("shows loading skeleton while fetching", () => {
-    vi.mocked(api.adminListBankTransfers).mockReturnValue(new Promise(() => {}));
+    vi.mocked(api.adminListBankTransfers).mockReturnValue(
+      new Promise(() => {}),
+    );
     renderTab();
     // AdminContentState renders <LoadingState /> which uses animate-pulse skeleton
     expect(document.querySelector(".animate-pulse")).toBeInTheDocument();
@@ -74,7 +80,9 @@ describe("BankTransfersTab – loading state", () => {
 
 describe("BankTransfersTab – error state", () => {
   it("renders error message when fetch fails", async () => {
-    vi.mocked(api.adminListBankTransfers).mockRejectedValueOnce(new Error("db down"));
+    vi.mocked(api.adminListBankTransfers).mockRejectedValueOnce(
+      new Error("db down"),
+    );
     renderTab();
     await waitFor(() =>
       expect(screen.getByText(/Error al cargar/i)).toBeInTheDocument(),
@@ -110,7 +118,13 @@ describe("BankTransfersTab – with pending transfers", () => {
   beforeEach(() =>
     vi.mocked(api.adminListBankTransfers).mockResolvedValue([
       transfer({ id: 1, user_id: 10, status: "pending", amount_cents: 5000 }),
-      transfer({ id: 2, user_id: 11, status: "approved", amount_cents: 10000, approved_amount_cents: 10000 }),
+      transfer({
+        id: 2,
+        user_id: 11,
+        status: "approved",
+        amount_cents: 10000,
+        approved_amount_cents: 10000,
+      }),
     ]),
   );
 
@@ -122,9 +136,13 @@ describe("BankTransfersTab – with pending transfers", () => {
   it("shows pending transfer with Aprobar and Rechazar buttons", async () => {
     renderTab();
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Aprobar/i })).toBeInTheDocument(),
+      expect(
+        screen.getByRole("button", { name: /Aprobar/i }),
+      ).toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: /Rechazar/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Rechazar/i }),
+    ).toBeInTheDocument();
   });
 
   it("switches to all tab and shows both transfers", async () => {
@@ -147,9 +165,11 @@ describe("BankTransfersTab – with pending transfers", () => {
 
 describe("BankTransfersTab – approve modal", () => {
   beforeEach(() =>
-    vi.mocked(api.adminListBankTransfers).mockResolvedValue([
-      transfer({ id: 5, status: "pending", amount_cents: 20000 }),
-    ]),
+    vi
+      .mocked(api.adminListBankTransfers)
+      .mockResolvedValue([
+        transfer({ id: 5, status: "pending", amount_cents: 20000 }),
+      ]),
   );
 
   it("opens approve modal when Aprobar is clicked", async () => {
@@ -181,7 +201,9 @@ describe("BankTransfersTab – approve modal", () => {
     await waitFor(() => screen.getByRole("button", { name: /Aprobar/i }));
     fireEvent.click(screen.getByRole("button", { name: /Aprobar/i }));
     await waitFor(() => screen.getByText(/Aprobar Transferencia #5/i));
-    fireEvent.click(screen.getByRole("button", { name: /Aprobar y Acreditar/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Aprobar y Acreditar/i }),
+    );
     await waitFor(() =>
       expect(vi.mocked(api.adminApproveBankTransfer)).toHaveBeenCalledWith(
         "tok",
@@ -199,7 +221,9 @@ describe("BankTransfersTab – approve modal", () => {
     fireEvent.change(screen.getByLabelText(/Monto a acreditar/i), {
       target: { value: "-5" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Aprobar y Acreditar/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Aprobar y Acreditar/i }),
+    );
     await waitFor(() =>
       expect(
         screen.getByText(/El monto debe ser positivo/i),
@@ -212,9 +236,9 @@ describe("BankTransfersTab – approve modal", () => {
 
 describe("BankTransfersTab – reject modal", () => {
   beforeEach(() =>
-    vi.mocked(api.adminListBankTransfers).mockResolvedValue([
-      transfer({ id: 7, status: "pending" }),
-    ]),
+    vi
+      .mocked(api.adminListBankTransfers)
+      .mockResolvedValue([transfer({ id: 7, status: "pending" })]),
   );
 
   it("opens reject modal when Rechazar is clicked", async () => {
@@ -239,7 +263,9 @@ describe("BankTransfersTab – reject modal", () => {
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "Comprobante ilegible" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Rechazar Transferencia/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Rechazar Transferencia/i }),
+    );
 
     await waitFor(() =>
       expect(vi.mocked(api.adminRejectBankTransfer)).toHaveBeenCalledWith(
@@ -255,7 +281,9 @@ describe("BankTransfersTab – reject modal", () => {
     await waitFor(() => screen.getByRole("button", { name: /Rechazar/i }));
     fireEvent.click(screen.getByRole("button", { name: /Rechazar/i }));
     await waitFor(() => screen.getByText(/Rechazar Transferencia #7/i));
-    const submitBtn = screen.getByRole("button", { name: /Rechazar Transferencia/i });
+    const submitBtn = screen.getByRole("button", {
+      name: /Rechazar Transferencia/i,
+    });
     expect(submitBtn).toBeDisabled();
   });
 });
@@ -291,9 +319,11 @@ describe("BankTransfersTab – approved transfer with override amount", () => {
 
 describe("BankTransfersTab – approve with valid override amount", () => {
   beforeEach(() =>
-    vi.mocked(api.adminListBankTransfers).mockResolvedValue([
-      transfer({ id: 11, status: "pending", amount_cents: 10000 }),
-    ]),
+    vi
+      .mocked(api.adminListBankTransfers)
+      .mockResolvedValue([
+        transfer({ id: 11, status: "pending", amount_cents: 10000 }),
+      ]),
   );
 
   it("submits approved_amount_cents when a valid override is entered", async () => {
@@ -307,7 +337,9 @@ describe("BankTransfersTab – approve with valid override amount", () => {
     fireEvent.change(screen.getByLabelText(/Monto a acreditar/i), {
       target: { value: "75.50" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Aprobar y Acreditar/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Aprobar y Acreditar/i }),
+    );
 
     await waitFor(() =>
       expect(vi.mocked(api.adminApproveBankTransfer)).toHaveBeenCalledWith(
@@ -327,7 +359,9 @@ describe("BankTransfersTab – approve with valid override amount", () => {
     await waitFor(() => screen.getByRole("button", { name: /Aprobar/i }));
     fireEvent.click(screen.getByRole("button", { name: /Aprobar/i }));
     await waitFor(() => screen.getByText(/Aprobar Transferencia #11/i));
-    fireEvent.click(screen.getByRole("button", { name: /Aprobar y Acreditar/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Aprobar y Acreditar/i }),
+    );
 
     await waitFor(() =>
       expect(screen.getByText(/Fondos insuficientes/i)).toBeInTheDocument(),
@@ -339,9 +373,9 @@ describe("BankTransfersTab – approve with valid override amount", () => {
 
 describe("BankTransfersTab – reject API error", () => {
   beforeEach(() =>
-    vi.mocked(api.adminListBankTransfers).mockResolvedValue([
-      transfer({ id: 13, status: "pending" }),
-    ]),
+    vi
+      .mocked(api.adminListBankTransfers)
+      .mockResolvedValue([transfer({ id: 13, status: "pending" })]),
   );
 
   it("shows modal error when reject API call fails", async () => {
@@ -357,7 +391,9 @@ describe("BankTransfersTab – reject API error", () => {
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "Comprobante inválido" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Rechazar Transferencia/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Rechazar Transferencia/i }),
+    );
 
     await waitFor(() =>
       expect(screen.getByText(/No se pudo rechazar/i)).toBeInTheDocument(),

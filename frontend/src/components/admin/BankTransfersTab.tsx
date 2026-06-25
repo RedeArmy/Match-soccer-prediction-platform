@@ -87,7 +87,9 @@ function ApproveModal({
         <InfoRow
           label="Monto declarado"
           value={
-            <span className="font-semibold">{formatGTQ(item.amount_cents)}</span>
+            <span className="font-semibold">
+              {formatGTQ(item.amount_cents)}
+            </span>
           }
         />
         <InfoRow label="Moneda" value={item.currency} />
@@ -134,8 +136,8 @@ function ApproveModal({
           <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-400 mt-0.5 shrink-0" />
             <p className="text-amber-300 text-xs">
-              El monto a acreditar ({formatGTQ(overrideCents)}) difiere del monto
-              declarado por el usuario ({formatGTQ(item.amount_cents)}).
+              El monto a acreditar ({formatGTQ(overrideCents)}) difiere del
+              monto declarado por el usuario ({formatGTQ(item.amount_cents)}).
             </p>
           </div>
         )}
@@ -411,7 +413,9 @@ export function BankTransfersTab() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-white/50">{transfers.length} comprobantes en total</p>
+        <p className="text-sm text-white/50">
+          {transfers.length} comprobantes en total
+        </p>
         <AdminRefreshButton onClick={() => refetch()} disabled={isLoading} />
       </div>
 
@@ -471,7 +475,9 @@ export function BankTransfersTab() {
                         <div className="font-semibold text-white">
                           {formatGTQ(item.amount_cents)}
                         </div>
-                        <div className="text-white/30 text-xs">{item.currency}</div>
+                        <div className="text-white/30 text-xs">
+                          {item.currency}
+                        </div>
                       </td>
                       <td className="px-4 py-3 tabular-nums">
                         {item.status === "approved" ? (
@@ -479,7 +485,9 @@ export function BankTransfersTab() {
                             <div
                               className={cn(
                                 "font-semibold",
-                                hasOverride ? "text-amber-400" : "text-emerald-400",
+                                hasOverride
+                                  ? "text-amber-400"
+                                  : "text-emerald-400",
                               )}
                             >
                               {formatGTQ(effective)}

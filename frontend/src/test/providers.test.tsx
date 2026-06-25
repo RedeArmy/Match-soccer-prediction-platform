@@ -4,9 +4,10 @@ import { Providers } from "@/app/providers";
 import { I18nProvider, useI18n } from "@/lib/i18n";
 
 vi.mock("@clerk/nextjs", () => ({
-  useAuth: vi
-    .fn()
-    .mockReturnValue({ getToken: vi.fn().mockResolvedValue(null), isSignedIn: false }),
+  useAuth: vi.fn().mockReturnValue({
+    getToken: vi.fn().mockResolvedValue(null),
+    isSignedIn: false,
+  }),
 }));
 
 describe("Providers", () => {

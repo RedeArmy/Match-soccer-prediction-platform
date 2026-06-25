@@ -27,7 +27,11 @@ describe("api.listMyPendingIntents", () => {
     await api.listMyPendingIntents("tok123");
     const [url, init] = mockFetch.mock.calls[0];
     expect(url).toContain("/api/v1/payment-intents/my");
-    expect((init as RequestInit & { headers: Record<string, string> }).headers["Authorization"]).toBe("Bearer tok123");
+    expect(
+      (init as RequestInit & { headers: Record<string, string> }).headers[
+        "Authorization"
+      ],
+    ).toBe("Bearer tok123");
   });
 });
 
@@ -66,7 +70,9 @@ describe("api.uploadComprobante", () => {
 
 describe("api.resubmitForReview", () => {
   it("posts to the resubmit endpoint", async () => {
-    mockFetch.mockResolvedValueOnce(okResponse({ token: "t", status: "under_review" }));
+    mockFetch.mockResolvedValueOnce(
+      okResponse({ token: "t", status: "under_review" }),
+    );
     const fd = new FormData();
     fd.append("notes", "Please reconsider");
     await api.resubmitForReview("tok", "token-xyz", fd);
@@ -82,7 +88,9 @@ describe("api.adminRequestComprobante", () => {
     mockFetch.mockResolvedValueOnce(okResponse({ id: 1 }));
     await api.adminRequestComprobante("admintok", 42);
     const [url, init] = mockFetch.mock.calls[0];
-    expect(url).toContain("/api/v1/admin/payment-intents/42/request-comprobante");
+    expect(url).toContain(
+      "/api/v1/admin/payment-intents/42/request-comprobante",
+    );
     expect((init as RequestInit).method).toBe("POST");
   });
 });
@@ -90,7 +98,11 @@ describe("api.adminRequestComprobante", () => {
 // ── adminListPaymentIntents (URLSearchParams conditions) ──────────────────────
 
 describe("api.adminListPaymentIntents", () => {
-  const payload = { data: [], total: 0, page: { page: 1, limit: 15, total: 0 } };
+  const payload = {
+    data: [],
+    total: 0,
+    page: { page: 1, limit: 15, total: 0 },
+  };
 
   it("calls the endpoint with no query params when params is omitted", async () => {
     mockFetch.mockResolvedValueOnce(okResponse(payload));

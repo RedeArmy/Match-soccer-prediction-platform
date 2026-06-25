@@ -15,11 +15,18 @@ Threshold rationale: GitHub Actions ubuntu runners exhibit ~±10 % timing
 variance between runs. A 20 % threshold sits safely above that noise floor
 while catching real hot-path regressions (e.g. an extra allocation in ScoreMatch
 that would cause the scoring worker to fall behind during match-end events).
+
+HIGH_VARIANCE_SKIP rationale: when the baseline itself has variance above this
+value the stored samples are too spread to serve as a reliable reference.
+Comparing against a ±144 % baseline can produce spurious p<0.05 results even
+when no code changed.  Benchmarks that noisy are excluded from the gate until
+the baseline is regenerated with a stable run.
 """
 import sys
 import re
 
-THRESHOLD = 20  # percent — update here and in the ci.yml comment if changed
+THRESHOLD = 20           # percent — update here and in the ci.yml comment if changed
+HIGH_VARIANCE_SKIP = 50  # skip comparisons where baseline variance exceeds this
 
 src = open(sys.argv[1]) if len(sys.argv) > 1 else sys.stdin
 regressions = []
@@ -32,6 +39,11 @@ for line in src:
     # a named benchmark and can drift >threshold from scheduler noise even when
     # every individual benchmark is stable. Gate on named benchmarks only.
     if line.lstrip().startswith("geomean"):
+        continue
+    # Skip when the baseline itself is too noisy to be a reliable reference.
+    # The first "± N%" token in a benchstat line is the baseline variance.
+    baseline_var = re.search(r"±\s*(\d+(?:\.\d+)?)%", line)
+    if baseline_var and float(baseline_var.group(1)) > HIGH_VARIANCE_SKIP:
         continue
     m = re.search(r"\+(\d+(?:\.\d+)?)%", line)
     if m and float(m.group(1)) > THRESHOLD:

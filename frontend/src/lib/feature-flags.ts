@@ -22,7 +22,9 @@ export function isPhaseVisible(phase: string | null | undefined): boolean {
 // These are replaced by actual team names when an admin confirms each slot.
 const KNOCKOUT_PLACEHOLDER_RE = /^(?:\d+[A-L]+|[WL]\d+)$/i;
 
-export function isKnockoutPlaceholder(name: string | null | undefined): boolean {
+export function isKnockoutPlaceholder(
+  name: string | null | undefined,
+): boolean {
   if (!name) return true;
   return KNOCKOUT_PLACEHOLDER_RE.test(name.trim());
 }

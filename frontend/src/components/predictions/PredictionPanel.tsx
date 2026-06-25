@@ -341,11 +341,17 @@ export function PredictionPanel() {
     [enrichedMatches],
   );
 
-  // Dates (YYYY-MM-DD) that have at least one match — used for calendar dot indicators
+  // Dates (YYYY-MM-DD) that have at least one match with both teams confirmed —
+  // used for calendar dot indicators.
   const matchDates = useMemo(() => {
     const set = new Set<string>();
     for (const match of enrichedMatches) {
       if (!match.kickoff_at) continue;
+      if (
+        isKnockoutPlaceholder(match.home_team) ||
+        isKnockoutPlaceholder(match.away_team)
+      )
+        continue;
       set.add(
         new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone }),
       );
@@ -362,6 +368,11 @@ export function PredictionPanel() {
     baseMatches = enrichedMatches.filter((match) => {
       if (!match.kickoff_at) return false;
       if (match.status === "finished" || match.status === "cancelled")
+        return false;
+      if (
+        isKnockoutPlaceholder(match.home_team) ||
+        isKnockoutPlaceholder(match.away_team)
+      )
         return false;
       const matchDate = new Date(match.kickoff_at).toLocaleDateString("sv", {
         timeZone,

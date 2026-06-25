@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PRIVATE_PREFIXES = ["127.", "10.", "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.", "192.168.", "::1", "fc", "fd"];
+const PRIVATE_PREFIXES = [
+  "127.",
+  "10.",
+  "172.16.",
+  "172.17.",
+  "172.18.",
+  "172.19.",
+  "172.20.",
+  "172.21.",
+  "172.22.",
+  "172.23.",
+  "172.24.",
+  "172.25.",
+  "172.26.",
+  "172.27.",
+  "172.28.",
+  "172.29.",
+  "172.30.",
+  "172.31.",
+  "192.168.",
+  "::1",
+  "fc",
+  "fd",
+];
 
 function isPrivateIP(ip: string): boolean {
   return PRIVATE_PREFIXES.some((prefix) => ip.startsWith(prefix));
@@ -10,12 +33,18 @@ function isPrivateIP(ip: string): boolean {
 // Returns { "countryCode": "GT", "status": "success" } or { "status": "fail" }.
 async function lookupIpApi(ip: string): Promise<string | null> {
   try {
-    const res = await fetch(`http://ip-api.com/json/${ip}?fields=countryCode,status`, {
-      headers: { "User-Agent": "WCQ/1.0 geo-lookup" },
-      signal: AbortSignal.timeout(3000),
-    });
+    const res = await fetch(
+      `http://ip-api.com/json/${ip}?fields=countryCode,status`,
+      {
+        headers: { "User-Agent": "WCQ/1.0 geo-lookup" },
+        signal: AbortSignal.timeout(3000),
+      },
+    );
     if (!res.ok) return null;
-    const data = (await res.json()) as { status?: string; countryCode?: string };
+    const data = (await res.json()) as {
+      status?: string;
+      countryCode?: string;
+    };
     if (data.status !== "success" || !data.countryCode) return null;
     return data.countryCode;
   } catch {
@@ -50,10 +79,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // Try ip-api.com first (better accuracy for Latin American ISPs such as Claro and Tigo
   // Guatemala, which use IP blocks registered to international parent companies).
-  const country =
-    (await lookupIpApi(ip)) ??
-    (await lookupIpapiCo(ip)) ??
-    "GT";
+  const country = (await lookupIpApi(ip)) ?? (await lookupIpapiCo(ip)) ?? "GT";
 
   if (country === "GT" || !country) {
     return respond("GT");

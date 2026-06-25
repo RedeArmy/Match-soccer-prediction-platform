@@ -177,7 +177,12 @@ export async function GET(
 
   if (!fixtureRes.ok) {
     const body = await fixtureRes.text().catch(() => "");
-    console.error("[live/fixture] upstream error", fixtureId, fixtureRes.status, body);
+    console.error(
+      "[live/fixture] upstream error",
+      fixtureId,
+      fixtureRes.status,
+      body,
+    );
     return NextResponse.json(
       { error: "Upstream error" },
       { status: fixtureRes.status },
@@ -206,9 +211,14 @@ export async function GET(
     const venueUrl = new URL("/venues", BASE_URL);
     venueUrl.searchParams.set("id", String(venueId));
     try {
-      const venueRes = await fetch(venueUrl.toString(), { headers: af, cache: "no-store" });
+      const venueRes = await fetch(venueUrl.toString(), {
+        headers: af,
+        cache: "no-store",
+      });
       if (venueRes.ok) {
-        const vd: { response?: AFVenue[] } = await venueRes.json().catch(() => ({}));
+        const vd: { response?: AFVenue[] } = await venueRes
+          .json()
+          .catch(() => ({}));
         venueCountry = vd.response?.[0]?.country ?? null;
       }
     } catch {
@@ -222,11 +232,15 @@ export async function GET(
   let rawLineups: AFLineup[] = [];
 
   if (eventsRes.ok) {
-    const d: { response?: AFEvent[] } = await eventsRes.json().catch(() => ({}));
+    const d: { response?: AFEvent[] } = await eventsRes
+      .json()
+      .catch(() => ({}));
     rawEvents = d.response ?? [];
   }
   if (lineupsRes.ok) {
-    const d: { response?: AFLineup[] } = await lineupsRes.json().catch(() => ({}));
+    const d: { response?: AFLineup[] } = await lineupsRes
+      .json()
+      .catch(() => ({}));
     rawLineups = d.response ?? [];
   }
 

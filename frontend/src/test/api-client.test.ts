@@ -1165,8 +1165,12 @@ describe("api – adminGetMetricsSummary", () => {
     );
     const result = await api.adminGetMetricsSummary("tok_admin");
     const [url, init] = mockFetch.mock.calls[0];
-    expect(String(url)).toContain("/api/v1/admin/observability/metrics/summary");
-    expect((init as RequestInit).headers as Record<string, string>).toMatchObject({
+    expect(String(url)).toContain(
+      "/api/v1/admin/observability/metrics/summary",
+    );
+    expect(
+      (init as RequestInit).headers as Record<string, string>,
+    ).toMatchObject({
       Authorization: "Bearer tok_admin",
     });
     expect(result.configured).toBe(true);
@@ -1258,7 +1262,9 @@ describe("api.updateScoreFromZero", () => {
   beforeEach(() => mockFetch.mockReset());
 
   it("sends PATCH to /api/v1/groups/{id}/score-from-zero with score_from_zero flag", async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse({ id: 1, score_from_zero: true }));
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({ id: 1, score_from_zero: true }),
+    );
     await api.updateScoreFromZero("tok_abc", 42, true);
     const [url, init] = mockFetch.mock.calls[0];
     expect(String(url)).toContain("/api/v1/groups/42/score-from-zero");
@@ -1291,7 +1297,9 @@ describe("api.getSlots", () => {
   });
 
   it("returns the slot list from the response", async () => {
-    const slots = [{ id: 1, label: "fin_01_a", description: "Campeón", team: "Argentina" }];
+    const slots = [
+      { id: 1, label: "fin_01_a", description: "Campeón", team: "Argentina" },
+    ];
     mockFetch.mockResolvedValueOnce(makeResponse(slots));
     const result = await api.getSlots("tok");
     expect(result).toHaveLength(1);
@@ -1303,7 +1311,9 @@ describe("api.adminConfirmSlot", () => {
   beforeEach(() => mockFetch.mockReset());
 
   it("sends PATCH to /api/v1/tournament/slots/:id with team in body", async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse({ id: 3, label: "qf_01_a", team: "France" }));
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({ id: 3, label: "qf_01_a", team: "France" }),
+    );
     await api.adminConfirmSlot("tok_admin", 3, "France");
     const [url, init] = mockFetch.mock.calls[0];
     expect(String(url)).toContain("/api/v1/tournament/slots/3");
@@ -1317,7 +1327,9 @@ describe("api.adminUpdateMatchSlots", () => {
   beforeEach(() => mockFetch.mockReset());
 
   it("sends PATCH to /api/v1/matches/:id/slots with home and away slot IDs", async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse({ id: 10, home_slot_id: 1, away_slot_id: 2 }));
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({ id: 10, home_slot_id: 1, away_slot_id: 2 }),
+    );
     await api.adminUpdateMatchSlots("tok_admin", 10, 1, 2);
     const [url, init] = mockFetch.mock.calls[0];
     expect(String(url)).toContain("/api/v1/matches/10/slots");
@@ -1328,7 +1340,9 @@ describe("api.adminUpdateMatchSlots", () => {
   });
 
   it("allows null slot IDs to clear assignment", async () => {
-    mockFetch.mockResolvedValueOnce(makeResponse({ id: 10, home_slot_id: null, away_slot_id: null }));
+    mockFetch.mockResolvedValueOnce(
+      makeResponse({ id: 10, home_slot_id: null, away_slot_id: null }),
+    );
     await api.adminUpdateMatchSlots("tok_admin", 10, null, null);
     const [, init] = mockFetch.mock.calls[0];
     const body = JSON.parse((init as RequestInit).body as string);
