@@ -587,6 +587,41 @@ describe("PredictionPanel", () => {
     expect(screen.queryByText("Canadá")).toBeNull();
   });
 
+  it("hides unconfirmed knockout matches (empty teams) within an active phase tab", async () => {
+    const confirmedKo = {
+      ...scheduledMatch,
+      id: 21,
+      home_team: "France",
+      away_team: "Spain",
+      phase: "round_of_16",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    // Same phase but teams not yet determined
+    const pendingKo = {
+      ...scheduledMatch,
+      id: 22,
+      home_team: "",
+      away_team: "",
+      phase: "round_of_16",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([confirmedKo, pendingKo] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    // Tab appears because at least one match is confirmed
+    expect(await screen.findByRole("button", { name: /Octavos/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Octavos/i }));
+
+    // Only the confirmed match renders — the empty-team one is suppressed
+    expect(await screen.findByText("Francia")).toBeInTheDocument();
+    // One article only (not two)
+    expect(document.querySelectorAll("article")).toHaveLength(1);
+  });
+
   it("disables score editing for locked matches and filters pending matches", async () => {
     vi.mocked(api.getMatches).mockResolvedValueOnce([
       scheduledMatch,

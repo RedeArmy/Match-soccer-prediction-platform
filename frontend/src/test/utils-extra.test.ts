@@ -173,25 +173,41 @@ describe("visibleKnockoutPhases", () => {
     expect(visibleKnockoutPhases([{ phase: "group_stage" }, { phase: null }])).toEqual([]);
   });
 
-  it("returns phases in canonical order regardless of input order", () => {
+  it("returns empty array when knockout matches have no confirmed teams", () => {
     const matches = [
-      { phase: "quarter_final" },
-      { phase: "round_of_16" },
-      { phase: "semi_final" },
+      { phase: "round_of_16", home_team: "", away_team: "" },
+      { phase: "semi_final", home_team: "Brazil", away_team: "" },
+      { phase: "final" },
+    ];
+    expect(visibleKnockoutPhases(matches)).toEqual([]);
+  });
+
+  it("returns phases in Final-first canonical order regardless of input order", () => {
+    const confirmed = { home_team: "Brazil", away_team: "Argentina" };
+    const matches = [
+      { phase: "quarter_final", ...confirmed },
+      { phase: "round_of_16", ...confirmed },
+      { phase: "semi_final", ...confirmed },
     ];
     expect(visibleKnockoutPhases(matches)).toEqual([
-      "round_of_16",
-      "quarter_final",
       "semi_final",
+      "quarter_final",
+      "round_of_16",
     ]);
   });
 
   it("deduplicates repeated phase values", () => {
-    const matches = [{ phase: "final" }, { phase: "final" }, { phase: "third_place" }];
-    expect(visibleKnockoutPhases(matches)).toEqual(["third_place", "final"]);
+    const confirmed = { home_team: "Spain", away_team: "France" };
+    const matches = [
+      { phase: "final", ...confirmed },
+      { phase: "final", ...confirmed },
+      { phase: "third_place", ...confirmed },
+    ];
+    expect(visibleKnockoutPhases(matches)).toEqual(["final", "third_place"]);
   });
 
-  it("ignores unrecognised phase strings", () => {
-    expect(visibleKnockoutPhases([{ phase: "unknown_phase" }])).toEqual([]);
+  it("ignores unrecognised phase strings even when teams are confirmed", () => {
+    const match = { phase: "unknown_phase", home_team: "X", away_team: "Y" };
+    expect(visibleKnockoutPhases([match])).toEqual([]);
   });
 });

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/rede/world-cup-quiniela/pkg/logger"
 )
 
@@ -60,5 +62,19 @@ func TestNew_AllValidLevels(t *testing.T) {
 				t.Fatalf("level %q: expected non-nil logger, got nil", level)
 			}
 		})
+	}
+}
+
+func TestNew_WithInitialFields_AttachesFields(t *testing.T) {
+	l, err := logger.New(logger.Config{
+		Level:         "info",
+		Encoding:      "json",
+		InitialFields: []zap.Field{zap.String("service", "test-svc")},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if l == nil {
+		t.Fatal("expected non-nil logger")
 	}
 }
