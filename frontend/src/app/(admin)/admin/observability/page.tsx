@@ -465,7 +465,7 @@ export default function AdminObservabilityPage() {
                 <code className="rounded bg-blue-800 px-1 text-xs">
                   https://grafana.kiniela.uk
                 </code>
-                .
+                {"."}
               </p>
             </div>
           )}
