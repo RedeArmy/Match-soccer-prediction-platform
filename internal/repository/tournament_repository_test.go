@@ -146,3 +146,137 @@ func TestTournamentRepository_ConfirmSlot_NotFoundWhenMissing(t *testing.T) {
 		t.Errorf(fmtNotFoundErr, err)
 	}
 }
+
+// ── FindSlotByAutoSource ──────────────────────────────────────────────────────
+
+func TestTournamentRepository_FindSlotByAutoSource_Found(t *testing.T) {
+	cleanTables(t)
+	skipIfNoDB(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	slot, err := repo.CreateSlot(context.Background(), "winner_group_d", "1er Grupo D")
+	if err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if _, err := testDB.Exec(context.Background(),
+		`UPDATE tournament_slots SET auto_source='1D' WHERE id=$1`, slot.ID,
+	); err != nil {
+		t.Fatalf("set auto_source: %v", err)
+	}
+
+	found, err := repo.FindSlotByAutoSource(context.Background(), "1D")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if found == nil {
+		t.Fatal("expected slot, got nil")
+	}
+	if found.ID != slot.ID {
+		t.Errorf(fmtIDMismatch, found.ID, slot.ID)
+	}
+	if found.AutoSource == nil || *found.AutoSource != "1D" {
+		t.Errorf("auto_source: want 1D, got %v", found.AutoSource)
+	}
+}
+
+func TestTournamentRepository_FindSlotByAutoSource_NotFound_ReturnsNil(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	found, err := repo.FindSlotByAutoSource(context.Background(), "nonexistent")
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if found != nil {
+		t.Errorf("expected nil for unknown auto_source, got %+v", found)
+	}
+}
+
+// ── AutoConfirmSlot ───────────────────────────────────────────────────────────
+
+func TestTournamentRepository_AutoConfirmSlot_SetsTeam(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	created, err := repo.CreateSlot(context.Background(), "winner_group_e", "")
+	if err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	confirmed, err := repo.AutoConfirmSlot(context.Background(), created.ID, repoMexico)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if confirmed.Team == nil || *confirmed.Team != repoMexico {
+		t.Errorf("team: want %s, got %v", repoMexico, confirmed.Team)
+	}
+	if confirmed.ConfirmedAt == nil {
+		t.Error("confirmed_at: want non-nil after auto-confirmation")
+	}
+}
+
+func TestTournamentRepository_AutoConfirmSlot_AlreadyConfirmed_ReturnsExisting(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	created, err := repo.CreateSlot(context.Background(), "winner_group_f", "")
+	if err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if _, err := repo.AutoConfirmSlot(context.Background(), created.ID, repoMexico); err != nil {
+		t.Fatalf("first confirm: %v", err)
+	}
+
+	// Second call: slot already has a team — must return the existing slot without error.
+	got, err := repo.AutoConfirmSlot(context.Background(), created.ID, repoBrazil)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.Team == nil || *got.Team != repoMexico {
+		t.Errorf("team: want original %s, got %v", repoMexico, got.Team)
+	}
+}
+
+func TestTournamentRepository_AutoConfirmSlot_NotFound_ReturnsNotFound(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	_, err := repo.AutoConfirmSlot(context.Background(), 99999, repoMexico)
+	if !isNotFound(err) {
+		t.Errorf(fmtNotFoundErr, err)
+	}
+}
+
+func TestTournamentRepository_AutoConfirmSlot_PropagatesTeamToMatch(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresTournamentRepository(testDB)
+
+	slot, err := repo.CreateSlot(context.Background(), "r32_01_a", "")
+	if err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	var matchID int
+	if err := testDB.QueryRow(context.Background(),
+		`INSERT INTO matches (home_team, away_team, status, phase, kickoff_at, home_slot_id)
+		 VALUES ($1, $2, 'scheduled', 'round_of_32', NOW()+INTERVAL '1 day', $3)
+		 RETURNING id`,
+		"1A", repoArgentina, slot.ID,
+	).Scan(&matchID); err != nil {
+		t.Fatalf("seed knockout match: %v", err)
+	}
+
+	if _, err := repo.AutoConfirmSlot(context.Background(), slot.ID, repoMexico); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	var homeTeam string
+	if err := testDB.QueryRow(context.Background(),
+		`SELECT home_team FROM matches WHERE id=$1`, matchID,
+	).Scan(&homeTeam); err != nil {
+		t.Fatalf("get match home_team: %v", err)
+	}
+	if homeTeam != repoMexico {
+		t.Errorf("match home_team: want %s, got %s", repoMexico, homeTeam)
+	}
+}

@@ -60,6 +60,9 @@ func (r *stubMatchRepoTournament) UpdateKickoff(_ context.Context, _ int, _ time
 func (r *stubMatchRepoTournament) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
 	return nil, r.err
 }
+func (r *stubMatchRepoTournament) ListByGroupLabel(_ context.Context, _ string) ([]*domain.Match, error) {
+	return r.matches, r.err
+}
 
 type stubTournamentRepo struct {
 	slot  *domain.TournamentSlot
@@ -80,6 +83,16 @@ func (r *stubTournamentRepo) ListSlots(_ context.Context) ([]*domain.TournamentS
 	return r.slots, r.err
 }
 func (r *stubTournamentRepo) ConfirmSlot(_ context.Context, _, _ int, team string) (*domain.TournamentSlot, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	s := &domain.TournamentSlot{ID: 1, Label: tournamentWinnerGroupA, Team: &team}
+	return s, nil
+}
+func (r *stubTournamentRepo) FindSlotByAutoSource(_ context.Context, _ string) (*domain.TournamentSlot, error) {
+	return r.slot, r.err
+}
+func (r *stubTournamentRepo) AutoConfirmSlot(_ context.Context, _ int, team string) (*domain.TournamentSlot, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -362,3 +375,199 @@ func TestBuildStandings_GoalDifferenceCalculated(t *testing.T) {
 }
 
 func intPtr(v int) *int { return &v }
+
+// ── slotWinnerLoser ───────────────────────────────────────────────────────────
+
+func TestSlotWinnerLoser_HomeWins_ReturnsHomeAsWinner(t *testing.T) {
+	hs, as := 3, 1
+	m := &domain.Match{HomeTeam: tournamentMexico, AwayTeam: "USA", HomeScore: &hs, AwayScore: &as}
+	w, l := slotWinnerLoser(m)
+	if w != tournamentMexico || l != "USA" {
+		t.Errorf("got winner=%q loser=%q; want Mexico/USA", w, l)
+	}
+}
+
+func TestSlotWinnerLoser_AwayWins_ReturnsAwayAsWinner(t *testing.T) {
+	hs, as := 0, 2
+	m := &domain.Match{HomeTeam: tournamentMexico, AwayTeam: "USA", HomeScore: &hs, AwayScore: &as}
+	w, l := slotWinnerLoser(m)
+	if w != "USA" || l != tournamentMexico {
+		t.Errorf("got winner=%q loser=%q; want USA/Mexico", w, l)
+	}
+}
+
+func TestSlotWinnerLoser_Draw_ReturnsBothEmpty(t *testing.T) {
+	hs, as := 1, 1
+	m := &domain.Match{HomeTeam: tournamentMexico, AwayTeam: "USA", HomeScore: &hs, AwayScore: &as}
+	w, l := slotWinnerLoser(m)
+	if w != "" || l != "" {
+		t.Errorf("got winner=%q loser=%q; want empty/empty for draw", w, l)
+	}
+}
+
+func TestSlotWinnerLoser_NilScores_ReturnsBothEmpty(t *testing.T) {
+	m := &domain.Match{HomeTeam: tournamentMexico, AwayTeam: "USA"}
+	w, l := slotWinnerLoser(m)
+	if w != "" || l != "" {
+		t.Errorf("got winner=%q loser=%q; want empty/empty for nil scores", w, l)
+	}
+}
+
+// ── AutoConfirmGroupSlots ─────────────────────────────────────────────────────
+
+func TestAutoConfirmGroupSlots_AllMatchesFinished_ConfirmsSlots(t *testing.T) {
+	matches := []*domain.Match{
+		finishedMatch("A", tournamentMexico, "USA", 2, 1),
+		finishedMatch("A", tournamentFrance, "Germany", 1, 0),
+		finishedMatch("A", tournamentMexico, tournamentFrance, 0, 0),
+		finishedMatch("A", "USA", "Germany", 1, 1),
+	}
+	repo := &stubTournamentRepo{slot: &domain.TournamentSlot{ID: 1, Team: nil}}
+	svc := newTournamentSvc(matches, repo)
+	if err := svc.AutoConfirmGroupSlots(context.Background(), "A"); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+func TestAutoConfirmGroupSlots_GroupNotComplete_Noop(t *testing.T) {
+	matches := []*domain.Match{
+		finishedMatch("A", tournamentMexico, "USA", 2, 1),
+		scheduledMatch("A", tournamentFrance, "Germany"),
+	}
+	repo := &stubTournamentRepo{slot: &domain.TournamentSlot{ID: 1, Team: nil}}
+	svc := newTournamentSvc(matches, repo)
+	if err := svc.AutoConfirmGroupSlots(context.Background(), "A"); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+func TestAutoConfirmGroupSlots_SlotAlreadyConfirmed_Noop(t *testing.T) {
+	team := tournamentMexico
+	matches := []*domain.Match{
+		finishedMatch("A", tournamentMexico, "USA", 2, 1),
+		finishedMatch("A", tournamentFrance, "Germany", 1, 0),
+	}
+	repo := &stubTournamentRepo{slot: &domain.TournamentSlot{ID: 1, Team: &team}}
+	svc := newTournamentSvc(matches, repo)
+	if err := svc.AutoConfirmGroupSlots(context.Background(), "A"); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+func TestAutoConfirmGroupSlots_NoSlotRegistered_Noop(t *testing.T) {
+	matches := []*domain.Match{
+		finishedMatch("A", tournamentMexico, "USA", 2, 1),
+		finishedMatch("A", tournamentFrance, "Germany", 1, 0),
+	}
+	repo := &stubTournamentRepo{slot: nil} // no slot for this bracket code
+	svc := newTournamentSvc(matches, repo)
+	if err := svc.AutoConfirmGroupSlots(context.Background(), "A"); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+func TestAutoConfirmGroupSlots_RepoError_Propagates(t *testing.T) {
+	dbErr := errors.New("db error")
+	svc := NewTournamentService(
+		&stubMatchRepoTournament{err: dbErr},
+		&stubTournamentRepo{},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+	if err := svc.AutoConfirmGroupSlots(context.Background(), "A"); err == nil {
+		t.Fatal("expected error from ListByGroupLabel, got nil")
+	}
+}
+
+// ── AutoConfirmMatchResultSlots ───────────────────────────────────────────────
+
+func TestAutoConfirmMatchResultSlots_EmptyMatchCode_Noop(t *testing.T) {
+	svc := newTournamentSvc(nil, &stubTournamentRepo{})
+	if err := svc.AutoConfirmMatchResultSlots(context.Background(), "", tournamentMexico, "USA"); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+func TestAutoConfirmMatchResultSlots_WithMatchCode_ConfirmsSlots(t *testing.T) {
+	repo := &stubTournamentRepo{slot: &domain.TournamentSlot{ID: 1, Team: nil}}
+	svc := newTournamentSvc(nil, repo)
+	if err := svc.AutoConfirmMatchResultSlots(context.Background(), "M73", tournamentMexico, "USA"); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+func TestAutoConfirmMatchResultSlots_EmptyWinnerAndLoser_Noop(t *testing.T) {
+	repo := &stubTournamentRepo{slot: &domain.TournamentSlot{ID: 1, Team: nil}}
+	svc := newTournamentSvc(nil, repo)
+	if err := svc.AutoConfirmMatchResultSlots(context.Background(), "M73", "", ""); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+func TestAutoConfirmMatchResultSlots_NoSlotForCode_Noop(t *testing.T) {
+	repo := &stubTournamentRepo{slot: nil}
+	svc := newTournamentSvc(nil, repo)
+	if err := svc.AutoConfirmMatchResultSlots(context.Background(), "M73", tournamentMexico, "USA"); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+func TestAutoConfirmMatchResultSlots_SlotAlreadyConfirmed_Noop(t *testing.T) {
+	team := tournamentMexico
+	repo := &stubTournamentRepo{slot: &domain.TournamentSlot{ID: 1, Team: &team}}
+	svc := newTournamentSvc(nil, repo)
+	if err := svc.AutoConfirmMatchResultSlots(context.Background(), "M73", tournamentMexico, "USA"); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+// ── BackfillSlots ─────────────────────────────────────────────────────────────
+
+func TestBackfillSlots_FinishedKnockoutMatch_ProcessesIt(t *testing.T) {
+	mc := "M73"
+	hs, as := 2, 1
+	ko := &domain.Match{
+		HomeTeam:  tournamentMexico,
+		AwayTeam:  "USA",
+		HomeScore: &hs,
+		AwayScore: &as,
+		Status:    domain.MatchStatusFinished,
+		MatchCode: &mc,
+		Phase:     domain.PhaseRoundOf32,
+	}
+	repo := &stubTournamentRepo{slot: &domain.TournamentSlot{ID: 1, Team: nil}}
+	svc := newTournamentSvc([]*domain.Match{ko}, repo)
+	if err := svc.BackfillSlots(context.Background()); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+func TestBackfillSlots_DBError_ReturnsNil(t *testing.T) {
+	svc := NewTournamentService(
+		&stubMatchRepoTournament{err: errors.New("db down")},
+		&stubTournamentRepo{slot: nil},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+	if err := svc.BackfillSlots(context.Background()); err != nil {
+		t.Fatalf("BackfillSlots must return nil even on DB errors, got: %v", err)
+	}
+}
+
+func TestBackfillSlots_SkipsUnfinishedKnockoutMatches(t *testing.T) {
+	mc := "M74"
+	scheduled := &domain.Match{
+		HomeTeam:  tournamentMexico,
+		AwayTeam:  "USA",
+		Status:    domain.MatchStatusScheduled,
+		MatchCode: &mc,
+		Phase:     domain.PhaseRoundOf32,
+	}
+	repo := &stubTournamentRepo{slot: &domain.TournamentSlot{ID: 1, Team: nil}}
+	svc := newTournamentSvc([]*domain.Match{scheduled}, repo)
+	if err := svc.BackfillSlots(context.Background()); err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}

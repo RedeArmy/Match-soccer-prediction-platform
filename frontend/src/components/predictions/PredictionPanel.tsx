@@ -18,7 +18,11 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { MatchResponse, PredictionResponse } from "@/lib/api-types";
-import { visibleKnockoutPhases } from "@/lib/feature-flags";
+import {
+  isKnockoutPlaceholder,
+  visibleKnockoutPhases,
+} from "@/lib/feature-flags";
+import { useSlots } from "@/hooks/useSlots";
 import { cn } from "@/lib/utils";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -66,26 +70,55 @@ function getEmptyState(params: {
   filterHides: boolean;
   t: (key: string) => string;
 }): { title: string; desc: string } {
-  const { isByDay, noMatchesInRange, isExactlyToday, isRange, filter, filterHides, t } = params;
+  const {
+    isByDay,
+    noMatchesInRange,
+    isExactlyToday,
+    isRange,
+    filter,
+    filterHides,
+    t,
+  } = params;
   if (noMatchesInRange) {
     if (isExactlyToday) {
-      return { title: t("predictions.noMatchesToday"), desc: t("predictions.noMatchesTodayDesc") };
+      return {
+        title: t("predictions.noMatchesToday"),
+        desc: t("predictions.noMatchesTodayDesc"),
+      };
     }
     if (isRange) {
-      return { title: t("predictions.noMatchesForRange"), desc: t("predictions.noMatchesForRangeDesc") };
+      return {
+        title: t("predictions.noMatchesForRange"),
+        desc: t("predictions.noMatchesForRangeDesc"),
+      };
     }
-    return { title: t("predictions.noMatchesForDate"), desc: t("predictions.noMatchesForDateDesc") };
+    return {
+      title: t("predictions.noMatchesForDate"),
+      desc: t("predictions.noMatchesForDateDesc"),
+    };
   }
   if (filter === "past") {
-    return { title: t("predictions.noPastMatches"), desc: t("predictions.noPastMatchesDesc") };
+    return {
+      title: t("predictions.noPastMatches"),
+      desc: t("predictions.noPastMatchesDesc"),
+    };
   }
   if (filterHides && isByDay && isExactlyToday && filter === "pending") {
-    return { title: t("predictions.allSavedToday"), desc: t("predictions.allSavedTodayDesc") };
+    return {
+      title: t("predictions.allSavedToday"),
+      desc: t("predictions.allSavedTodayDesc"),
+    };
   }
   if (filterHides && isByDay && isExactlyToday && filter === "saved") {
-    return { title: t("predictions.noPredictionsToday"), desc: t("predictions.noPredictionsTodayDesc") };
+    return {
+      title: t("predictions.noPredictionsToday"),
+      desc: t("predictions.noPredictionsTodayDesc"),
+    };
   }
-  return { title: t("predictions.noMatches"), desc: t("predictions.noMatchesDesc") };
+  return {
+    title: t("predictions.noMatches"),
+    desc: t("predictions.noMatchesDesc"),
+  };
 }
 
 const PHASE_KEY_MAP: Record<string, string> = {
@@ -106,6 +139,7 @@ export function PredictionPanel() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
   const { t, timeZone, locale } = useI18n();
+  const { teamByAutoSource } = useSlots();
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
   const [viewMode, setViewMode] = useState<string>("by-group");
@@ -277,28 +311,47 @@ export function PredictionPanel() {
       if (status === "finished" || status === "cancelled") return 2;
       return 1;
     };
-    return [...(matchesQuery.data ?? [])]
-      .sort((a, b) => {
-        const tierDiff = tier(a.status) - tier(b.status);
-        if (tierDiff !== 0) return tierDiff;
-        return ts(a.kickoff_at) - ts(b.kickoff_at);
-      });
+    return [...(matchesQuery.data ?? [])].sort((a, b) => {
+      const tierDiff = tier(a.status) - tier(b.status);
+      if (tierDiff !== 0) return tierDiff;
+      return ts(a.kickoff_at) - ts(b.kickoff_at);
+    });
   }, [matchesQuery.data]);
 
+  // Enrich knockout match team names from confirmed slots when the match record
+  // still carries placeholder codes (bridge before the next matches re-fetch).
+  const enrichedMatches = useMemo(() => {
+    if (teamByAutoSource.size === 0) return sortedMatches;
+    return sortedMatches.map((match) => {
+      const home =
+        isKnockoutPlaceholder(match.home_team) && match.home_team
+          ? (teamByAutoSource.get(match.home_team) ?? match.home_team)
+          : match.home_team;
+      const away =
+        isKnockoutPlaceholder(match.away_team) && match.away_team
+          ? (teamByAutoSource.get(match.away_team) ?? match.away_team)
+          : match.away_team;
+      if (home === match.home_team && away === match.away_team) return match;
+      return { ...match, home_team: home, away_team: away };
+    });
+  }, [sortedMatches, teamByAutoSource]);
+
   const knockoutPhases = useMemo(
-    () => visibleKnockoutPhases(sortedMatches),
-    [sortedMatches],
+    () => visibleKnockoutPhases(enrichedMatches),
+    [enrichedMatches],
   );
 
   // Dates (YYYY-MM-DD) that have at least one match — used for calendar dot indicators
   const matchDates = useMemo(() => {
     const set = new Set<string>();
-    for (const match of sortedMatches) {
+    for (const match of enrichedMatches) {
       if (!match.kickoff_at) continue;
-      set.add(new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone }));
+      set.add(
+        new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone }),
+      );
     }
     return set;
-  }, [sortedMatches, timeZone]);
+  }, [enrichedMatches, timeZone]);
 
   const isByDay = viewMode === "by-day";
   const isByGroup = viewMode === "by-group";
@@ -306,18 +359,24 @@ export function PredictionPanel() {
 
   let baseMatches;
   if (isByDay) {
-    baseMatches = sortedMatches.filter((match) => {
+    baseMatches = enrichedMatches.filter((match) => {
       if (!match.kickoff_at) return false;
-      if (match.status === "finished" || match.status === "cancelled") return false;
-      const matchDate = new Date(match.kickoff_at).toLocaleDateString("sv", { timeZone });
+      if (match.status === "finished" || match.status === "cancelled")
+        return false;
+      const matchDate = new Date(match.kickoff_at).toLocaleDateString("sv", {
+        timeZone,
+      });
       return matchDate >= effectiveStart && matchDate <= effectiveEnd;
     });
   } else if (isKnockoutPhase) {
-    baseMatches = sortedMatches.filter(
-      (match) => match.phase === viewMode && match.home_team && match.away_team,
+    baseMatches = enrichedMatches.filter(
+      (match) =>
+        match.phase === viewMode &&
+        !isKnockoutPlaceholder(match.home_team) &&
+        !isKnockoutPlaceholder(match.away_team),
     );
   } else {
-    baseMatches = sortedMatches.filter(
+    baseMatches = enrichedMatches.filter(
       (match) => normalizeGroup(match.group_label) === selectedGroup,
     );
   }
@@ -336,7 +395,8 @@ export function PredictionPanel() {
   const isError = matchesQuery.isError || predictionsQuery.isError;
 
   const noMatchesInRange = isByDay && baseMatches.length === 0;
-  const isExactlyToday = effectiveStart === todayStr && effectiveEnd === todayStr;
+  const isExactlyToday =
+    effectiveStart === todayStr && effectiveEnd === todayStr;
   const isRange = effectiveStart !== effectiveEnd;
   const filterHides = baseMatches.length > 0 && visibleMatches.length === 0;
 
@@ -355,7 +415,9 @@ export function PredictionPanel() {
   }
 
   const totalPages =
-    isByDay || isKnockoutPhase ? Math.ceil(visibleMatches.length / PAGE_SIZE) : 1;
+    isByDay || isKnockoutPhase
+      ? Math.ceil(visibleMatches.length / PAGE_SIZE)
+      : 1;
   const pageMatches =
     isByDay || isKnockoutPhase
       ? visibleMatches.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -397,7 +459,8 @@ export function PredictionPanel() {
                 prediction={prediction}
                 draft={draft}
                 isPending={
-                  mutation.isPending && mutation.variables?.match.id === match.id
+                  mutation.isPending &&
+                  mutation.variables?.match.id === match.id
                 }
                 serverOffsetMs={serverOffsetMs}
                 onDraftChange={(value) => updateDraft(match.id, value)}
@@ -642,7 +705,9 @@ function PredictionMatchCard({
   // Client-side kickoff guard: lock predictions the moment the countdown
   // reaches zero, before the sync worker updates the DB status. This closes
   // the gap between kickoff time and the first PollAndApply cycle.
-  const kickoffMs = match.kickoff_at ? new Date(match.kickoff_at).getTime() : null;
+  const kickoffMs = match.kickoff_at
+    ? new Date(match.kickoff_at).getTime()
+    : null;
   const isKickoffPassed = kickoffMs !== null && virtualNow >= kickoffMs;
 
   // Visible to the user as an amber "Iniciando..." badge while the worker
@@ -656,7 +721,8 @@ function PredictionMatchCard({
   let articleClass = "border-white/10 bg-white/[0.025]";
   if (isFinished) articleClass = "border-red-500/30 bg-red-500/[0.04]";
   else if (isLive) articleClass = "border-green-500/30 bg-green-500/[0.04]";
-  else if (isPendingSync) articleClass = "border-amber-500/30 bg-amber-500/[0.04]";
+  else if (isPendingSync)
+    articleClass = "border-amber-500/30 bg-amber-500/[0.04]";
 
   let statusBadge: ReactNode;
   if (isLive) {
@@ -816,8 +882,8 @@ function fmtDate(y: number, m: number, d: number): string {
 
 function fmtTriggerDate(dateStr: string, locale: Locale): string {
   const [y, m, d] = dateStr.split("-");
-  if (locale === "es") return `${d}/${m}/${y}`;   // dd/mm/yyyy
-  return `${m}/${d}/${y}`;                          // MM/DD/YYYY (US)
+  if (locale === "es") return `${d}/${m}/${y}`; // dd/mm/yyyy
+  return `${m}/${d}/${y}`; // MM/DD/YYYY (US)
 }
 
 function getDayClass(
@@ -864,7 +930,10 @@ function MatchCalendar({
   useEffect(() => {
     if (!isOpen) return;
     function onMouseDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     }
@@ -902,20 +971,28 @@ function MatchCalendar({
   const canGoPrev = viewMonth > todayMonth;
 
   // Format month name and year separately to avoid locale connectors (e.g. "de")
-  const monthName = new Intl.DateTimeFormat(locale === "es" ? "es-GT" : "en-GB", {
-    month: "long",
-  }).format(firstDayOfMonth);
+  const monthName = new Intl.DateTimeFormat(
+    locale === "es" ? "es-GT" : "en-GB",
+    {
+      month: "long",
+    },
+  ).format(firstDayOfMonth);
   const monthLabel = `${monthName} ${year}`;
 
   const dayHeaders = t("predictions.calendarDayHdrs").split(",");
 
-  type CalendarCell = { blank: true; key: string } | { blank: false; dateStr: string };
+  type CalendarCell =
+    | { blank: true; key: string }
+    | { blank: false; dateStr: string };
   const cells: CalendarCell[] = [];
-  for (let i = 0; i < startOffset; i++) cells.push({ blank: true, key: `${viewMonth}-f${i}` });
-  for (let d = 1; d <= daysInMonth; d++) cells.push({ blank: false, dateStr: fmtDate(year, month, d) });
+  for (let i = 0; i < startOffset; i++)
+    cells.push({ blank: true, key: `${viewMonth}-f${i}` });
+  for (let d = 1; d <= daysInMonth; d++)
+    cells.push({ blank: false, dateStr: fmtDate(year, month, d) });
 
   const isRangeMode = selectedStart !== selectedEnd;
-  const isSelectionToday = selectedStart === todayStr && selectedEnd === todayStr;
+  const isSelectionToday =
+    selectedStart === todayStr && selectedEnd === todayStr;
 
   const triggerLabel =
     selectedStart === selectedEnd
@@ -940,7 +1017,9 @@ function MatchCalendar({
           )}
         >
           <Calendar className="h-4 w-4 shrink-0 text-gold-300" />
-          <span className="flex-1 text-center text-sm font-medium tabular-nums">{triggerLabel}</span>
+          <span className="flex-1 text-center text-sm font-medium tabular-nums">
+            {triggerLabel}
+          </span>
           <ChevronDown
             className={cn(
               "h-4 w-4 shrink-0 text-text-muted transition-transform duration-200",
@@ -952,109 +1031,115 @@ function MatchCalendar({
         {/* Floating dropdown — centred under the trigger */}
         {isOpen && (
           <div className="absolute left-1/2 top-full z-50 mt-1 w-72 -translate-x-1/2 rounded-2xl border border-white/10 bg-[#07111F] p-3 shadow-xl shadow-black/40">
-          {/* Month navigation */}
-          <div className="mb-3 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => shiftMonth(-1)}
-              disabled={!canGoPrev}
-              aria-label={t("predictions.calendarPrevMonth")}
-              className={cn(
-                "rounded p-1.5 transition-colors",
-                canGoPrev
-                  ? "text-text-secondary hover:bg-white/10 hover:text-white"
-                  : "cursor-not-allowed text-text-muted opacity-30",
-              )}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="text-sm font-semibold capitalize text-white">
-              {monthLabel}
-            </span>
-            <button
-              type="button"
-              onClick={() => shiftMonth(1)}
-              aria-label={t("predictions.calendarNextMonth")}
-              className="rounded p-1.5 text-text-secondary transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Day-of-week headers */}
-          <div className="mb-1 grid grid-cols-7 text-center">
-            {dayHeaders.map((d) => (
-              <span
-                key={d}
-                className="py-1 text-[10px] font-medium uppercase tracking-wide text-text-muted"
-              >
-                {d}
-              </span>
-            ))}
-          </div>
-
-          {/* Day grid */}
-          <div className="grid grid-cols-7 gap-y-0.5">
-            {cells.map((cell) => {
-              if (cell.blank) return <span key={cell.key} />;
-              const { dateStr } = cell;
-              const isPast = dateStr < todayStr;
-              const isToday = dateStr === todayStr;
-              const isSelected = dateStr === selectedStart || dateStr === selectedEnd;
-              const isInRange =
-                isRangeMode && dateStr > selectedStart && dateStr < selectedEnd;
-              const hasMatch = matchDates.has(dateStr);
-              const day = Number(dateStr.slice(-2));
-              return (
-                <div key={dateStr} className="relative flex flex-col items-center">
-                  <button
-                    type="button"
-                    onClick={() => handleDayClick(dateStr)}
-                    disabled={isPast}
-                    aria-label={dateStr}
-                    aria-pressed={isSelected || isInRange}
-                    className={cn(
-                      "h-8 w-8 rounded text-xs font-medium transition-colors",
-                      getDayClass(isPast, isSelected, isInRange, isToday),
-                    )}
-                  >
-                    {day}
-                  </button>
-                  {hasMatch && (
-                    <span
-                      className={cn(
-                        "mt-0.5 h-1 w-1 rounded-full",
-                        isSelected ? "bg-blue-950" : "bg-gold-400/70",
-                      )}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Footer: "Partidos de hoy" first, range hint below */}
-          <div className="mt-3 flex flex-col items-center gap-1">
-            {!isSelectionToday && (
+            {/* Month navigation */}
+            <div className="mb-3 flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => {
-                  setPendingStart(null);
-                  setViewMonth(todayMonth);
-                  onRangeChange(todayStr, todayStr);
-                }}
-                className="text-[10px] text-text-muted underline underline-offset-2 hover:text-text-secondary"
+                onClick={() => shiftMonth(-1)}
+                disabled={!canGoPrev}
+                aria-label={t("predictions.calendarPrevMonth")}
+                className={cn(
+                  "rounded p-1.5 transition-colors",
+                  canGoPrev
+                    ? "text-text-secondary hover:bg-white/10 hover:text-white"
+                    : "cursor-not-allowed text-text-muted opacity-30",
+                )}
               >
-                {t("predictions.calendarGoToday")}
+                <ChevronLeft className="h-4 w-4" />
               </button>
-            )}
-            {pendingStart && (
-              <p className="text-[10px] text-gold-300">
-                {t("predictions.calendarRangeHint")}
-              </p>
-            )}
+              <span className="text-sm font-semibold capitalize text-white">
+                {monthLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => shiftMonth(1)}
+                aria-label={t("predictions.calendarNextMonth")}
+                className="rounded p-1.5 text-text-secondary transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Day-of-week headers */}
+            <div className="mb-1 grid grid-cols-7 text-center">
+              {dayHeaders.map((d) => (
+                <span
+                  key={d}
+                  className="py-1 text-[10px] font-medium uppercase tracking-wide text-text-muted"
+                >
+                  {d}
+                </span>
+              ))}
+            </div>
+
+            {/* Day grid */}
+            <div className="grid grid-cols-7 gap-y-0.5">
+              {cells.map((cell) => {
+                if (cell.blank) return <span key={cell.key} />;
+                const { dateStr } = cell;
+                const isPast = dateStr < todayStr;
+                const isToday = dateStr === todayStr;
+                const isSelected =
+                  dateStr === selectedStart || dateStr === selectedEnd;
+                const isInRange =
+                  isRangeMode &&
+                  dateStr > selectedStart &&
+                  dateStr < selectedEnd;
+                const hasMatch = matchDates.has(dateStr);
+                const day = Number(dateStr.slice(-2));
+                return (
+                  <div
+                    key={dateStr}
+                    className="relative flex flex-col items-center"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleDayClick(dateStr)}
+                      disabled={isPast}
+                      aria-label={dateStr}
+                      aria-pressed={isSelected || isInRange}
+                      className={cn(
+                        "h-8 w-8 rounded text-xs font-medium transition-colors",
+                        getDayClass(isPast, isSelected, isInRange, isToday),
+                      )}
+                    >
+                      {day}
+                    </button>
+                    {hasMatch && (
+                      <span
+                        className={cn(
+                          "mt-0.5 h-1 w-1 rounded-full",
+                          isSelected ? "bg-blue-950" : "bg-gold-400/70",
+                        )}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer: "Partidos de hoy" first, range hint below */}
+            <div className="mt-3 flex flex-col items-center gap-1">
+              {!isSelectionToday && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingStart(null);
+                    setViewMonth(todayMonth);
+                    onRangeChange(todayStr, todayStr);
+                  }}
+                  className="text-[10px] text-text-muted underline underline-offset-2 hover:text-text-secondary"
+                >
+                  {t("predictions.calendarGoToday")}
+                </button>
+              )}
+              {pendingStart && (
+                <p className="text-[10px] text-gold-300">
+                  {t("predictions.calendarRangeHint")}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
         )}
       </div>
     </div>

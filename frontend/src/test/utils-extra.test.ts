@@ -8,7 +8,7 @@ import {
   initials,
   cn,
 } from "@/lib/utils";
-import { isPhaseVisible, visibleKnockoutPhases } from "@/lib/feature-flags";
+import { isKnockoutPlaceholder, isPhaseVisible, visibleKnockoutPhases } from "@/lib/feature-flags";
 
 describe("cn (class name merger)", () => {
   it("merges class names", () => {
@@ -164,6 +164,44 @@ describe("isPhaseVisible", () => {
   });
 });
 
+describe("isKnockoutPlaceholder", () => {
+  it("returns true for null/undefined/empty", () => {
+    expect(isKnockoutPlaceholder(null)).toBe(true);
+    expect(isKnockoutPlaceholder(undefined)).toBe(true);
+    expect(isKnockoutPlaceholder("")).toBe(true);
+  });
+
+  it("detects group-position codes (1A, 2B, 3ABCDF)", () => {
+    expect(isKnockoutPlaceholder("1A")).toBe(true);
+    expect(isKnockoutPlaceholder("2B")).toBe(true);
+    expect(isKnockoutPlaceholder("3ABCDF")).toBe(true);
+    expect(isKnockoutPlaceholder("1L")).toBe(true);
+  });
+
+  it("detects match-winner codes (W73, W101)", () => {
+    expect(isKnockoutPlaceholder("W73")).toBe(true);
+    expect(isKnockoutPlaceholder("W101")).toBe(true);
+  });
+
+  it("detects match-loser codes (L101, L102)", () => {
+    expect(isKnockoutPlaceholder("L101")).toBe(true);
+    expect(isKnockoutPlaceholder("L102")).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isKnockoutPlaceholder("w74")).toBe(true);
+    expect(isKnockoutPlaceholder("l101")).toBe(true);
+    expect(isKnockoutPlaceholder("1a")).toBe(true);
+  });
+
+  it("returns false for real team names", () => {
+    expect(isKnockoutPlaceholder("Argentina")).toBe(false);
+    expect(isKnockoutPlaceholder("México")).toBe(false);
+    expect(isKnockoutPlaceholder("Brazil")).toBe(false);
+    expect(isKnockoutPlaceholder("United States")).toBe(false);
+  });
+});
+
 describe("visibleKnockoutPhases", () => {
   it("returns empty array when given no matches", () => {
     expect(visibleKnockoutPhases([])).toEqual([]);
@@ -180,6 +218,24 @@ describe("visibleKnockoutPhases", () => {
       { phase: "final" },
     ];
     expect(visibleKnockoutPhases(matches)).toEqual([]);
+  });
+
+  it("returns empty array when all teams are bracket placeholder codes", () => {
+    const matches = [
+      { phase: "round_of_32", home_team: "2A", away_team: "2B" },
+      { phase: "round_of_16", home_team: "W73", away_team: "W75" },
+      { phase: "quarter_final", home_team: "1E", away_team: "3ABCDF" },
+    ];
+    expect(visibleKnockoutPhases(matches)).toEqual([]);
+  });
+
+  it("shows a phase only when at least one match has both teams confirmed (not placeholders)", () => {
+    const matches = [
+      { phase: "round_of_32", home_team: "2A", away_team: "2B" },
+      { phase: "round_of_32", home_team: "México", away_team: "Argentina" },
+      { phase: "round_of_16", home_team: "W73", away_team: "W75" },
+    ];
+    expect(visibleKnockoutPhases(matches)).toEqual(["round_of_32"]);
   });
 
   it("returns phases in Final-first canonical order regardless of input order", () => {

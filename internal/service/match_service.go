@@ -218,12 +218,15 @@ func (s *matchService) applyScoreAndPublish(
 		Type:       events.EventMatchFinished,
 		OccurredAt: time.Now().UTC(),
 		Payload: events.MatchFinished{
-			MatchID:   m.ID,
-			HomeTeam:  m.HomeTeam,
-			AwayTeam:  m.AwayTeam,
-			HomeScore: homeScore,
-			AwayScore: awayScore,
-			WinMethod: winMethodString(winMethod),
+			MatchID:    m.ID,
+			HomeTeam:   m.HomeTeam,
+			AwayTeam:   m.AwayTeam,
+			HomeScore:  homeScore,
+			AwayScore:  awayScore,
+			WinMethod:  winMethodString(winMethod),
+			Phase:      string(m.Phase),
+			GroupLabel: derefString(m.GroupLabel),
+			MatchCode:  derefString(m.MatchCode),
 		},
 	}); err != nil {
 		s.log.Error("failed to publish MatchFinished event"+suffix+"; falling back to synchronous scoring",
@@ -267,6 +270,13 @@ func winMethodString(wm *domain.WinMethod) string {
 		return ""
 	}
 	return string(*wm)
+}
+
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 var _ MatchService = (*matchService)(nil)
