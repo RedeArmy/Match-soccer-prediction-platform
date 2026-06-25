@@ -46,6 +46,7 @@ import type {
   AdminUserResponse,
   AdminUserProfileResponse,
   LivePredictionsResponse,
+  TournamentSlotResponse,
 } from "./api-types";
 
 // ── Base fetch ────────────────────────────────────────────────────────────────
@@ -272,6 +273,38 @@ class APIClient {
 
   getMatches(token: string): Promise<MatchResponse[]> {
     return this.request("/api/v1/matches", {}, token);
+  }
+
+  // ── Tournament slots ──────────────────────────────────────────────────────
+
+  getSlots(token?: string | null): Promise<TournamentSlotResponse[]> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch("/api/v1/tournament/slots", { headers }).then((res) => {
+      if (!res.ok) throw new Error("Failed to fetch slots");
+      return res.json();
+    });
+  }
+
+  adminConfirmSlot(token: string, slotId: number, team: string): Promise<TournamentSlotResponse> {
+    return this.request(
+      `/api/v1/tournament/slots/${slotId}`,
+      { method: "PATCH", body: JSON.stringify({ team }) },
+      token,
+    );
+  }
+
+  adminUpdateMatchSlots(
+    token: string,
+    matchId: number,
+    homeSlotId: number | null,
+    awaySlotId: number | null,
+  ): Promise<MatchResponse> {
+    return this.request(
+      `/api/v1/matches/${matchId}/slots`,
+      { method: "PATCH", body: JSON.stringify({ home_slot_id: homeSlotId, away_slot_id: awaySlotId }) },
+      token,
+    );
   }
 
   // ── Predictions ───────────────────────────────────────────────────────────

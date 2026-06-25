@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import {
   RefreshCw,
   ChevronLeft,
@@ -51,7 +52,7 @@ export function AdminPageHeader({
 
 interface AdminModalOverlayProps {
   readonly onClose: () => void;
-  readonly children: React.ReactNode;
+  readonly children: ReactNode;
   readonly scrollable?: boolean;
 }
 
@@ -132,7 +133,7 @@ export function ModalCancelButton({
 export function InfoRow({
   label,
   value,
-}: Readonly<{ label: string; value: React.ReactNode }>) {
+}: Readonly<{ label: string; value: ReactNode }>) {
   return (
     <div className="flex justify-between items-start gap-4 py-1.5 border-b border-white/5 last:border-0">
       <span className="text-white/50 text-sm shrink-0">{label}</span>
@@ -283,7 +284,7 @@ interface AdminContentStateProps {
   readonly emptyTitle: string;
   readonly emptyMessage: string;
   readonly errorMessage: string;
-  readonly children: React.ReactNode;
+  readonly children: ReactNode;
 }
 
 export function AdminContentState({

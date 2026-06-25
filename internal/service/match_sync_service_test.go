@@ -88,6 +88,9 @@ func (r *stubSyncMatchRepo) UpdateSyncState(_ context.Context, _ int) error {
 	r.updateSyncAt++
 	return nil
 }
+func (r *stubSyncMatchRepo) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
+	return nil, nil
+}
 
 type stubSyncMatchSvc struct {
 	started   int
@@ -120,6 +123,9 @@ func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *
 }
 func (s *stubSyncMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
 	return &domain.Match{Status: domain.MatchStatusCancelled}, nil
+}
+func (s *stubSyncMatchSvc) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
+	return nil, nil
 }
 
 type stubProvider struct {

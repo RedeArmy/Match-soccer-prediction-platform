@@ -3,6 +3,7 @@
 import { GroupCodeLookup } from "@/components/public/GroupCodeLookup";
 import { LiveMatchFeed } from "@/components/public/LiveMatchFeed";
 import { GroupStandingsSection } from "@/components/public/GroupStandingsSection";
+import { KnockoutBracket } from "@/components/public/KnockoutBracket";
 import { useI18n } from "@/lib/i18n";
 
 export default function TournamentsPage() {
@@ -37,6 +38,11 @@ export default function TournamentsPage() {
       </div>
 
       <GroupStandingsSection />
+      <div className="px-4 pb-8">
+        <div className="mx-auto max-w-7xl">
+          <KnockoutBracket />
+        </div>
+      </div>
     </div>
   );
 }

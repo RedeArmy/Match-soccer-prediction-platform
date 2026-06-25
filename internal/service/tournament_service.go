@@ -28,7 +28,7 @@ type TournamentService interface {
 	GetGroupStanding(ctx context.Context, group string) ([]*domain.GroupStanding, error)
 	// CreateSlot creates a new named bracket position. label must be unique.
 	// Returns Validation when label is empty.
-	CreateSlot(ctx context.Context, label string) (*domain.TournamentSlot, error)
+	CreateSlot(ctx context.Context, label, description string) (*domain.TournamentSlot, error)
 	// ConfirmSlot sets the advancing team for the given slot.
 	// Returns Validation when team is empty; NotFound when the slot does not exist.
 	ConfirmSlot(ctx context.Context, slotID, adminID int, team string) (*domain.TournamentSlot, error)
@@ -98,11 +98,11 @@ func (s *tournamentService) GetGroupStanding(ctx context.Context, group string) 
 // CreateSlot creates a new bracket position slot. Only the system administrator
 // may call this; the admin gate is enforced at the HTTP layer.
 // Returns Validation when label is empty.
-func (s *tournamentService) CreateSlot(ctx context.Context, label string) (*domain.TournamentSlot, error) {
+func (s *tournamentService) CreateSlot(ctx context.Context, label, description string) (*domain.TournamentSlot, error) {
 	if label == "" {
 		return nil, apperrors.Validation("slot label is required")
 	}
-	return s.tournamentRepo.CreateSlot(ctx, label)
+	return s.tournamentRepo.CreateSlot(ctx, label, description)
 }
 
 // ConfirmSlot records the advancing team for a bracket slot and emits an

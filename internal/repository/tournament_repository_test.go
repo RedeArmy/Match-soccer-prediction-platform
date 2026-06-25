@@ -15,7 +15,7 @@ func TestTournamentRepository_CreateSlot_ReturnsSlot(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresTournamentRepository(testDB)
 
-	slot, err := repo.CreateSlot(context.Background(), "winner_group_a")
+	slot, err := repo.CreateSlot(context.Background(), "winner_group_a", "")
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -34,11 +34,11 @@ func TestTournamentRepository_CreateSlot_DuplicateLabel_ReturnsConflict(t *testi
 	cleanTables(t)
 	repo := repository.NewPostgresTournamentRepository(testDB)
 
-	if _, err := repo.CreateSlot(context.Background(), "winner_group_b"); err != nil {
+	if _, err := repo.CreateSlot(context.Background(), "winner_group_b", ""); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
 
-	_, err := repo.CreateSlot(context.Background(), "winner_group_b")
+	_, err := repo.CreateSlot(context.Background(), "winner_group_b", "")
 	if !errors.Is(err, apperrors.ErrConflict) {
 		t.Errorf("expected ErrConflict for duplicate label, got %v", err)
 	}
@@ -48,7 +48,7 @@ func TestTournamentRepository_GetSlot_Found(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresTournamentRepository(testDB)
 
-	created, err := repo.CreateSlot(context.Background(), "runner_up_group_a")
+	created, err := repo.CreateSlot(context.Background(), "runner_up_group_a", "")
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -82,10 +82,10 @@ func TestTournamentRepository_ListSlots_ReturnsList(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresTournamentRepository(testDB)
 
-	if _, err := repo.CreateSlot(context.Background(), "winner_group_b"); err != nil {
+	if _, err := repo.CreateSlot(context.Background(), "winner_group_b", ""); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
-	if _, err := repo.CreateSlot(context.Background(), "runner_up_group_b"); err != nil {
+	if _, err := repo.CreateSlot(context.Background(), "runner_up_group_b", ""); err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}
 
@@ -116,7 +116,7 @@ func TestTournamentRepository_ConfirmSlot_SetsTeam(t *testing.T) {
 	u := seedUser(t)
 	repo := repository.NewPostgresTournamentRepository(testDB)
 
-	created, err := repo.CreateSlot(context.Background(), "winner_group_c")
+	created, err := repo.CreateSlot(context.Background(), "winner_group_c", "")
 	if err != nil {
 		t.Fatalf(fmtCreateErr, err)
 	}

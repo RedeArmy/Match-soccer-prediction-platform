@@ -146,6 +146,9 @@ func (r *stubWorkerMatchRepo) FindByTeams(_ context.Context, _, _ string) (*doma
 func (r *stubWorkerMatchRepo) UpdateKickoff(_ context.Context, _ int, _ time.Time) error {
 	return nil
 }
+func (r *stubWorkerMatchRepo) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
+	return nil, nil
+}
 
 var _ repository.MatchRepository = (*stubWorkerMatchRepo)(nil)
 

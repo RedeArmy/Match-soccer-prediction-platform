@@ -27,6 +27,7 @@ func newMatchRouter(svc *stubMatchSvc) http.Handler {
 	r.Post("/{id}/start", h.StartMatch)
 	r.Post("/{id}/cancel", h.CancelMatch)
 	r.Post("/{id}/correct-result", h.CorrectMatchResult)
+	r.Patch("/{id}/slots", h.UpdateSlots)
 	r.Get("/public/group-stage", h.ListPublicGroupStageMatches)
 	return r
 }
@@ -343,5 +344,38 @@ func TestCorrectMatchResult_WithWinMethod_Returns200(t *testing.T) {
 		`{"home_score":1,"away_score":0,"win_method":"extra_time"}`)
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+// ── UpdateSlots ───────────────────────────────────────────────────────────────
+
+func TestUpdateSlots_Success_Returns200(t *testing.T) {
+	home, away := 1, 2
+	svc := &stubMatchSvc{match: &domain.Match{ID: 1, HomeSlotID: &home, AwaySlotID: &away}}
+	w := do(newMatchRouter(svc), http.MethodPatch, "/1/slots", `{"home_slot_id":1,"away_slot_id":2}`)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+func TestUpdateSlots_InvalidID_Returns422(t *testing.T) {
+	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPatch, "/abc/slots", `{"home_slot_id":1}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestUpdateSlots_InvalidJSON_Returns422(t *testing.T) {
+	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPatch, "/1/slots", `not json`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestUpdateSlots_ServiceError_Returns422(t *testing.T) {
+	svc := &stubMatchSvc{err: apperrors.Validation("slot not found")}
+	w := do(newMatchRouter(svc), http.MethodPatch, "/1/slots", `{"home_slot_id":99}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
 	}
 }

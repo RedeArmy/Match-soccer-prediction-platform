@@ -21,11 +21,11 @@ func NewPostgresTournamentRepository(db *pgxpool.Pool) *PostgresTournamentReposi
 	return &PostgresTournamentRepository{db: db}
 }
 
-const slotColumns = "id, label, team, confirmed_at, confirmed_by_user_id, created_at, updated_at"
+const slotColumns = "id, label, description, team, confirmed_at, confirmed_by_user_id, created_at, updated_at"
 
 func scanSlot(row pgx.Row) (*domain.TournamentSlot, error) {
 	s := &domain.TournamentSlot{}
-	err := row.Scan(&s.ID, &s.Label, &s.Team, &s.ConfirmedAt, &s.ConfirmedByUserID, &s.CreatedAt, &s.UpdatedAt)
+	err := row.Scan(&s.ID, &s.Label, &s.Description, &s.Team, &s.ConfirmedAt, &s.ConfirmedByUserID, &s.CreatedAt, &s.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -36,10 +36,10 @@ func scanSlot(row pgx.Row) (*domain.TournamentSlot, error) {
 }
 
 // CreateSlot inserts a new bracket position slot. Label must be unique.
-func (r *PostgresTournamentRepository) CreateSlot(ctx context.Context, label string) (*domain.TournamentSlot, error) {
+func (r *PostgresTournamentRepository) CreateSlot(ctx context.Context, label, description string) (*domain.TournamentSlot, error) {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO tournament_slots (label) VALUES ($1) RETURNING `+slotColumns,
-		label,
+		`INSERT INTO tournament_slots (label, description) VALUES ($1, $2) RETURNING `+slotColumns,
+		label, description,
 	)
 	slot, err := scanSlot(row)
 	if err != nil {
@@ -72,7 +72,7 @@ func (r *PostgresTournamentRepository) ListSlots(ctx context.Context) ([]*domain
 	var slots []*domain.TournamentSlot
 	for rows.Next() {
 		s := &domain.TournamentSlot{}
-		if err := rows.Scan(&s.ID, &s.Label, &s.Team, &s.ConfirmedAt, &s.ConfirmedByUserID, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Label, &s.Description, &s.Team, &s.ConfirmedAt, &s.ConfirmedByUserID, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		slots = append(slots, s)
@@ -84,9 +84,16 @@ func (r *PostgresTournamentRepository) ListSlots(ctx context.Context) ([]*domain
 }
 
 // ConfirmSlot sets the team for a slot and records who confirmed it.
-// Returns NotFound when the slot does not exist.
+// Propagates the team name to any matches that reference this slot via
+// home_slot_id or away_slot_id. Returns NotFound when the slot does not exist.
 func (r *PostgresTournamentRepository) ConfirmSlot(ctx context.Context, id, confirmedByUserID int, team string) (*domain.TournamentSlot, error) {
-	row := r.db.QueryRow(ctx,
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	row := tx.QueryRow(ctx,
 		`UPDATE tournament_slots
 		 SET team=$1, confirmed_at=NOW(), confirmed_by_user_id=$2, updated_at=NOW()
 		 WHERE id=$3
@@ -99,6 +106,23 @@ func (r *PostgresTournamentRepository) ConfirmSlot(ctx context.Context, id, conf
 	}
 	if slot == nil {
 		return nil, apperrors.NotFound("tournament slot not found")
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE matches SET home_team = $1, updated_at = NOW() WHERE home_slot_id = $2`,
+		team, id,
+	); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE matches SET away_team = $1, updated_at = NOW() WHERE away_slot_id = $2`,
+		team, id,
+	); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, apperrors.Internal(err)
 	}
 	return slot, nil
 }

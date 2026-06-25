@@ -7292,6 +7292,9 @@ const docTemplate = `{
                 "away_score": {
                     "type": "integer"
                 },
+                "away_slot_id": {
+                    "type": "integer"
+                },
                 "away_team": {
                     "type": "string"
                 },
@@ -7305,6 +7308,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "home_score": {
+                    "type": "integer"
+                },
+                "home_slot_id": {
                     "type": "integer"
                 },
                 "home_team": {
@@ -8133,11 +8139,17 @@ const docTemplate = `{
         "internal_api_handler.createMatchRequest": {
             "type": "object",
             "properties": {
+                "away_slot_id": {
+                    "type": "integer"
+                },
                 "away_team": {
                     "type": "string"
                 },
                 "group_label": {
                     "type": "string"
+                },
+                "home_slot_id": {
+                    "type": "integer"
                 },
                 "home_team": {
                     "type": "string"

@@ -141,6 +141,11 @@ type MatchRepository interface {
 	// UpdateKickoff sets kickoff_at on the match row to the given time. Used by
 	// the daily fixture sync to correct kickoff times sourced from API-Football.
 	UpdateKickoff(ctx context.Context, matchID int, kickoffAt time.Time) error
+
+	// UpdateSlots links a knockout match to its two bracket slots and, if either
+	// slot already has a confirmed team, propagates those names to HomeTeam/AwayTeam.
+	// Pass nil to clear a slot link.
+	UpdateSlots(ctx context.Context, matchID int, homeSlotID, awaySlotID *int) (*domain.Match, error)
 }
 
 // PredictionRepository defines the persistence operations for the Prediction
@@ -572,7 +577,7 @@ type QuinielaRoundEntryRepository interface {
 // the system administrator as teams advance through the tournament.
 type TournamentRepository interface {
 	// CreateSlot inserts a new named bracket slot. label must be unique.
-	CreateSlot(ctx context.Context, label string) (*domain.TournamentSlot, error)
+	CreateSlot(ctx context.Context, label, description string) (*domain.TournamentSlot, error)
 	// GetSlot returns a slot by ID. Returns nil, nil when not found.
 	GetSlot(ctx context.Context, id int) (*domain.TournamentSlot, error)
 	// ListSlots returns all slots ordered by id.

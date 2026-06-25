@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { type ReactNode, useState, useMemo } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,7 +14,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import type { MatchResponse, MatchStatus } from "@/lib/api-types";
+import type { MatchResponse, MatchStatus, TournamentSlotResponse } from "@/lib/api-types";
 import { cn, formatDateTime, formatRelative } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import {
@@ -26,7 +26,7 @@ import {
   ModalErrorLine,
 } from "@/components/admin/shared";
 
-type TabKey = "all" | "today" | MatchStatus;
+type TabKey = "all" | "today" | "bracket" | MatchStatus;
 
 const PAGE_SIZE = 15;
 
@@ -37,6 +37,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "in_progress", label: "En Curso" },
   { key: "finished", label: "Finalizados" },
   { key: "cancelled", label: "Cancelados" },
+  { key: "bracket", label: "Llave" },
 ];
 
 const PHASE_LABEL: Record<string, string> = {
@@ -335,6 +336,154 @@ function ResultModal({
   );
 }
 
+// ── Bracket tab ──────────────────────────────────────────────────────────────
+
+interface ConfirmSlotModalProps {
+  readonly slot: TournamentSlotResponse;
+  readonly isBusy: boolean;
+  readonly error: string;
+  readonly onConfirm: (team: string) => void;
+  readonly onClose: () => void;
+}
+
+function ConfirmSlotModal({ slot, isBusy, error, onConfirm, onClose }: ConfirmSlotModalProps) {
+  const [team, setTeam] = useState(slot.team ?? "");
+  return (
+    <>
+      <ModalHeader title="Corregir equipo en bracket" onClose={onClose} />
+      <div className="space-y-0.5">
+        <p className="font-mono text-[10px] text-white/40">{slot.label}</p>
+        <p className="text-sm text-white/60">{slot.description}</p>
+        <p className="text-[11px] text-amber-400/70">Esta corrección sobreescribe el valor asignado automáticamente.</p>
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="slot-team" className="block text-xs font-medium text-white/50">
+          Nombre del equipo
+        </label>
+        <input
+          id="slot-team"
+          type="text"
+          value={team}
+          onChange={(e) => setTeam(e.target.value)}
+          placeholder="Ej. Argentina"
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+        />
+      </div>
+      <ModalErrorLine error={error} />
+      <div className="flex justify-end gap-3">
+        <ModalCancelButton onClose={onClose} disabled={isBusy} />
+        <button
+          onClick={() => { if (team.trim()) onConfirm(team.trim()); }}
+          disabled={isBusy || !team.trim()}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <CheckCircle className="h-4 w-4" />
+          {isBusy ? "Guardando..." : "Corregir"}
+        </button>
+      </div>
+    </>
+  );
+}
+
+interface BracketTabProps {
+  readonly getToken: () => Promise<string | null>;
+}
+
+function BracketTab({ getToken }: BracketTabProps) {
+  const qc = useQueryClient();
+  const [confirmSlot, setConfirmSlot] = useState<TournamentSlotResponse | null>(null);
+  const [slotError, setSlotError] = useState("");
+
+  const { data: slots = [], isLoading, error } = useQuery({
+    queryKey: ["admin", "slots"],
+    queryFn: async () => {
+      const token = await getToken();
+      return api.getSlots(token);
+    },
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: async ({ slotId, team }: { slotId: number; team: string }) => {
+      const token = await getToken();
+      return api.adminConfirmSlot(token!, slotId, team);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "slots"] });
+      void qc.invalidateQueries({ queryKey: ["tournament-slots"] });
+      setConfirmSlot(null);
+      setSlotError("");
+    },
+    onError: (e: unknown) => {
+      setSlotError(e instanceof Error ? e.message : "Error al confirmar slot");
+    },
+  });
+
+  if (isLoading) {
+    return <div className="py-8 text-center text-white/40 text-sm">Cargando slots…</div>;
+  }
+  if (error) {
+    return <div className="py-8 text-center text-red-400 text-sm">Error al cargar los slots.</div>;
+  }
+  if (!slots.length) {
+    return <div className="py-8 text-center text-white/40 text-sm">No hay slots de llave registrados.</div>;
+  }
+
+  return (
+    <>
+      <div className="overflow-x-auto rounded-xl border border-white/10">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/10 bg-white/5 text-white/50 text-left">
+              <th className="px-4 py-3 font-medium">Slot</th>
+              <th className="px-4 py-3 font-medium">Descripción</th>
+              <th className="px-4 py-3 font-medium">Equipo</th>
+              <th className="px-4 py-3 font-medium">Confirmado</th>
+              <th className="px-4 py-3 font-medium text-right">Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            {slots.map((slot) => (
+              <tr key={slot.id} className="border-b border-white/5 hover:bg-white/[0.03] transition-colors">
+                <td className="px-4 py-3 font-mono text-xs text-white/60">{slot.label}</td>
+                <td className="px-4 py-3 text-white/60 text-xs">{slot.description || "—"}</td>
+                <td className="px-4 py-3 text-white font-medium">{slot.team ?? <span className="text-white/30 italic">Sin equipo</span>}</td>
+                <td className="px-4 py-3 text-xs">
+                  {slot.confirmed_at ? (
+                    <span className="text-green-400">✓ {new Date(slot.confirmed_at).toLocaleDateString("sv")}</span>
+                  ) : (
+                    <span className="text-white/30">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    onClick={() => { setConfirmSlot(slot); setSlotError(""); }}
+                    className="flex items-center gap-1 ml-auto px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                    {slot.team ? "Corregir" : "Confirmar"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {confirmSlot && (
+        <AdminModalOverlay onClose={() => setConfirmSlot(null)}>
+          <ConfirmSlotModal
+            slot={confirmSlot}
+            isBusy={confirmMutation.isPending}
+            error={slotError}
+            onConfirm={(team) => confirmMutation.mutate({ slotId: confirmSlot.id, team })}
+            onClose={() => { setConfirmSlot(null); setSlotError(""); }}
+          />
+        </AdminModalOverlay>
+      )}
+    </>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 type ModalState =
@@ -606,7 +755,7 @@ export default function AdminMatchesPage() {
   const resultMode: "result" | "correct" =
     modal?.kind === "correct" ? "correct" : "result";
 
-  let modalContent: React.ReactNode = null;
+  let modalContent: ReactNode = null;
   if (modal?.kind === "start") {
     modalContent = (
       <StartModal
@@ -715,6 +864,9 @@ export default function AdminMatchesPage() {
       />
 
       {/* Content */}
+      {tab === "bracket" ? (
+        <BracketTab getToken={getToken} />
+      ) : (
       <AdminContentState
         isLoading={isLoading}
         error={error}
@@ -894,6 +1046,7 @@ export default function AdminMatchesPage() {
           )}
         </div>
       </AdminContentState>
+      )}
 
       {modal && (
         <AdminModalOverlay onClose={closeModal}>

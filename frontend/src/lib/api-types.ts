@@ -147,6 +147,8 @@ export interface MatchResponse {
   group_label: string | null;
   round_number: number | null;
   external_match_id?: number | null;
+  home_slot_id?: number | null;
+  away_slot_id?: number | null;
 }
 
 // ── Live predictions carousel ─────────────────────────────────────────────────
@@ -282,6 +284,17 @@ export interface SlotResponse {
   team: string | null;
   confirmed: boolean;
   confirmed_at: string | null;
+}
+
+export interface TournamentSlotResponse {
+  id: number;
+  label: string;
+  description: string;
+  team: string | null;
+  confirmed_at?: string;
+  confirmed_by_user_id?: number;
+  created_at: string;
+  updated_at: string;
 }
 
 // ── KYC ───────────────────────────────────────────────────────────────────────

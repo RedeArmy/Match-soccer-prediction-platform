@@ -167,6 +167,12 @@ func seedUser(t *testing.T) *domain.User {
 	if err := repo.Create(context.Background(), u); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
+	// The DB default timezone is 'America/Guatemala'; override to 'UTC' so
+	// tests that use time.Now().UTC() for date matching are timezone-agnostic.
+	if err := repo.UpdateTimezone(context.Background(), u.ID, "UTC"); err != nil {
+		t.Fatalf("seed user set timezone: %v", err)
+	}
+	u.Timezone = "UTC"
 	return u
 }
 
