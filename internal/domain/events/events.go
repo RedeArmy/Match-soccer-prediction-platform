@@ -89,10 +89,10 @@ type MatchFinished struct {
 	AwayTeam   string
 	HomeScore  int
 	AwayScore  int
-	WinMethod  string  // empty = not applicable (group stage); see domain.WinMethod constants
-	Phase      string  // domain.MatchPhase value, e.g. "group_stage", "round_of_32"
-	GroupLabel string  // non-empty only for group_stage matches
-	MatchCode  string  // FIFA match code, e.g. "M73"; empty when not set
+	WinMethod  string // empty = not applicable (group stage); see domain.WinMethod constants
+	Phase      string // domain.MatchPhase value, e.g. "group_stage", "round_of_32"
+	GroupLabel string // non-empty only for group_stage matches
+	MatchCode  string // FIFA match code, e.g. "M73"; empty when not set
 }
 
 // validWinMethods is the set of non-empty WinMethod values accepted in a
