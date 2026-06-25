@@ -112,6 +112,8 @@ type MatchRepository interface {
 	Update(ctx context.Context, match *domain.Match) error
 	List(ctx context.Context) ([]*domain.Match, error)
 	ListByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error)
+	// ListByGroupLabel returns all group-stage matches for the given group label.
+	ListByGroupLabel(ctx context.Context, groupLabel string) ([]*domain.Match, error)
 	ListByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
 
 	// LinkExternal associates a match with a provider fixture ID. Calling this
@@ -582,9 +584,16 @@ type TournamentRepository interface {
 	GetSlot(ctx context.Context, id int) (*domain.TournamentSlot, error)
 	// ListSlots returns all slots ordered by id.
 	ListSlots(ctx context.Context) ([]*domain.TournamentSlot, error)
-	// ConfirmSlot sets the advancing team for the given slot.
+	// ConfirmSlot sets the advancing team for the given slot and records who confirmed it.
 	// Returns NotFound when the slot does not exist.
 	ConfirmSlot(ctx context.Context, id, confirmedByUserID int, team string) (*domain.TournamentSlot, error)
+	// FindSlotByAutoSource returns the slot whose auto_source matches the given
+	// bracket placeholder code (e.g. "1A", "W73"). Returns nil, nil when not found.
+	FindSlotByAutoSource(ctx context.Context, autoSource string) (*domain.TournamentSlot, error)
+	// AutoConfirmSlot sets the advancing team on a slot without requiring an admin
+	// actor. Used for system-driven confirmation (group completion, match result).
+	// Returns NotFound when the slot does not exist.
+	AutoConfirmSlot(ctx context.Context, slotID int, team string) (*domain.TournamentSlot, error)
 }
 
 // SystemParamRepository manages runtime-configurable key-value settings.

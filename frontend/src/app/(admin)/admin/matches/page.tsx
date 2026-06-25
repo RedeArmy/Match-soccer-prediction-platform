@@ -14,7 +14,11 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import type { MatchResponse, MatchStatus, TournamentSlotResponse } from "@/lib/api-types";
+import type {
+  MatchResponse,
+  MatchStatus,
+  TournamentSlotResponse,
+} from "@/lib/api-types";
 import { cn, formatDateTime, formatRelative } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import {
@@ -346,7 +350,13 @@ interface ConfirmSlotModalProps {
   readonly onClose: () => void;
 }
 
-function ConfirmSlotModal({ slot, isBusy, error, onConfirm, onClose }: ConfirmSlotModalProps) {
+function ConfirmSlotModal({
+  slot,
+  isBusy,
+  error,
+  onConfirm,
+  onClose,
+}: ConfirmSlotModalProps) {
   const [team, setTeam] = useState(slot.team ?? "");
   return (
     <>
@@ -354,10 +364,15 @@ function ConfirmSlotModal({ slot, isBusy, error, onConfirm, onClose }: ConfirmSl
       <div className="space-y-0.5">
         <p className="font-mono text-[10px] text-white/40">{slot.label}</p>
         <p className="text-sm text-white/60">{slot.description}</p>
-        <p className="text-[11px] text-amber-400/70">Esta corrección sobreescribe el valor asignado automáticamente.</p>
+        <p className="text-[11px] text-amber-400/70">
+          Esta corrección sobreescribe el valor asignado automáticamente.
+        </p>
       </div>
       <div className="space-y-1.5">
-        <label htmlFor="slot-team" className="block text-xs font-medium text-white/50">
+        <label
+          htmlFor="slot-team"
+          className="block text-xs font-medium text-white/50"
+        >
           Nombre del equipo
         </label>
         <input
@@ -373,7 +388,9 @@ function ConfirmSlotModal({ slot, isBusy, error, onConfirm, onClose }: ConfirmSl
       <div className="flex justify-end gap-3">
         <ModalCancelButton onClose={onClose} disabled={isBusy} />
         <button
-          onClick={() => { if (team.trim()) onConfirm(team.trim()); }}
+          onClick={() => {
+            if (team.trim()) onConfirm(team.trim());
+          }}
           disabled={isBusy || !team.trim()}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -391,15 +408,22 @@ interface BracketTabProps {
 
 function BracketTab({ getToken }: BracketTabProps) {
   const qc = useQueryClient();
-  const [confirmSlot, setConfirmSlot] = useState<TournamentSlotResponse | null>(null);
+  const [confirmSlot, setConfirmSlot] = useState<TournamentSlotResponse | null>(
+    null,
+  );
   const [slotError, setSlotError] = useState("");
 
-  const { data: slots = [], isLoading, error } = useQuery({
+  const {
+    data: slots = [],
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ["admin", "slots"],
     queryFn: async () => {
       const token = await getToken();
       return api.getSlots(token);
     },
+    refetchInterval: 30_000,
   });
 
   const confirmMutation = useMutation({
@@ -419,13 +443,25 @@ function BracketTab({ getToken }: BracketTabProps) {
   });
 
   if (isLoading) {
-    return <div className="py-8 text-center text-white/40 text-sm">Cargando slots…</div>;
+    return (
+      <div className="py-8 text-center text-white/40 text-sm">
+        Cargando slots…
+      </div>
+    );
   }
   if (error) {
-    return <div className="py-8 text-center text-red-400 text-sm">Error al cargar los slots.</div>;
+    return (
+      <div className="py-8 text-center text-red-400 text-sm">
+        Error al cargar los slots.
+      </div>
+    );
   }
   if (!slots.length) {
-    return <div className="py-8 text-center text-white/40 text-sm">No hay slots de llave registrados.</div>;
+    return (
+      <div className="py-8 text-center text-white/40 text-sm">
+        No hay slots de llave registrados.
+      </div>
+    );
   }
 
   return (
@@ -443,20 +479,36 @@ function BracketTab({ getToken }: BracketTabProps) {
           </thead>
           <tbody>
             {slots.map((slot) => (
-              <tr key={slot.id} className="border-b border-white/5 hover:bg-white/[0.03] transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-white/60">{slot.label}</td>
-                <td className="px-4 py-3 text-white/60 text-xs">{slot.description || "—"}</td>
-                <td className="px-4 py-3 text-white font-medium">{slot.team ?? <span className="text-white/30 italic">Sin equipo</span>}</td>
+              <tr
+                key={slot.id}
+                className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
+              >
+                <td className="px-4 py-3 font-mono text-xs text-white/60">
+                  {slot.label}
+                </td>
+                <td className="px-4 py-3 text-white/60 text-xs">
+                  {slot.description || "—"}
+                </td>
+                <td className="px-4 py-3 text-white font-medium">
+                  {slot.team ?? (
+                    <span className="text-white/30 italic">Sin equipo</span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-xs">
                   {slot.confirmed_at ? (
-                    <span className="text-green-400">✓ {new Date(slot.confirmed_at).toLocaleDateString("sv")}</span>
+                    <span className="text-green-400">
+                      ✓ {new Date(slot.confirmed_at).toLocaleDateString("sv")}
+                    </span>
                   ) : (
                     <span className="text-white/30">—</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button
-                    onClick={() => { setConfirmSlot(slot); setSlotError(""); }}
+                    onClick={() => {
+                      setConfirmSlot(slot);
+                      setSlotError("");
+                    }}
                     className="flex items-center gap-1 ml-auto px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
                   >
                     <Edit3 className="h-3.5 w-3.5" />
@@ -475,8 +527,13 @@ function BracketTab({ getToken }: BracketTabProps) {
             slot={confirmSlot}
             isBusy={confirmMutation.isPending}
             error={slotError}
-            onConfirm={(team) => confirmMutation.mutate({ slotId: confirmSlot.id, team })}
-            onClose={() => { setConfirmSlot(null); setSlotError(""); }}
+            onConfirm={(team) =>
+              confirmMutation.mutate({ slotId: confirmSlot.id, team })
+            }
+            onClose={() => {
+              setConfirmSlot(null);
+              setSlotError("");
+            }}
           />
         </AdminModalOverlay>
       )}
@@ -577,6 +634,16 @@ export default function AdminMatchesPage() {
   const invalidate = () =>
     qc.invalidateQueries({ queryKey: ["admin", "matches"] });
 
+  // After a result is confirmed, the worker auto-confirms bracket slots
+  // asynchronously. Delay-invalidate slot queries to pick up the update once
+  // the worker has had time to process the MatchFinished event (~4 s).
+  const invalidateSlots = () => {
+    setTimeout(() => {
+      void qc.invalidateQueries({ queryKey: ["admin", "slots"] });
+      void qc.invalidateQueries({ queryKey: ["tournament-slots"] });
+    }, 4_000);
+  };
+
   function openStart(match: MatchResponse) {
     setModal({ kind: "start", match });
     setModalError("");
@@ -641,6 +708,7 @@ export default function AdminMatchesPage() {
     },
     onSuccess: () => {
       invalidate();
+      invalidateSlots();
       closeModal();
     },
     onError: (e: unknown) => {
@@ -663,6 +731,7 @@ export default function AdminMatchesPage() {
     },
     onSuccess: () => {
       invalidate();
+      invalidateSlots();
       closeModal();
     },
     onError: (e: unknown) => {
@@ -836,7 +905,8 @@ export default function AdminMatchesPage() {
           <span>
             Sync completado — vinculados: <strong>{syncResult.linked}</strong>,
             kickoffs corregidos: <strong>{syncResult.kickoffs_updated}</strong>,
-            marcadores corregidos: <strong>{syncResult.scores_corrected}</strong>
+            marcadores corregidos:{" "}
+            <strong>{syncResult.scores_corrected}</strong>
           </span>
         </div>
       )}
@@ -867,185 +937,187 @@ export default function AdminMatchesPage() {
       {tab === "bracket" ? (
         <BracketTab getToken={getToken} />
       ) : (
-      <AdminContentState
-        isLoading={isLoading}
-        error={error}
-        isEmpty={filtered.length === 0}
-        emptyTitle="Sin partidos"
-        emptyMessage={emptyMsg}
-        errorMessage="Error al cargar los partidos."
-      >
-        <div className="space-y-3">
-          <div className="overflow-x-auto rounded-xl border border-white/10">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/10 bg-white/5 text-white/50 text-left">
-                  <th className="px-4 py-3 font-medium">#</th>
-                  <th className="px-4 py-3 font-medium">Partido</th>
-                  <th className="px-4 py-3 font-medium">Fase</th>
-                  <th className="px-4 py-3 font-medium">Kickoff</th>
-                  <th className="px-4 py-3 font-medium">Marcador</th>
-                  <th className="px-4 py-3 font-medium">Estado</th>
-                  <th className="px-4 py-3 font-medium text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.map((match) => (
-                  <tr
-                    key={match.id}
-                    className={cn(
-                      "border-b border-white/5 hover:bg-white/[0.03] transition-colors",
-                      match.status === "in_progress" && "bg-green-500/[0.03]",
-                    )}
-                  >
-                    <td className="px-4 py-3 text-white/40 font-mono text-xs">
-                      #{match.id}
-                      {match.external_match_id ? (
-                        <span
-                          className="ml-1 text-green-400/70"
-                          title={`API-Football ID: ${match.external_match_id}`}
-                        >
-                          ●
-                        </span>
-                      ) : (
-                        <span
-                          className="ml-1 text-red-400/50"
-                          title="Sin vincular a API-Football"
-                        >
-                          ○
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-white">
-                          {match.home_team}
-                        </span>
-                        <span className="text-white/30">vs</span>
-                        <span className="font-medium text-white">
-                          {match.away_team}
-                        </span>
-                      </div>
-                      {match.stadium && (
-                        <p className="text-white/30 text-xs mt-0.5">
-                          {match.stadium.name}
-                        </p>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3 text-white/60 text-xs">
-                      <div>{phaseLabel(match.phase)}</div>
-                      {match.group_label && (
-                        <div className="text-white/30 mt-0.5">
-                          Grupo {match.group_label}
-                        </div>
-                      )}
-                    </td>
-
-                    <td
-                      className="px-4 py-3 text-white/60 text-xs"
-                      title={
-                        match.kickoff_at
-                          ? formatDateTime(match.kickoff_at)
-                          : undefined
-                      }
-                    >
-                      {match.kickoff_at
-                        ? formatRelative(match.kickoff_at)
-                        : "—"}
-                    </td>
-
-                    <td className="px-4 py-3 font-bold text-white tabular-nums">
-                      {scoreLabel(match)}
-                      {match.win_method && match.win_method !== "normal" && (
-                        <span className="ml-1 text-white/30 font-normal text-xs">
-                          ({match.win_method === "extra_time" ? "ET" : "PEN"})
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <StatusBadge status={match.status} />
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-2">
-                        {match.status === "scheduled" && (
-                          <button
-                            onClick={() => openStart(match)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-green-500/15 hover:bg-green-500/25 text-green-400 text-xs font-medium transition-colors"
-                          >
-                            <Play className="h-3.5 w-3.5" />
-                            Iniciar
-                          </button>
-                        )}
-                        {match.status === "in_progress" && (
-                          <button
-                            onClick={() => openResult(match)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                            Resultado
-                          </button>
-                        )}
-                        {match.status === "finished" && (
-                          <button
-                            onClick={() => openCorrect(match)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-white/50 text-xs font-medium transition-colors"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                            Corregir
-                          </button>
-                        )}
-                        {(match.status === "scheduled" ||
-                          match.status === "in_progress") && (
-                          <button
-                            onClick={() => openCancel(match)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition-colors"
-                          >
-                            <Ban className="h-3.5 w-3.5" />
-                            Cancelar
-                          </button>
-                        )}
-                      </div>
-                    </td>
+        <AdminContentState
+          isLoading={isLoading}
+          error={error}
+          isEmpty={filtered.length === 0}
+          emptyTitle="Sin partidos"
+          emptyMessage={emptyMsg}
+          errorMessage="Error al cargar los partidos."
+        >
+          <div className="space-y-3">
+            <div className="overflow-x-auto rounded-xl border border-white/10">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/10 bg-white/5 text-white/50 text-left">
+                    <th className="px-4 py-3 font-medium">#</th>
+                    <th className="px-4 py-3 font-medium">Partido</th>
+                    <th className="px-4 py-3 font-medium">Fase</th>
+                    <th className="px-4 py-3 font-medium">Kickoff</th>
+                    <th className="px-4 py-3 font-medium">Marcador</th>
+                    <th className="px-4 py-3 font-medium">Estado</th>
+                    <th className="px-4 py-3 font-medium text-right">
+                      Acciones
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paginated.map((match) => (
+                    <tr
+                      key={match.id}
+                      className={cn(
+                        "border-b border-white/5 hover:bg-white/[0.03] transition-colors",
+                        match.status === "in_progress" && "bg-green-500/[0.03]",
+                      )}
+                    >
+                      <td className="px-4 py-3 text-white/40 font-mono text-xs">
+                        #{match.id}
+                        {match.external_match_id ? (
+                          <span
+                            className="ml-1 text-green-400/70"
+                            title={`API-Football ID: ${match.external_match_id}`}
+                          >
+                            ●
+                          </span>
+                        ) : (
+                          <span
+                            className="ml-1 text-red-400/50"
+                            title="Sin vincular a API-Football"
+                          >
+                            ○
+                          </span>
+                        )}
+                      </td>
 
-          {tab === "all" && totalPages > 1 && (
-            <div className="flex items-center justify-between px-1">
-              <p className="text-xs text-white/40">
-                {(page - 1) * PAGE_SIZE + 1}–
-                {Math.min(page * PAGE_SIZE, filtered.length)} de{" "}
-                {filtered.length} partidos
-              </p>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="px-3 py-1 text-xs text-white/60 tabular-nums">
-                  {page} / {totalPages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-white">
+                            {match.home_team}
+                          </span>
+                          <span className="text-white/30">vs</span>
+                          <span className="font-medium text-white">
+                            {match.away_team}
+                          </span>
+                        </div>
+                        {match.stadium && (
+                          <p className="text-white/30 text-xs mt-0.5">
+                            {match.stadium.name}
+                          </p>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3 text-white/60 text-xs">
+                        <div>{phaseLabel(match.phase)}</div>
+                        {match.group_label && (
+                          <div className="text-white/30 mt-0.5">
+                            Grupo {match.group_label}
+                          </div>
+                        )}
+                      </td>
+
+                      <td
+                        className="px-4 py-3 text-white/60 text-xs"
+                        title={
+                          match.kickoff_at
+                            ? formatDateTime(match.kickoff_at)
+                            : undefined
+                        }
+                      >
+                        {match.kickoff_at
+                          ? formatRelative(match.kickoff_at)
+                          : "—"}
+                      </td>
+
+                      <td className="px-4 py-3 font-bold text-white tabular-nums">
+                        {scoreLabel(match)}
+                        {match.win_method && match.win_method !== "normal" && (
+                          <span className="ml-1 text-white/30 font-normal text-xs">
+                            ({match.win_method === "extra_time" ? "ET" : "PEN"})
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <StatusBadge status={match.status} />
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-2">
+                          {match.status === "scheduled" && (
+                            <button
+                              onClick={() => openStart(match)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-green-500/15 hover:bg-green-500/25 text-green-400 text-xs font-medium transition-colors"
+                            >
+                              <Play className="h-3.5 w-3.5" />
+                              Iniciar
+                            </button>
+                          )}
+                          {match.status === "in_progress" && (
+                            <button
+                              onClick={() => openResult(match)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                              Resultado
+                            </button>
+                          )}
+                          {match.status === "finished" && (
+                            <button
+                              onClick={() => openCorrect(match)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-white/5 hover:bg-white/10 text-white/50 text-xs font-medium transition-colors"
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                              Corregir
+                            </button>
+                          )}
+                          {(match.status === "scheduled" ||
+                            match.status === "in_progress") && (
+                            <button
+                              onClick={() => openCancel(match)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium transition-colors"
+                            >
+                              <Ban className="h-3.5 w-3.5" />
+                              Cancelar
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
-      </AdminContentState>
+
+            {tab === "all" && totalPages > 1 && (
+              <div className="flex items-center justify-between px-1">
+                <p className="text-xs text-white/40">
+                  {(page - 1) * PAGE_SIZE + 1}–
+                  {Math.min(page * PAGE_SIZE, filtered.length)} de{" "}
+                  {filtered.length} partidos
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="px-3 py-1 text-xs text-white/60 tabular-nums">
+                    {page} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </AdminContentState>
       )}
 
       {modal && (

@@ -655,6 +655,126 @@ func TestRedisPubNotifier_Notify_PublishesAndReturnsNil(t *testing.T) {
 	}
 }
 
+// ── knockoutWinnerLoser ───────────────────────────────────────────────────────
+
+func TestKnockoutWinnerLoser_HomeWins_ReturnsHomeAsWinner(t *testing.T) {
+	mf := events.MatchFinished{MatchID: 1, HomeTeam: teamMexico, AwayTeam: "Canada", HomeScore: 3, AwayScore: 1}
+	winner, loser := knockoutWinnerLoser(mf)
+	if winner != teamMexico || loser != "Canada" {
+		t.Errorf("got winner=%q loser=%q; want %s/Canada", winner, loser, teamMexico)
+	}
+}
+
+func TestKnockoutWinnerLoser_AwayWins_ReturnsAwayAsWinner(t *testing.T) {
+	mf := events.MatchFinished{MatchID: 1, HomeTeam: teamMexico, AwayTeam: "Canada", HomeScore: 0, AwayScore: 2}
+	winner, loser := knockoutWinnerLoser(mf)
+	if winner != "Canada" || loser != teamMexico {
+		t.Errorf("got winner=%q loser=%q; want Canada/%s", winner, loser, teamMexico)
+	}
+}
+
+func TestKnockoutWinnerLoser_Draw_ReturnsBothEmpty(t *testing.T) {
+	mf := events.MatchFinished{MatchID: 1, HomeTeam: teamMexico, AwayTeam: "Canada", HomeScore: 1, AwayScore: 1}
+	winner, loser := knockoutWinnerLoser(mf)
+	if winner != "" || loser != "" {
+		t.Errorf("got winner=%q loser=%q; want empty/empty for draw", winner, loser)
+	}
+}
+
+// ── runSlotAutoConfirm ────────────────────────────────────────────────────────
+
+type stubSlotAutoConfirmer struct {
+	groupLabel   string
+	groupCalled  bool
+	knockoutCode string
+	err          error
+}
+
+func (s *stubSlotAutoConfirmer) AutoConfirmGroupSlots(_ context.Context, groupLabel string) error {
+	s.groupCalled = true
+	s.groupLabel = groupLabel
+	return s.err
+}
+
+func (s *stubSlotAutoConfirmer) AutoConfirmMatchResultSlots(_ context.Context, matchCode, _, _ string) error {
+	s.knockoutCode = matchCode
+	return s.err
+}
+
+func (s *stubSlotAutoConfirmer) BackfillSlots(_ context.Context) error { return s.err }
+
+func TestRunSlotAutoConfirm_NilAutoConfirmer_Noop(t *testing.T) {
+	mf := events.MatchFinished{MatchID: 1, HomeTeam: teamMexico, AwayTeam: "Canada"}
+	runSlotAutoConfirm(context.Background(), mf, nil, zap.NewNop())
+}
+
+func TestRunSlotAutoConfirm_GroupStageMatch_CallsGroupConfirm(t *testing.T) {
+	ac := &stubSlotAutoConfirmer{}
+	mf := events.MatchFinished{
+		MatchID:    1,
+		HomeTeam:   teamMexico,
+		AwayTeam:   "Canada",
+		Phase:      "group_stage",
+		GroupLabel: "A",
+	}
+	runSlotAutoConfirm(context.Background(), mf, ac, zap.NewNop())
+	if !ac.groupCalled {
+		t.Error("expected AutoConfirmGroupSlots to be called")
+	}
+	if ac.groupLabel != "A" {
+		t.Errorf("expected group A, got %q", ac.groupLabel)
+	}
+}
+
+func TestRunSlotAutoConfirm_KnockoutMatch_CallsMatchResultConfirm(t *testing.T) {
+	ac := &stubSlotAutoConfirmer{}
+	mf := events.MatchFinished{
+		MatchID:   73,
+		HomeTeam:  teamMexico,
+		AwayTeam:  "Canada",
+		HomeScore: 2,
+		AwayScore: 1,
+		Phase:     "round_of_32",
+		MatchCode: "M73",
+	}
+	runSlotAutoConfirm(context.Background(), mf, ac, zap.NewNop())
+	if ac.knockoutCode != "M73" {
+		t.Errorf("expected AutoConfirmMatchResultSlots(M73), got %q", ac.knockoutCode)
+	}
+}
+
+func TestRunSlotAutoConfirm_GroupStageEmptyLabel_SkipsGroupAndKnockout(t *testing.T) {
+	ac := &stubSlotAutoConfirmer{}
+	mf := events.MatchFinished{
+		MatchID:  1,
+		HomeTeam: teamMexico,
+		AwayTeam: "Canada",
+		Phase:    "group_stage",
+		// GroupLabel empty: condition "group_stage && GroupLabel != """ is false
+		// MatchCode also empty, so no knockout path either
+	}
+	runSlotAutoConfirm(context.Background(), mf, ac, zap.NewNop())
+	if ac.groupCalled {
+		t.Error("expected AutoConfirmGroupSlots not to be called with empty GroupLabel")
+	}
+	if ac.knockoutCode != "" {
+		t.Error("expected AutoConfirmMatchResultSlots not to be called")
+	}
+}
+
+func TestRunSlotAutoConfirm_GroupStageWithError_LogsAndContinues(t *testing.T) {
+	ac := &stubSlotAutoConfirmer{err: errors.New("db down")}
+	mf := events.MatchFinished{
+		MatchID:    1,
+		HomeTeam:   teamMexico,
+		AwayTeam:   "Canada",
+		Phase:      "group_stage",
+		GroupLabel: "B",
+	}
+	// Must not panic or propagate error
+	runSlotAutoConfirm(context.Background(), mf, ac, zap.NewNop())
+}
+
 func TestRedisPubNotifier_Notify_RedisDown_ReturnsError(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})

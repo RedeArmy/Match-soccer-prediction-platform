@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
-import { api } from "@/lib/api";
+import { useSlots } from "@/hooks/useSlots";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { TournamentSlotResponse } from "@/lib/api-types";
@@ -11,12 +10,12 @@ import type { TournamentSlotResponse } from "@/lib/api-types";
 // Bracket label convention: {prefix}_{match:02d}_{side}
 // e.g. r32_01_a, r16_03_b, qf_02_a, fin_01_b
 const PHASE_ORDER = [
-  { prefix: "r32",  labelKey: "phaseRoundOf32" },
-  { prefix: "r16",  labelKey: "phaseRoundOf16" },
-  { prefix: "qf",   labelKey: "phaseQuarterFinal" },
-  { prefix: "sf",   labelKey: "phaseSemiF" },
-  { prefix: "tp",   labelKey: "phaseThirdPlace" },
-  { prefix: "fin",  labelKey: "phaseFinal" },
+  { prefix: "r32", labelKey: "phaseRoundOf32" },
+  { prefix: "r16", labelKey: "phaseRoundOf16" },
+  { prefix: "qf", labelKey: "phaseQuarterFinal" },
+  { prefix: "sf", labelKey: "phaseSemiF" },
+  { prefix: "tp", labelKey: "phaseThirdPlace" },
+  { prefix: "fin", labelKey: "phaseFinal" },
 ] as const;
 
 function phasePrefix(label: string): string {
@@ -97,13 +96,21 @@ interface PhaseAccordionProps {
   readonly defaultOpen: boolean;
 }
 
-function PhaseAccordion({ labelKey, slots, t, defaultOpen }: PhaseAccordionProps) {
+function PhaseAccordion({
+  labelKey,
+  slots,
+  t,
+  defaultOpen,
+}: PhaseAccordionProps) {
   const [open, setOpen] = useState(defaultOpen);
 
   const confirmedCount = slots.filter((s) => s.team !== null).length;
 
   // Build ordered match pairs: sort by match number, group a+b per match
-  const byMatch = new Map<number, { a?: TournamentSlotResponse; b?: TournamentSlotResponse }>();
+  const byMatch = new Map<
+    number,
+    { a?: TournamentSlotResponse; b?: TournamentSlotResponse }
+  >();
   for (const slot of slots) {
     const num = matchNum(slot.label);
     const s = side(slot.label);
@@ -150,15 +157,7 @@ function PhaseAccordion({ labelKey, slots, t, defaultOpen }: PhaseAccordionProps
 
 export function KnockoutBracket() {
   const { t } = useI18n();
-
-  const slotsQuery = useQuery({
-    queryKey: ["tournament-slots"],
-    queryFn: () => api.getSlots(),
-    staleTime: 15_000,
-    refetchInterval: 30_000,
-  });
-
-  const slots = slotsQuery.data ?? [];
+  const { slots, isLoading } = useSlots();
   const byPhase = groupByPhase(slots);
 
   // Only render phases that have at least one slot AND at least one confirmed team
@@ -167,7 +166,7 @@ export function KnockoutBracket() {
     return phaseSlots.some((s) => s.team !== null);
   });
 
-  if (slotsQuery.isLoading) {
+  if (isLoading) {
     return (
       <section className="panel">
         <div className="wc26-stripe" />

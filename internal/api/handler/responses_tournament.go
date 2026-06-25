@@ -29,6 +29,7 @@ type TournamentSlotResponse struct {
 	Label             string  `json:"label"`
 	Description       string  `json:"description"`
 	Team              *string `json:"team"`
+	AutoSource        *string `json:"auto_source,omitempty"`
 	ConfirmedAt       *string `json:"confirmed_at,omitempty"`
 	ConfirmedByUserID *int    `json:"confirmed_by_user_id,omitempty"`
 	CreatedAt         string  `json:"created_at"`
@@ -68,6 +69,7 @@ func slotToResponse(s *domain.TournamentSlot) TournamentSlotResponse {
 		Label:             s.Label,
 		Description:       s.Description,
 		Team:              s.Team,
+		AutoSource:        s.AutoSource,
 		ConfirmedByUserID: s.ConfirmedByUserID,
 		CreatedAt:         s.CreatedAt.Format(timeFormat),
 		UpdatedAt:         s.UpdatedAt.Format(timeFormat),

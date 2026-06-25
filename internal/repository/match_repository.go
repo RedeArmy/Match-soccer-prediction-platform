@@ -26,11 +26,11 @@ func NewPostgresMatchRepository(db *pgxpool.Pool) *PostgresMatchRepository {
 const errMatchNotFound = "match not found"
 
 // matchColumns is used in RETURNING clauses for INSERT/UPDATE (no table alias).
-const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, group_label, win_method, stadium_id, kickoff_at, created_at, updated_at, external_provider, external_match_id, last_synced_at, home_slot_id, away_slot_id"
+const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, group_label, win_method, stadium_id, kickoff_at, created_at, updated_at, external_provider, external_match_id, last_synced_at, home_slot_id, away_slot_id, match_code"
 
 // matchReadColumns selects match + full stadium location hierarchy for read
 // queries that LEFT JOIN stadiums, cities, states, and countries.
-const matchReadColumns = "m.id, m.home_team, m.away_team, m.home_score, m.away_score, m.status, m.phase, m.group_label, m.win_method, m.stadium_id, m.kickoff_at, m.created_at, m.updated_at, m.external_provider, m.external_match_id, m.last_synced_at, m.home_slot_id, m.away_slot_id," +
+const matchReadColumns = "m.id, m.home_team, m.away_team, m.home_score, m.away_score, m.status, m.phase, m.group_label, m.win_method, m.stadium_id, m.kickoff_at, m.created_at, m.updated_at, m.external_provider, m.external_match_id, m.last_synced_at, m.home_slot_id, m.away_slot_id, m.match_code," +
 	" s.id, s.name, s.capacity, ci.id, ci.name, st.id, st.name, st.code, co.id, co.name, co.code"
 
 const matchFromStadium = " FROM matches m" +
@@ -50,7 +50,7 @@ func matchScanDests(m *domain.Match) []any {
 		&m.Status, &m.Phase, &m.GroupLabel, &m.WinMethod, &m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
 		&m.ExternalProvider, &m.ExternalMatchID, &m.LastSyncedAt,
-		&m.HomeSlotID, &m.AwaySlotID,
+		&m.HomeSlotID, &m.AwaySlotID, &m.MatchCode,
 	}
 }
 
@@ -312,6 +312,17 @@ func (r *PostgresMatchRepository) List(ctx context.Context) ([]*domain.Match, er
 func (r *PostgresMatchRepository) ListByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT `+matchReadColumns+matchFromStadium+` WHERE m.phase=$1 ORDER BY m.kickoff_at ASC`, phase,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectMatches(rows)
+}
+
+func (r *PostgresMatchRepository) ListByGroupLabel(ctx context.Context, groupLabel string) ([]*domain.Match, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+matchReadColumns+matchFromStadium+` WHERE m.phase='group_stage' AND m.group_label=$1 ORDER BY m.kickoff_at ASC`, groupLabel,
 	)
 	if err != nil {
 		return nil, apperrors.Internal(err)
