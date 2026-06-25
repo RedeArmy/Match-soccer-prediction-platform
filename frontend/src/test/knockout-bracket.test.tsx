@@ -62,18 +62,28 @@ function renderBracket() {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("KnockoutBracket", () => {
-  it("renders nothing when no slots have confirmed teams", async () => {
-    vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "fin_01_a", "Campeón"),
-      makeSlot(2, "fin_01_b", "Subcampeón"),
-    ] as never);
+  it("renders nothing when there are no slots at all", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([] as never);
 
     const { container } = renderBracket();
 
-    // Wait for data to load; section should not appear since no teams confirmed
     await vi.waitFor(() =>
       expect(container.querySelector("section")).toBeNull(),
     );
+  });
+
+  it("renders the bracket with placeholder descriptions when slots exist but no team is confirmed yet", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      makeSlot(1, "r32_01_a", "1.° Grupo A"),
+      makeSlot(2, "r32_01_b", "2.° Grupo B"),
+    ] as never);
+
+    renderBracket();
+
+    expect(await screen.findByText("Llave del Torneo")).toBeInTheDocument();
+    expect(screen.getByText("Dieciseisavos")).toBeInTheDocument();
+    expect(screen.getByText("1.° Grupo A")).toBeInTheDocument();
+    expect(screen.getByText("2.° Grupo B")).toBeInTheDocument();
   });
 
   it("renders the bracket section when at least one slot has a confirmed team", async () => {
@@ -118,9 +128,9 @@ describe("KnockoutBracket", () => {
     expect(screen.queryByText("Alemania")).toBeNull();
   });
 
-  it("shows all phases with slots once any slot is confirmed, even if later phases have no teams yet", async () => {
-    // Simulate the real seeded state: all 6 phases have slots, but only r32 has
-    // confirmed teams so far (first group just completed).
+  it("shows all phases that have slots, showing placeholder descriptions for unconfirmed slots", async () => {
+    // Simulate the real seeded state: all 6 phases have slots, r32 has
+    // two confirmed teams, later phases still show placeholder descriptions.
     vi.mocked(api.getSlots).mockResolvedValueOnce([
       makeSlot(1, "r32_01_a", "1.° Grupo A", "México"),
       makeSlot(2, "r32_01_b", "2.° Grupo B", "USA"),
@@ -138,7 +148,7 @@ describe("KnockoutBracket", () => {
 
     renderBracket();
 
-    // All six phase accordions must be visible once the knockout stage has begun
+    // All six phase accordions must be visible as soon as their slots are defined
     expect(await screen.findByText("Dieciseisavos")).toBeInTheDocument();
     expect(screen.getByText("Octavos")).toBeInTheDocument();
     expect(screen.getByText("Cuartos")).toBeInTheDocument();

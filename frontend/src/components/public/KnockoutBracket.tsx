@@ -161,14 +161,13 @@ export function KnockoutBracket() {
   const { slots, isLoading } = useSlots();
   const byPhase = groupByPhase(slots);
 
-  // Show every phase that has slots, but only once the knockout stage has begun
-  // (i.e. at least one slot in any phase has a confirmed team). Phases without
-  // confirmed teams still render with their placeholder descriptions so the full
-  // bracket structure is visible as soon as the first group completes.
-  const knockoutStarted = slots.some((s) => s.team !== null);
-  const visiblePhases = knockoutStarted
-    ? PHASE_ORDER.filter((p) => (byPhase.get(p.prefix) ?? []).length > 0)
-    : [];
+  // Show phases as soon as their slots are defined, even if no team is
+  // confirmed yet. Slots are created when the admin populates the bracket;
+  // team values are filled later as teams qualify. Rendering slots with
+  // placeholder descriptions lets users see the bracket structure immediately.
+  const visiblePhases = PHASE_ORDER.filter(
+    (p) => (byPhase.get(p.prefix) ?? []).length > 0,
+  );
 
   if (isLoading) {
     return (
