@@ -87,17 +87,16 @@ func BenchmarkHandlerRouting(b *testing.B) {
 
 // BenchmarkHandlerNotFound measures the 404 path — important because
 // misrouted requests are a common attack vector that could saturate the server.
-// Each goroutine allocates its own request to avoid false sharing on the
-// shared *http.Request object, which reduces scheduler-induced variance on
-// constrained CI runners (2 vCPU).
+// Each goroutine allocates its own request once (outside pb.Next) to eliminate
+// cross-goroutine false sharing without inflating the per-iteration B/op count.
 func BenchmarkHandlerNotFound(b *testing.B) {
 	srv := newBenchServer(b)
 	handler := srv.Routes(context.Background())
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
+		req := httptest.NewRequest(http.MethodGet, "/nonexistent/deep/path/12345", nil)
 		for pb.Next() {
-			req := httptest.NewRequest(http.MethodGet, "/nonexistent/deep/path/12345", nil)
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
 		}
