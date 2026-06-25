@@ -27,6 +27,7 @@ vi.mock("@/lib/api", () => ({
     getMyPredictions: vi.fn(),
     submitPrediction: vi.fn(),
     updatePrediction: vi.fn(),
+    getSlots: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -683,6 +684,45 @@ describe("PredictionPanel", () => {
     // Only the confirmed match renders
     expect(await screen.findByText("Brasil")).toBeInTheDocument();
     expect(document.querySelectorAll("article")).toHaveLength(1);
+  });
+
+  it("enriches knockout match teams from confirmed slot auto_source codes", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      {
+        id: 100,
+        label: "winner_group_a",
+        description: "1er Grupo A",
+        auto_source: "1A",
+        team: "Mexico",
+        created_at: "",
+        updated_at: "",
+      },
+    ]);
+    const koMatch = {
+      ...scheduledMatch,
+      id: 90,
+      home_team: "1A",
+      away_team: "Brazil",
+      phase: "round_of_32",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    // useSlots cross-invalidates ["matches"] when it detects confirmed slot teams,
+    // so getMatches may be called more than once — use mockResolvedValue (not Once).
+    vi.mocked(api.getMatches).mockResolvedValue([koMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValue([]);
+
+    renderPanel();
+
+    // After enrichment "1A" → "Mexico" (i18n: "México"); phase tab becomes visible
+    // because the match now has a confirmed team name instead of a placeholder code.
+    expect(
+      await screen.findByRole("button", { name: /Dieciseisavos/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Dieciseisavos/i }));
+
+    expect(await screen.findByText("México")).toBeInTheDocument();
+    expect(screen.queryByText("1A")).toBeNull();
   });
 
   it("disables score editing for locked matches and filters pending matches", async () => {
