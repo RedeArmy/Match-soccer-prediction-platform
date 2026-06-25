@@ -45,6 +45,21 @@ function groupByPhase(
   return map;
 }
 
+// A phase is visible only when at least one of its matches is fully confirmed
+// (both home and away slots have a team). Partial matches (one team known,
+// the other still a placeholder) are not enough to reveal the phase.
+function hasConfirmedMatch(slots: TournamentSlotResponse[]): boolean {
+  const byMatch = new Map<number, { a: boolean; b: boolean }>();
+  for (const slot of slots) {
+    const num = matchNum(slot.label);
+    if (!byMatch.has(num)) byMatch.set(num, { a: false, b: false });
+    const entry = byMatch.get(num)!;
+    if (side(slot.label) === "a") entry.a = slot.team != null;
+    else entry.b = slot.team != null;
+  }
+  return Array.from(byMatch.values()).some((m) => m.a && m.b);
+}
+
 interface SlotRowProps {
   readonly slot: TournamentSlotResponse | undefined;
 }
@@ -161,12 +176,11 @@ export function KnockoutBracket() {
   const { slots, isLoading } = useSlots();
   const byPhase = groupByPhase(slots);
 
-  // Show phases as soon as their slots are defined, even if no team is
-  // confirmed yet. Slots are created when the admin populates the bracket;
-  // team values are filled later as teams qualify. Rendering slots with
-  // placeholder descriptions lets users see the bracket structure immediately.
-  const visiblePhases = PHASE_ORDER.filter(
-    (p) => (byPhase.get(p.prefix) ?? []).length > 0,
+  // A phase appears only once it has at least one fully-confirmed match
+  // (both slots with a team). Once visible, all its slots render — confirmed
+  // ones show the team name, unconfirmed ones show their placeholder description.
+  const visiblePhases = PHASE_ORDER.filter((p) =>
+    hasConfirmedMatch(byPhase.get(p.prefix) ?? []),
   );
 
   if (isLoading) {
