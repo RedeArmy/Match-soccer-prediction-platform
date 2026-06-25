@@ -16,21 +16,34 @@ export function isPhaseVisible(phase: string | null | undefined): boolean {
   return KNOCKOUT_PHASE_FLAGS[phase] ?? false;
 }
 
-// Returns which knockout phases have at least one match in the data.
-// Used to decide which phase tabs to show in PredictionPanel.
-export function visibleKnockoutPhases(matches: { phase: string | null }[]): string[] {
-  const KNOCKOUT_ORDER = [
-    "round_of_32",
-    "round_of_16",
-    "quarter_final",
-    "semi_final",
-    "third_place",
-    "final",
-  ] as const;
-  const presentPhases = new Set(
+// Tabs are ordered Final-first so that newly confirmed phases appear to the
+// left of earlier rounds as the bracket fills in.
+const KNOCKOUT_TAB_ORDER = [
+  "final",
+  "semi_final",
+  "third_place",
+  "quarter_final",
+  "round_of_16",
+  "round_of_32",
+] as const;
+
+// Returns which knockout phases should appear as tabs.
+// A phase is visible only when at least one match in that phase has both
+// home_team and away_team confirmed (non-empty strings).
+export function visibleKnockoutPhases(
+  matches: { phase: string | null; home_team?: string; away_team?: string }[],
+): string[] {
+  const confirmedPhases = new Set(
     matches
-      .filter((m) => m.phase && m.phase !== "group_stage" && isPhaseVisible(m.phase))
+      .filter(
+        (m) =>
+          m.phase &&
+          m.phase !== "group_stage" &&
+          isPhaseVisible(m.phase) &&
+          m.home_team &&
+          m.away_team,
+      )
       .map((m) => m.phase as string),
   );
-  return KNOCKOUT_ORDER.filter((p) => presentPhases.has(p));
+  return KNOCKOUT_TAB_ORDER.filter((p) => confirmedPhases.has(p));
 }
