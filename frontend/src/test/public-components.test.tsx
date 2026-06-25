@@ -542,7 +542,7 @@ describe("LiveMatchFeed – FixtureDetailPanel loading", () => {
     renderFeed();
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() =>
-      expect(screen.getAllByTestId("loading-state").length).toBeGreaterThan(0),
+      expect(screen.getAllByTestId("loading-state")).not.toHaveLength(0),
     );
   });
 });
@@ -955,7 +955,7 @@ describe("LiveMatchFeed – scheduled (NS) fixtures are shown without live badge
   it("shows 'vs' separator (not a score) for unstarted matches", () => {
     renderFeed();
     const vsLabels = screen.getAllByText("vs");
-    expect(vsLabels.length).toBe(2);
+    expect(vsLabels).toHaveLength(2);
   });
 });
 
