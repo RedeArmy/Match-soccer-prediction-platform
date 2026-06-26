@@ -454,6 +454,14 @@ function ConfirmSlotModal({
   );
 }
 
+type SlotFilter = "all" | "pending" | "manual";
+
+const SLOT_FILTER_OPTIONS: { key: SlotFilter; label: string }[] = [
+  { key: "all", label: "Todos" },
+  { key: "pending", label: "Pendientes" },
+  { key: "manual", label: "Mejor 3.° manual" },
+];
+
 interface BracketTabProps {
   readonly getToken: () => Promise<string | null>;
 }
@@ -465,6 +473,7 @@ function BracketTab({ getToken }: BracketTabProps) {
   );
   const [slotError, setSlotError] = useState("");
   const [page, setPage] = useState(1);
+  const [slotFilter, setSlotFilter] = useState<SlotFilter>("all");
 
   const {
     data: slots = [],
@@ -495,6 +504,32 @@ function BracketTab({ getToken }: BracketTabProps) {
     },
   });
 
+  const filteredSlots = useMemo(() => {
+    let result = slots;
+    if (slotFilter === "pending") {
+      result = slots.filter((s) => !s.confirmed_at);
+    } else if (slotFilter === "manual") {
+      // Slots that need manual confirmation: no auto_source and not yet confirmed.
+      result = slots.filter((s) => !s.auto_source && !s.confirmed_at);
+    }
+    // Unconfirmed first, then confirmed.
+    return [...result].sort((a, b) => {
+      if (!a.confirmed_at && b.confirmed_at) return -1;
+      if (a.confirmed_at && !b.confirmed_at) return 1;
+      return a.label.localeCompare(b.label);
+    });
+  }, [slots, slotFilter]);
+
+  const manualPendingCount = useMemo(
+    () => slots.filter((s) => !s.auto_source && !s.confirmed_at).length,
+    [slots],
+  );
+
+  function changeSlotFilter(f: SlotFilter) {
+    setSlotFilter(f);
+    setPage(1);
+  }
+
   if (isLoading) {
     return (
       <div className="py-8 text-center text-white/40 text-sm">
@@ -517,15 +552,70 @@ function BracketTab({ getToken }: BracketTabProps) {
     );
   }
 
-  const totalPages = Math.max(1, Math.ceil(slots.length / BRACKET_PAGE_SIZE));
-  const paginatedSlots = slots.slice(
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredSlots.length / BRACKET_PAGE_SIZE),
+  );
+  const paginatedSlots = filteredSlots.slice(
     (page - 1) * BRACKET_PAGE_SIZE,
     page * BRACKET_PAGE_SIZE,
   );
 
   return (
     <>
+      {manualPendingCount > 0 && (
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-amber-300 text-xs">
+            <strong>{manualPendingCount}</strong> slot
+            {manualPendingCount !== 1 ? "s" : ""} de «Mejor 3.° lugar» sin
+            confirmar. Usa el filtro <em>Mejor 3.° manual</em> para acceder
+            directamente y confirma el equipo clasificado en cada posición.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-3">
+        {/* Filter bar */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {SLOT_FILTER_OPTIONS.map(({ key, label }) => {
+            const count =
+              key === "all"
+                ? slots.length
+                : key === "pending"
+                  ? slots.filter((s) => !s.confirmed_at).length
+                  : manualPendingCount;
+            return (
+              <button
+                key={key}
+                onClick={() => changeSlotFilter(key)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                  slotFilter === key
+                    ? key === "manual"
+                      ? "bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40"
+                      : "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/40"
+                    : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80",
+                )}
+              >
+                {label}
+                <span
+                  className={cn(
+                    "px-1.5 py-0.5 rounded-full text-[10px] font-semibold",
+                    slotFilter === key
+                      ? key === "manual"
+                        ? "bg-amber-500/30 text-amber-300"
+                        : "bg-blue-500/30 text-blue-300"
+                      : "bg-white/10 text-white/40",
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="overflow-x-auto rounded-xl border border-white/10">
           <table className="w-full text-sm">
             <thead>
@@ -538,45 +628,65 @@ function BracketTab({ getToken }: BracketTabProps) {
               </tr>
             </thead>
             <tbody>
-              {paginatedSlots.map((slot) => (
-                <tr
-                  key={slot.id}
-                  className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
-                >
-                  <td className="px-4 py-3 font-mono text-xs text-white/60">
-                    {slot.label}
-                  </td>
-                  <td className="px-4 py-3 text-white/60 text-xs">
-                    {slot.description || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-white font-medium">
-                    {slot.team ?? (
-                      <span className="text-white/30 italic">Sin equipo</span>
+              {paginatedSlots.map((slot) => {
+                const needsManual = !slot.auto_source && !slot.confirmed_at;
+                return (
+                  <tr
+                    key={slot.id}
+                    className={cn(
+                      "border-b border-white/5 hover:bg-white/[0.03] transition-colors",
+                      needsManual && "bg-amber-500/[0.04]",
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    {slot.confirmed_at ? (
-                      <span className="text-green-400">
-                        ✓ {new Date(slot.confirmed_at).toLocaleDateString("sv")}
-                      </span>
-                    ) : (
-                      <span className="text-white/30">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => {
-                        setConfirmSlot(slot);
-                        setSlotError("");
-                      }}
-                      className="flex items-center gap-1 ml-auto px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
-                    >
-                      <Edit3 className="h-3.5 w-3.5" />
-                      {slot.team ? "Corregir" : "Confirmar"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                  >
+                    <td className="px-4 py-3 font-mono text-xs text-white/60">
+                      {slot.label}
+                      {needsManual && (
+                        <span
+                          className="ml-1.5 inline-block px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 uppercase tracking-wide"
+                          title="Requiere confirmación manual"
+                        >
+                          manual
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-white/60 text-xs">
+                      {slot.description || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-white font-medium">
+                      {slot.team ?? (
+                        <span className="text-white/30 italic">Sin equipo</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {slot.confirmed_at ? (
+                        <span className="text-green-400">
+                          ✓{" "}
+                          {new Date(slot.confirmed_at).toLocaleDateString("sv")}
+                        </span>
+                      ) : (
+                        <span className="text-white/30">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => {
+                          setConfirmSlot(slot);
+                          setSlotError("");
+                        }}
+                        className={cn(
+                          "flex items-center gap-1 ml-auto px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                          needsManual
+                            ? "bg-amber-500/20 hover:bg-amber-500/30 text-amber-400"
+                            : "bg-blue-500/15 hover:bg-blue-500/25 text-blue-400",
+                        )}
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        {slot.team ? "Corregir" : "Confirmar"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -586,8 +696,8 @@ function BracketTab({ getToken }: BracketTabProps) {
             page={page}
             totalPages={totalPages}
             start={(page - 1) * BRACKET_PAGE_SIZE + 1}
-            end={Math.min(page * BRACKET_PAGE_SIZE, slots.length)}
-            total={slots.length}
+            end={Math.min(page * BRACKET_PAGE_SIZE, filteredSlots.length)}
+            total={filteredSlots.length}
             unit="slots"
             onPrev={() => setPage((p) => Math.max(1, p - 1))}
             onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
