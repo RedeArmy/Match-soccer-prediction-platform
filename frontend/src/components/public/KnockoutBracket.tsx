@@ -8,9 +8,8 @@ import { cn } from "@/lib/utils";
 import type { TournamentSlotResponse } from "@/lib/api-types";
 
 // Bracket label convention: {prefix}_{match:02d}_{side}
-// e.g. r32_01_a, r16_03_b, qf_02_a, fin_01_b
+// e.g. r16_03_b, qf_02_a, fin_01_b
 const PHASE_ORDER = [
-  { prefix: "r32", labelKey: "phaseRoundOf32" },
   { prefix: "r16", labelKey: "phaseRoundOf16" },
   { prefix: "qf", labelKey: "phaseQuarterFinal" },
   { prefix: "sf", labelKey: "phaseSemiF" },

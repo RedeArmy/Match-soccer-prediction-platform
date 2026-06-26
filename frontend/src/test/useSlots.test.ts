@@ -57,9 +57,9 @@ describe("useSlots", () => {
 
   it("returns slots and builds teamByAutoSource map when data resolves", async () => {
     const slots = [
-      makeSlot(1, "r32_01_a", "1A", "Mexico"),
-      makeSlot(2, "r32_01_b", "2B", "Brazil"),
-      makeSlot(3, "r32_02_a", null, null),
+      makeSlot(1, "r16_01_a", "1A", "Mexico"),
+      makeSlot(2, "r16_01_b", "2B", "Brazil"),
+      makeSlot(3, "r16_02_a", null, null),
     ];
     vi.mocked(api.getSlots).mockResolvedValueOnce(slots as never);
     const { Wrapper } = makeWrapper();
@@ -73,7 +73,7 @@ describe("useSlots", () => {
   });
 
   it("invalidates matches query when a new confirmed slot appears", async () => {
-    const slot = makeSlot(1, "r32_01_a", "1A", "Mexico");
+    const slot = makeSlot(1, "r16_01_a", "1A", "Mexico");
     vi.mocked(api.getSlots).mockResolvedValueOnce([slot] as never);
     const { qc, Wrapper } = makeWrapper();
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
@@ -89,7 +89,7 @@ describe("useSlots", () => {
 
   it("does not invalidate matches when slot has no auto_source", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_01_a", null, "Mexico"),
+      makeSlot(1, "r16_01_a", null, "Mexico"),
     ] as never);
     const { qc, Wrapper } = makeWrapper();
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
@@ -104,7 +104,7 @@ describe("useSlots", () => {
 
   it("does not invalidate matches when slot has no team", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_01_a", "1A", null),
+      makeSlot(1, "r16_01_a", "1A", null),
     ] as never);
     const { qc, Wrapper } = makeWrapper();
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");

@@ -5,14 +5,11 @@ import "time"
 // ── Match phase ───────────────────────────────────────────────────────────────
 
 // MatchPhase identifies the round of the tournament a fixture belongs to.
-// FIFA World Cup 2026 expands to 48 teams, adding a round_of_32 between the
-// group stage and the traditional round_of_16.
 type MatchPhase string
 
 // Allowed values for MatchPhase, ordered by tournament progression.
 const (
 	PhaseGroupStage   MatchPhase = "group_stage"
-	PhaseRoundOf32    MatchPhase = "round_of_32"
 	PhaseRoundOf16    MatchPhase = "round_of_16"
 	PhaseQuarterFinal MatchPhase = "quarter_final"
 	PhaseSemiFinal    MatchPhase = "semi_final"
