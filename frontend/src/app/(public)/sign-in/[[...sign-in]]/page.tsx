@@ -1,12 +1,17 @@
+"use client";
+
 import { SignIn } from "@clerk/nextjs";
+import { useI18n } from "@/lib/i18n";
 
 export default function SignInPage() {
+  const { t } = useI18n();
+
   return (
     <div className="min-h-screen bg-[var(--bg-base)] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="font-display text-5xl text-gold-400 mb-5">
-            WELCOME
+          <h1 className="font-display text-5xl text-gold-400 mb-5 uppercase">
+            {t("common.welcome")}
           </h1>
 
           {/* K spinner — spinning arc + brand letter */}

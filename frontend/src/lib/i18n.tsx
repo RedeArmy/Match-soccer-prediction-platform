@@ -116,6 +116,7 @@ const translations: TranslationNode = {
     dashboard:   { es: 'Dashboard',            en: 'Dashboard'            },
     balance:     { es: 'Balance',              en: 'Balance'              },
     predictions: { es: 'Predicciones',         en: 'Predictions'          },
+    welcome:     { es: 'Bienvenido',            en: 'Welcome'              },
     signIn:      { es: 'Iniciar sesion',       en: 'Sign in'              },
     signUp:      { es: 'Registrarse',          en: 'Create account'       },
     signOut:     { es: 'Cerrar sesion',        en: 'Sign out'             },
