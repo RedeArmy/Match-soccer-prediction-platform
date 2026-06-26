@@ -47,11 +47,12 @@ func (r *PostgresScoringRuleRepository) List(ctx context.Context) ([]*domain.Sco
 		   FROM scoring_rules
 		  ORDER BY CASE phase
 		      WHEN 'group_stage'   THEN 1
-		      WHEN 'round_of_16'   THEN 2
-		      WHEN 'quarter_final' THEN 3
-		      WHEN 'semi_final'    THEN 4
-		      WHEN 'third_place'   THEN 5
-		      WHEN 'final'         THEN 6
+		      WHEN 'round_of_32'   THEN 2
+		      WHEN 'round_of_16'   THEN 3
+		      WHEN 'quarter_final' THEN 4
+		      WHEN 'semi_final'    THEN 5
+		      WHEN 'third_place'   THEN 6
+		      WHEN 'final'         THEN 7
 		      ELSE 8
 		  END`,
 	)

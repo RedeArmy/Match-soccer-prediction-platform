@@ -156,6 +156,7 @@ describe("isPhaseVisible", () => {
 
   it("returns true for all known knockout phases (all flags enabled)", () => {
     expect(isPhaseVisible("round_of_16")).toBe(true);
+    expect(isPhaseVisible("round_of_32")).toBe(true);
     expect(isPhaseVisible("quarter_final")).toBe(true);
     expect(isPhaseVisible("semi_final")).toBe(true);
     expect(isPhaseVisible("third_place")).toBe(true);
@@ -227,6 +228,7 @@ describe("visibleKnockoutPhases", () => {
 
   it("returns empty array when all teams are bracket placeholder codes", () => {
     const matches = [
+      { phase: "round_of_32", home_team: "2A", away_team: "2B" },
       { phase: "round_of_16", home_team: "W73", away_team: "W75" },
       { phase: "quarter_final", home_team: "1E", away_team: "3ABCDF" },
     ];
@@ -235,11 +237,11 @@ describe("visibleKnockoutPhases", () => {
 
   it("shows a phase only when at least one match has both teams confirmed (not placeholders)", () => {
     const matches = [
+      { phase: "round_of_32", home_team: "2A", away_team: "2B" },
+      { phase: "round_of_32", home_team: "México", away_team: "Argentina" },
       { phase: "round_of_16", home_team: "W73", away_team: "W75" },
-      { phase: "round_of_16", home_team: "México", away_team: "Argentina" },
-      { phase: "quarter_final", home_team: "W89", away_team: "W90" },
     ];
-    expect(visibleKnockoutPhases(matches)).toEqual(["round_of_16"]);
+    expect(visibleKnockoutPhases(matches)).toEqual(["round_of_32"]);
   });
 
   it("returns phases in Final-first canonical order regardless of input order", () => {

@@ -37,7 +37,7 @@ func NewMatchHandler(svc service.MatchService, log *zap.Logger) *MatchHandler {
 }
 
 // createMatchRequest is the JSON body accepted by POST /api/v1/matches.
-// Valid phase values: group_stage, round_of_16, quarter_final, semi_final, third_place, final.
+// Valid phase values: group_stage, round_of_32, round_of_16, quarter_final, semi_final, third_place, final.
 // GroupLabel is required for group_stage matches ("A"-"L") and must be omitted
 // for all knockout phases.
 type createMatchRequest struct {
@@ -66,7 +66,7 @@ type updateResultRequest struct {
 // @Tags         matches
 // @Produce      json
 // @Security     BearerAuth
-// @Param        phase  query     string  false  "Tournament phase (group_stage, round_of_16, quarter_final, semi_final, third_place, final)"
+// @Param        phase  query     string  false  "Tournament phase (group_stage, round_of_32, round_of_16, quarter_final, semi_final, third_place, final)"
 // @Success      200    {array}   handler.MatchResponse
 // @Failure      500    {object}  handler.ErrorResponse
 // @Router       /api/v1/matches [get]
