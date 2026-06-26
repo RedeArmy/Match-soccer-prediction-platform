@@ -82,7 +82,9 @@ services:
       WCQ_TRACING_OTLPENDPOINT:        http://tempo:4318
       WCQ_OBSERVABILITY_TEMPOURL:      http://tempo:4318
       WCQ_OBSERVABILITY_PROMETHEUSURL: http://prometheus:9090
-      WCQ_METRICSBINDADDR:             :9091
+      # MetricsBindAddr defaults to "" (all interfaces), which is correct for
+      # Docker: prometheus reaches api:9091 directly on wcq-net without NAT.
+      # WCQ_SERVER_METRICSBINDADDR=127.0.0.1 would restrict to loopback only.
       # ── n8n integration ──────────────────────────────────────────────────────
       WCQ_N8N_BASEURL:        http://n8n:5678
       WCQ_N8N_WEBHOOKURL:     http://n8n:5678/webhook
