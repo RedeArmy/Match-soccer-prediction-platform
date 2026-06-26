@@ -17,9 +17,9 @@ type GetInter interface {
 	GetInt(ctx context.Context, key string, def int) int
 }
 
-// SessionBlocklist checks whether a Clerk session ID has been locally revoked.
+// IsRevoker checks whether a Clerk session ID has been locally revoked.
 // PostgresSessionRepository satisfies this interface.
-type SessionBlocklist interface {
+type IsRevoker interface {
 	IsRevoked(ctx context.Context, sid string) (bool, error)
 }
 
@@ -45,7 +45,7 @@ type SessionBlocklist interface {
 // in RequireAuth. It implements IdentityProvider so RequireAuth is unmodified.
 type PolicyProvider struct {
 	inner     auth.IdentityProvider
-	blocklist SessionBlocklist
+	blocklist IsRevoker
 	params    GetInter
 	log       *zap.Logger
 }
@@ -55,7 +55,7 @@ type PolicyProvider struct {
 // revoked_sessions table is not yet migrated).
 func NewPolicyProvider(
 	inner auth.IdentityProvider,
-	blocklist SessionBlocklist,
+	blocklist IsRevoker,
 	params GetInter,
 	log *zap.Logger,
 ) auth.IdentityProvider {

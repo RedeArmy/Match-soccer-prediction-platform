@@ -32,7 +32,7 @@ func (s *stubParams) GetInt(_ context.Context, _ string, def int) int {
 	return s.maxAge
 }
 
-// stubBlocklist implements SessionBlocklist.
+// stubBlocklist implements IsRevoker.
 type stubBlocklist struct {
 	revoked bool
 	err     error
@@ -42,7 +42,7 @@ func (s *stubBlocklist) IsRevoked(_ context.Context, _ string) (bool, error) {
 	return s.revoked, s.err
 }
 
-func makePolicyProvider(inner auth.IdentityProvider, bl middleware.SessionBlocklist, maxAgeSecs int) auth.IdentityProvider {
+func makePolicyProvider(inner auth.IdentityProvider, bl middleware.IsRevoker, maxAgeSecs int) auth.IdentityProvider {
 	return middleware.NewPolicyProvider(inner, bl, &stubParams{maxAge: maxAgeSecs}, zap.NewNop())
 }
 
