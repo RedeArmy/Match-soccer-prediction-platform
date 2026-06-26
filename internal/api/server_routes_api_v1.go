@@ -131,8 +131,6 @@ func (s *Server) registerTournamentRoutes(r chi.Router, d apiV1Deps) {
 
 	r.Route("/tournament", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
-		// Public — no auth required.
-		r.Get("/slots", d.h.tournament.ListSlots)
 		// Authenticated reads — banned users are rejected.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.ResolveUser(d.repos.user, s.log))
