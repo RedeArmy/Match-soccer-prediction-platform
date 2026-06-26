@@ -212,6 +212,12 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// landing page can compute and display live FIFA standings tables.
 	r.Get("/api/public/matches/group-stage", h.match.ListPublicGroupStageMatches)
 
+	// Public tournament bracket slots — no auth required, covered by L1 IP limiter.
+	// Registered outside /api/v1 (which enforces RequireAuth) so the public Fan Fest
+	// view can display the knockout bracket without a Clerk session.
+	r.With(middleware.RequestBodyLimit(bodySizeLimit)).
+		Get("/api/v1/tournament/slots", h.tournament.ListSlots)
+
 	// Public system clock — returns the current application time (real or dev-overridden).
 	// No auth required; the frontend uses this to determine "today" for the HOY tab
 	// and match-locking logic.  L1 IP limiter is applied via the root router.
