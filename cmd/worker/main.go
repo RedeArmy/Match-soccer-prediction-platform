@@ -702,6 +702,26 @@ func buildPusher(pubKey, privKey, subject string) (infrapush.Sender, error) {
 	return infrapush.NewVAPIDClient(pubKey, privKey, subject), nil
 }
 
+// makeRevokedSessionsPruneJob returns the scheduler job that deletes revocation
+// records older than max_age + 1 day.  Entries beyond max_age cannot match a
+// live token (the iat check in PolicyProvider would already have rejected it),
+// so they are safe to remove.
+func makeRevokedSessionsPruneJob(params service.SystemParamService, sessionRepo repository.SessionRepository, log *zap.Logger) func(context.Context) error {
+	return func(ctx context.Context) error {
+		maxAgeSecs := params.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
+		cutoff := time.Now().Add(-time.Duration(maxAgeSecs)*time.Second - 24*time.Hour)
+		n, err := sessionRepo.PruneRevoked(ctx, cutoff)
+		if err != nil {
+			log.Warn("session.revoked_prune: failed", zap.Error(err))
+			return err
+		}
+		if n > 0 {
+			log.Info("session.revoked_prune: deleted stale revocation records", zap.Int64("count", n))
+		}
+		return nil
+	}
+}
+
 // makePushPruneJob returns the scheduler job that deletes inactive push
 // subscriptions older than the configured retention window.
 func makePushPruneJob(params service.SystemParamService, pushRepo repository.PushSubscriptionRepository, log *zap.Logger) func(context.Context) error {
@@ -895,6 +915,13 @@ func buildNotifScheduler(
 	s.RegisterInterval("push.subscription_prune",
 		time.Duration(params.GetInt(ctx, domain.ParamKeyWorkerSchedPushPruneIntervalSec, domain.DefaultWorkerSchedPushPruneIntervalSec))*time.Second,
 		makePushPruneJob(params, pushRepo, log))
+
+	// Revoked session cleanup — runs daily to prune entries older than
+	// max_age + 1 day.  Entries beyond max_age are unreachable because the
+	// iat check in PolicyProvider would already have rejected the token.
+	sessionRepo := repository.NewPostgresSessionRepository(db)
+	s.RegisterInterval("session.revoked_prune", 24*time.Hour,
+		makeRevokedSessionsPruneJob(params, sessionRepo, log))
 
 	// KYC document lifecycle — purge document metadata and physical files for
 	// accounts deleted beyond the configured retention window.  Runs weekly at

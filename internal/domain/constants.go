@@ -456,6 +456,7 @@ func AllParamKeys() []string {
 		ParamKeyAuditMaxInFlight,
 		// Auth
 		ParamKeyAuthValidationTimeout,
+		ParamKeyAuthSessionMaxAgeSecs,
 		// DLQ
 		ParamKeyDLQSampleSize,
 		ParamKeyDLQReplayDefaultLimit,

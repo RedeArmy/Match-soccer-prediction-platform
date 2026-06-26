@@ -72,10 +72,10 @@ describe("KnockoutBracket", () => {
     );
   });
 
-  it("renders nothing when slots exist but no match has both teams confirmed", async () => {
+  it("renders nothing when no slot has a team", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_01_a", "1.° Grupo A", "Sudáfrica"),
-      makeSlot(2, "r32_01_b", "2.° Grupo B"), // second slot still pending
+      makeSlot(1, "r32_01_a", "1.° Grupo A"),
+      makeSlot(2, "r32_01_b", "2.° Grupo B"),
     ] as never);
 
     const { container } = renderBracket();
@@ -83,6 +83,21 @@ describe("KnockoutBracket", () => {
     await vi.waitFor(() =>
       expect(container.querySelector("section")).toBeNull(),
     );
+  });
+
+  it("renders the bracket when only one slot of a match is confirmed", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      makeSlot(1, "r32_01_a", "1.° Grupo A", "Sudáfrica"),
+      makeSlot(2, "r32_01_b", "2.° Grupo B"), // second slot still pending
+    ] as never);
+
+    renderBracket();
+
+    // Phase is visible as soon as any slot has a team
+    expect(await screen.findByText("Dieciseisavos")).toBeInTheDocument();
+    expect(screen.getByText("Sudáfrica")).toBeInTheDocument();
+    // Unconfirmed slot shows its placeholder description
+    expect(screen.getByText("2.° Grupo B")).toBeInTheDocument();
   });
 
   it("renders the bracket section when a match has both slots confirmed", async () => {
@@ -127,9 +142,8 @@ describe("KnockoutBracket", () => {
     expect(screen.queryByText("Alemania")).toBeNull();
   });
 
-  it("shows only phases that have at least one fully-confirmed match; others stay hidden", async () => {
-    // r32 has one complete match (M01 both confirmed) plus unconfirmed slots.
-    // Later phases have slots defined but no complete match → they are hidden.
+  it("shows only phases that have at least one confirmed slot; others stay hidden", async () => {
+    // r32 has confirmed teams in some slots; later phases have no teams at all → they are hidden.
     vi.mocked(api.getSlots).mockResolvedValueOnce([
       makeSlot(1, "r32_01_a", "1.° Grupo A", "México"),
       makeSlot(2, "r32_01_b", "2.° Grupo B", "USA"), // M01 complete → r32 visible
