@@ -22,7 +22,7 @@ func (s *stubProvider) ValidateToken(_ context.Context, _ string) (auth.Claims, 
 	return s.claims, s.err
 }
 
-// stubParams implements IntGetter.
+// stubParams implements GetInter.
 type stubParams struct{ maxAge int }
 
 func (s *stubParams) GetInt(_ context.Context, _ string, def int) int {

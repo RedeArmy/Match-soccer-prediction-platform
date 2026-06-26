@@ -76,7 +76,7 @@ class APIClient {
     });
 
     if (!res.ok) {
-      if (res.status === 401 && typeof globalThis.window !== "undefined") {
+      if (res.status === 401 && globalThis.window !== undefined) {
         globalThis.dispatchEvent(new CustomEvent("wcq:session-expired"));
       }
       const body = await res.json().catch(() => ({}));
@@ -1096,7 +1096,7 @@ class APIClient {
     });
 
     if (!res.ok) {
-      if (res.status === 401 && typeof globalThis.window !== "undefined") {
+      if (res.status === 401 && globalThis.window !== undefined) {
         globalThis.dispatchEvent(new CustomEvent("wcq:session-expired"));
       }
       const body = await res.json().catch(() => ({}));
