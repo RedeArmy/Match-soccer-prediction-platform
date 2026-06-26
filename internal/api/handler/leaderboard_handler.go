@@ -36,8 +36,7 @@ func NewLeaderboardHandler(ranker service.Ranker, authz service.GroupAuthz, log 
 // @Description  Returns the ranked standings for a group. Pass ?phase=<value>
 //
 //	to restrict to a single tournament phase. Recognised phase values:
-//	group_stage, round_of_32, round_of_16, quarter_final, semi_final,
-//	third_place, final.
+//	group_stage, round_of_16, quarter_final, semi_final, third_place, final.
 //
 // @Tags         groups
 // @Produce      json

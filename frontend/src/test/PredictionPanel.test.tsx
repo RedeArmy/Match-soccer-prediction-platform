@@ -655,13 +655,13 @@ describe("PredictionPanel", () => {
   });
 
   it("hides knockout matches with bracket placeholder codes and suppresses the tab when all are placeholders", async () => {
-    // All matches in round_of_32 still have unresolved bracket codes
+    // All matches in round_of_16 still have unresolved bracket codes
     const placeholderMatch1 = {
       ...scheduledMatch,
       id: 30,
       home_team: "2A",
       away_team: "2B",
-      phase: "round_of_32",
+      phase: "round_of_16",
       group_label: null,
       kickoff_at: futureKickoff,
     };
@@ -670,7 +670,7 @@ describe("PredictionPanel", () => {
       id: 31,
       home_team: "1E",
       away_team: "3ABCDF",
-      phase: "round_of_32",
+      phase: "round_of_16",
       group_label: null,
       kickoff_at: futureKickoff,
     };
@@ -684,8 +684,8 @@ describe("PredictionPanel", () => {
     renderPanel();
 
     await screen.findByText("Canadá");
-    // round_of_32 tab must NOT appear — every match has placeholder codes
-    expect(screen.queryByRole("button", { name: /Dieciseisavos/i })).toBeNull();
+    // round_of_16 tab must NOT appear — every match has placeholder codes
+    expect(screen.queryByRole("button", { name: /Octavos/i })).toBeNull();
   });
 
   it("shows knockout tab and hides placeholder matches when phase has mix of confirmed and placeholder", async () => {
@@ -694,7 +694,7 @@ describe("PredictionPanel", () => {
       id: 32,
       home_team: "Brazil",
       away_team: "Argentina",
-      phase: "round_of_32",
+      phase: "round_of_16",
       group_label: null,
       kickoff_at: futureKickoff,
     };
@@ -703,7 +703,7 @@ describe("PredictionPanel", () => {
       id: 33,
       home_team: "W73",
       away_team: "W75",
-      phase: "round_of_32",
+      phase: "round_of_16",
       group_label: null,
       kickoff_at: futureKickoff,
     };
@@ -717,9 +717,9 @@ describe("PredictionPanel", () => {
 
     // Tab appears because at least one match is confirmed
     expect(
-      await screen.findByRole("button", { name: /Dieciseisavos/i }),
+      await screen.findByRole("button", { name: /Octavos/i }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Dieciseisavos/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Octavos/i }));
 
     // Only the confirmed match renders
     expect(await screen.findByText("Brasil")).toBeInTheDocument();
@@ -743,7 +743,7 @@ describe("PredictionPanel", () => {
       id: 90,
       home_team: "1A",
       away_team: "Brazil",
-      phase: "round_of_32",
+      phase: "round_of_16",
       group_label: null,
       kickoff_at: futureKickoff,
     };
@@ -757,9 +757,9 @@ describe("PredictionPanel", () => {
     // After enrichment "1A" → "Mexico" (i18n: "México"); phase tab becomes visible
     // because the match now has a confirmed team name instead of a placeholder code.
     expect(
-      await screen.findByRole("button", { name: /Dieciseisavos/i }),
+      await screen.findByRole("button", { name: /Octavos/i }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Dieciseisavos/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Octavos/i }));
 
     expect(await screen.findByText("México")).toBeInTheDocument();
     expect(screen.queryByText("1A")).toBeNull();
@@ -773,7 +773,7 @@ describe("PredictionPanel", () => {
       id: 80,
       home_team: "Brazil",
       away_team: "Argentina",
-      phase: "round_of_32",
+      phase: "round_of_16",
       group_label: null,
       kickoff_at: todayKickoff,
     };
@@ -782,7 +782,7 @@ describe("PredictionPanel", () => {
       id: 81,
       home_team: "W73",
       away_team: "1A",
-      phase: "round_of_32",
+      phase: "round_of_16",
       group_label: null,
       kickoff_at: todayKickoff,
     };
@@ -809,7 +809,7 @@ describe("PredictionPanel", () => {
       id: 82,
       home_team: "2C",
       away_team: "3ABCDF",
-      phase: "round_of_32",
+      phase: "round_of_16",
       group_label: null,
       kickoff_at: todayKickoff,
     };

@@ -213,7 +213,6 @@ func ParseWinMethod(s string) (WinMethod, error) {
 // ValidateMatchPhase to reject arbitrary strings before they reach the DB.
 var validPhases = map[MatchPhase]struct{}{
 	PhaseGroupStage:   {},
-	PhaseRoundOf32:    {},
 	PhaseRoundOf16:    {},
 	PhaseQuarterFinal: {},
 	PhaseSemiFinal:    {},

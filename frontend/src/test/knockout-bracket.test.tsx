@@ -74,8 +74,8 @@ describe("KnockoutBracket", () => {
 
   it("renders nothing when slots exist but no match has both teams confirmed", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_01_a", "1.° Grupo A", "Sudáfrica"),
-      makeSlot(2, "r32_01_b", "2.° Grupo B"), // second slot still pending
+      makeSlot(1, "r16_01_a", "Clasificado R16 M01", "México"),
+      makeSlot(2, "r16_01_b", "Clasificado R16 M02"), // second slot still pending
     ] as never);
 
     const { container } = renderBracket();
@@ -128,54 +128,51 @@ describe("KnockoutBracket", () => {
   });
 
   it("shows only phases that have at least one fully-confirmed match; others stay hidden", async () => {
-    // r32 has one complete match (M01 both confirmed) plus unconfirmed slots.
+    // r16 has one complete match (M01 both confirmed) plus unconfirmed slots.
     // Later phases have slots defined but no complete match → they are hidden.
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_01_a", "1.° Grupo A", "México"),
-      makeSlot(2, "r32_01_b", "2.° Grupo B", "USA"), // M01 complete → r32 visible
-      makeSlot(3, "r32_02_a", "1.° Grupo C", "Brasil"),
-      makeSlot(4, "r32_02_b", "2.° Grupo D"), // M02 incomplete
-      makeSlot(5, "r16_01_a", "Ganador R32 M01"),
-      makeSlot(6, "r16_01_b", "Ganador R32 M02"), // no teams → r16 hidden
+      makeSlot(1, "r16_01_a", "Clasificado R16 M01", "México"),
+      makeSlot(2, "r16_01_b", "Clasificado R16 M02", "USA"), // M01 complete → r16 visible
+      makeSlot(3, "r16_02_a", "Clasificado R16 M03", "Brasil"),
+      makeSlot(4, "r16_02_b", "Clasificado R16 M04"), // M02 incomplete
+      makeSlot(5, "qf_01_a", "Ganador R16 M01"),
+      makeSlot(6, "qf_01_b", "Ganador R16 M02"), // no teams → qf hidden
       makeSlot(7, "fin_01_a", "Ganador SF M01"),
       makeSlot(8, "fin_01_b", "Ganador SF M02"), // no teams → fin hidden
     ] as never);
 
     renderBracket();
 
-    // Only r32 is visible (has a complete match)
-    expect(await screen.findByText("Dieciseisavos")).toBeInTheDocument();
+    // Only r16 is visible (has a complete match)
+    expect(await screen.findByText("Octavos")).toBeInTheDocument();
     expect(screen.getByText("México")).toBeInTheDocument();
     expect(screen.getByText("USA")).toBeInTheDocument();
 
-    // Incomplete slot in r32 shows placeholder description
-    expect(screen.getByText("2.° Grupo D")).toBeInTheDocument();
+    // Incomplete slot in r16 shows placeholder description
+    expect(screen.getByText("Clasificado R16 M04")).toBeInTheDocument();
 
     // Later phases with no complete match are not rendered
-    expect(screen.queryByText("Octavos")).toBeNull();
+    expect(screen.queryByText("Cuartos")).toBeNull();
     expect(screen.queryByText("Final")).toBeNull();
   });
 
-  it("shows all six phases once each has at least one confirmed match", async () => {
+  it("shows all five phases once each has at least one confirmed match", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_01_a", "1.° Grupo A", "México"),
-      makeSlot(2, "r32_01_b", "2.° Grupo B", "USA"),
-      makeSlot(3, "r16_01_a", "Ganador R32 M01", "México"),
-      makeSlot(4, "r16_01_b", "Ganador R32 M02", "USA"),
-      makeSlot(5, "qf_01_a", "Ganador R16 M01", "México"),
-      makeSlot(6, "qf_01_b", "Ganador R16 M02", "USA"),
-      makeSlot(7, "sf_01_a", "Ganador QF M01", "México"),
-      makeSlot(8, "sf_01_b", "Ganador QF M02", "USA"),
-      makeSlot(9, "tp_01_a", "Perdedor SF M01", "Holanda"),
-      makeSlot(10, "tp_01_b", "Perdedor SF M02", "Alemania"),
-      makeSlot(11, "fin_01_a", "Ganador SF M01", "México"),
-      makeSlot(12, "fin_01_b", "Ganador SF M02", "USA"),
+      makeSlot(1, "r16_01_a", "Clasificado R16 M01", "México"),
+      makeSlot(2, "r16_01_b", "Clasificado R16 M02", "USA"),
+      makeSlot(3, "qf_01_a", "Ganador R16 M01", "México"),
+      makeSlot(4, "qf_01_b", "Ganador R16 M02", "USA"),
+      makeSlot(5, "sf_01_a", "Ganador QF M01", "México"),
+      makeSlot(6, "sf_01_b", "Ganador QF M02", "USA"),
+      makeSlot(7, "tp_01_a", "Perdedor SF M01", "Holanda"),
+      makeSlot(8, "tp_01_b", "Perdedor SF M02", "Alemania"),
+      makeSlot(9, "fin_01_a", "Ganador SF M01", "México"),
+      makeSlot(10, "fin_01_b", "Ganador SF M02", "USA"),
     ] as never);
 
     renderBracket();
 
-    expect(await screen.findByText("Dieciseisavos")).toBeInTheDocument();
-    expect(screen.getByText("Octavos")).toBeInTheDocument();
+    expect(await screen.findByText("Octavos")).toBeInTheDocument();
     expect(screen.getByText("Cuartos")).toBeInTheDocument();
     expect(screen.getByText("Semis")).toBeInTheDocument();
     expect(screen.getByText("3.er Lugar")).toBeInTheDocument();
@@ -205,38 +202,26 @@ describe("slot descriptions – español", () => {
     localStorage.setItem("quiniela-locale-source", "explicit");
   });
 
-  it("muestra '1.° Grupo A' sin cambios para slot sin clasificado", async () => {
+  it("muestra 'Clasificado R16 M02' sin cambios para slot sin clasificado", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_01_a", "1.° Grupo A", "México"),
-      makeSlot(2, "r32_01_b", "2.° Grupo B"), // unconfirmed → shows description
-      makeSlot(3, "r32_02_a", "1.° Grupo C", "Brasil"),
-      makeSlot(4, "r32_02_b", "2.° Grupo D", "Argentina"), // M02 complete → r32 visible
+      makeSlot(1, "r16_01_a", "Clasificado R16 M01", "México"),
+      makeSlot(2, "r16_01_b", "Clasificado R16 M02"), // unconfirmed → shows description
+      makeSlot(3, "r16_02_a", "Clasificado R16 M03", "Brasil"),
+      makeSlot(4, "r16_02_b", "Clasificado R16 M04", "Argentina"), // M02 complete → r16 visible
     ] as never);
     renderBracket();
-    expect(await screen.findByText("2.° Grupo B")).toBeInTheDocument();
+    expect(await screen.findByText("Clasificado R16 M02")).toBeInTheDocument();
   });
 
-  it("muestra 'Mejor 3.° (p.2)' sin cambios", async () => {
+  it("muestra 'Ganador R16 M02' sin cambios en slot no confirmado de QF", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_13_a", "Mejor 3.° (p.1)", "Uruguay"),
-      makeSlot(2, "r32_13_b", "Mejor 3.° (p.2)"), // unconfirmed → shows description
-      makeSlot(3, "r32_01_a", "1.° Grupo A", "Brasil"),
-      makeSlot(4, "r32_01_b", "2.° Grupo B", "Argentina"), // M01 complete → r32 visible
+      makeSlot(1, "qf_01_a", "Ganador R16 M01", "México"),
+      makeSlot(2, "qf_01_b", "Ganador R16 M02"), // unconfirmed → shows description
+      makeSlot(3, "qf_02_a", "Ganador R16 M03", "Brasil"),
+      makeSlot(4, "qf_02_b", "Ganador R16 M04", "Argentina"), // M02 complete → qf visible
     ] as never);
     renderBracket();
-    expect(await screen.findByText("Mejor 3.° (p.2)")).toBeInTheDocument();
-  });
-
-  it("muestra 'Ganador R32 M02' sin cambios en slot no confirmado", async () => {
-    vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r16_01_a", "Ganador R32 M01", "México"),
-      makeSlot(2, "r16_01_b", "Ganador R32 M02"), // unconfirmed → shows description
-      makeSlot(3, "r16_02_a", "Ganador R32 M03", "Brasil"),
-      makeSlot(4, "r16_02_b", "Ganador R32 M04", "Argentina"), // M02 complete → r16 visible
-    ] as never);
-    renderBracket();
-    // r16 is the only visible phase → defaultOpen=true, content visible without click
-    expect(await screen.findByText("Ganador R32 M02")).toBeInTheDocument();
+    expect(await screen.findByText("Ganador R16 M02")).toBeInTheDocument();
   });
 
   it("muestra 'Perdedor SF M02' sin cambios en slot no confirmado", async () => {
@@ -247,7 +232,6 @@ describe("slot descriptions – español", () => {
       makeSlot(4, "tp_02_b", "Perdedor SF M04", "Francia"), // M02 complete → tp visible
     ] as never);
     renderBracket();
-    // tp is the only visible phase → defaultOpen=true, content visible without click
     expect(await screen.findByText("Perdedor SF M02")).toBeInTheDocument();
   });
 });
@@ -263,43 +247,29 @@ describe("slot descriptions – English", () => {
     localStorage.setItem("quiniela-locale-source", "explicit");
   });
 
-  it("translates '1.° Grupo A' → '1st Group A' for unconfirmed slot", async () => {
+  it("shows unconfirmed r16 slot description as-is (no translation needed)", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_01_a", "1.° Grupo A", "México"),
-      makeSlot(2, "r32_01_b", "2.° Grupo B"), // unconfirmed → shows translated desc
-      makeSlot(3, "r32_02_a", "1.° Grupo C", "Brasil"),
-      makeSlot(4, "r32_02_b", "2.° Grupo D", "Argentina"), // M02 complete → r32 visible
+      makeSlot(1, "r16_01_a", "Clasificado R16 M01", "México"),
+      makeSlot(2, "r16_01_b", "Clasificado R16 M02"), // unconfirmed → shows description
+      makeSlot(3, "r16_02_a", "Clasificado R16 M03", "Brasil"),
+      makeSlot(4, "r16_02_b", "Clasificado R16 M04", "Argentina"), // M02 complete → r16 visible
     ] as never);
     renderBracket();
-    expect(await screen.findByText("2nd Group B")).toBeInTheDocument();
-    expect(screen.queryByText("2.° Grupo B")).toBeNull();
+    expect(await screen.findByText("Clasificado R16 M02")).toBeInTheDocument();
     // confirmed slot still shows the team name, not the description
     expect(screen.getByText("México")).toBeInTheDocument();
   });
 
-  it("translates 'Mejor 3.° (p.2)' → 'Best 3rd (p.2)'", async () => {
+  it("translates 'Ganador R16 M02' → 'Winner R16 M02'", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r32_13_a", "Mejor 3.° (p.1)", "Uruguay"),
-      makeSlot(2, "r32_13_b", "Mejor 3.° (p.2)"), // unconfirmed → shows translated desc
-      makeSlot(3, "r32_01_a", "1.° Grupo A", "Brasil"),
-      makeSlot(4, "r32_01_b", "2.° Grupo B", "Argentina"), // M01 complete → r32 visible
+      makeSlot(1, "qf_01_a", "Ganador R16 M01", "México"),
+      makeSlot(2, "qf_01_b", "Ganador R16 M02"), // unconfirmed → shows translated desc
+      makeSlot(3, "qf_02_a", "Ganador R16 M03", "Brasil"),
+      makeSlot(4, "qf_02_b", "Ganador R16 M04", "Argentina"), // M02 complete → qf visible
     ] as never);
     renderBracket();
-    expect(await screen.findByText("Best 3rd (p.2)")).toBeInTheDocument();
-    expect(screen.queryByText("Mejor 3.° (p.2)")).toBeNull();
-  });
-
-  it("translates 'Ganador R32 M02' → 'Winner R32 M02'", async () => {
-    vi.mocked(api.getSlots).mockResolvedValueOnce([
-      makeSlot(1, "r16_01_a", "Ganador R32 M01", "México"),
-      makeSlot(2, "r16_01_b", "Ganador R32 M02"), // unconfirmed → shows translated desc
-      makeSlot(3, "r16_02_a", "Ganador R32 M03", "Brasil"),
-      makeSlot(4, "r16_02_b", "Ganador R32 M04", "Argentina"), // M02 complete → r16 visible
-    ] as never);
-    renderBracket();
-    // r16 is the only visible phase → defaultOpen=true, content visible without click
-    expect(await screen.findByText("Winner R32 M02")).toBeInTheDocument();
-    expect(screen.queryByText("Ganador R32 M02")).toBeNull();
+    expect(await screen.findByText("Winner R16 M02")).toBeInTheDocument();
+    expect(screen.queryByText("Ganador R16 M02")).toBeNull();
   });
 
   it("translates 'Perdedor SF M02' → 'Loser SF M02'", async () => {
@@ -310,7 +280,6 @@ describe("slot descriptions – English", () => {
       makeSlot(4, "tp_02_b", "Perdedor SF M04", "Francia"), // M02 complete → tp visible
     ] as never);
     renderBracket();
-    // tp is the only visible phase → defaultOpen=true, content visible without click
     expect(await screen.findByText("Loser SF M02")).toBeInTheDocument();
     expect(screen.queryByText("Perdedor SF M02")).toBeNull();
   });

@@ -3,7 +3,6 @@
 // data. Set a phase to false here to force-hide it even when matches exist
 // (e.g. during a data-integrity incident).
 const KNOCKOUT_PHASE_FLAGS: Record<string, boolean> = {
-  round_of_32: true,
   round_of_16: true,
   quarter_final: true,
   semi_final: true,
@@ -37,7 +36,6 @@ const KNOCKOUT_TAB_ORDER = [
   "third_place",
   "quarter_final",
   "round_of_16",
-  "round_of_32",
 ] as const;
 
 // Returns which knockout phases should appear as tabs.
