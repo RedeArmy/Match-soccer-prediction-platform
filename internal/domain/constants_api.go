@@ -8,6 +8,13 @@ const (
 	// headers that cause httprc to re-fetch synchronously, exceeding 5 s under load.
 	DefaultAuthValidationTimeoutSeconds = 10 // auth.validation_timeout_seconds
 
+	// DefaultAuthSessionMaxAgeSecs is the maximum session lifetime enforced by the
+	// application layer independently of Clerk (7 days = 604800 s). Tokens whose
+	// "iat" claim is older than this value are rejected with 401 even when Clerk
+	// still considers the session valid.
+	// is_runtime=TRUE: changes propagate within 30 s without restart.
+	DefaultAuthSessionMaxAgeSecs = 604800 // auth.session_max_age_seconds
+
 	// API request limits.
 	DefaultAPIBodySizeLimitBytes = 65536 // api.body_size_limit_bytes (64 KB)
 
@@ -74,6 +81,12 @@ const (
 const (
 	// ParamKeyAuthValidationTimeout is the JWKS warm-up timeout in seconds.
 	ParamKeyAuthValidationTimeout = "auth.validation_timeout_seconds"
+
+	// ParamKeyAuthSessionMaxAgeSecs is the maximum session lifetime in seconds
+	// enforced by the application independently of Clerk's configured session
+	// duration. Tokens whose "iat" is older than this value are rejected with 401.
+	// is_runtime=TRUE: changes propagate within 30 s without restart.
+	ParamKeyAuthSessionMaxAgeSecs = "auth.session_max_age_seconds"
 
 	// ParamKeyAPIBodySizeLimitBytes is the maximum request body size in bytes.
 	// Requests exceeding this limit are rejected with 413 to prevent DoS.

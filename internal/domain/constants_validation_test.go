@@ -56,6 +56,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyAuditMaxInFlight":  ParamKeyAuditMaxInFlight,
 		// Auth
 		"ParamKeyAuthValidationTimeout": ParamKeyAuthValidationTimeout,
+		"ParamKeyAuthSessionMaxAgeSecs": ParamKeyAuthSessionMaxAgeSecs,
 		// DLQ
 		"ParamKeyDLQSampleSize":         ParamKeyDLQSampleSize,
 		"ParamKeyDLQReplayDefaultLimit": ParamKeyDLQReplayDefaultLimit,
@@ -400,7 +401,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 157 // update when adding a new ParamKey* constant (+1 featflag.paypal from 000198; +2 daily summary from 000202)
+		const expectedCount = 158 // update when adding a new ParamKey* constant (+1 featflag.paypal from 000198; +2 daily summary from 000202; +1 auth.session_max_age_seconds from 000211)
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -644,6 +645,8 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeySystemDate", ParamKeySystemDate, "system"},
 		// Feature flags (migration 000198)
 		{"ParamKeyFeatFlagPaypal", ParamKeyFeatFlagPaypal, "featflag"},
+		// Session revocation (migration 000211)
+		{"ParamKeyAuthSessionMaxAgeSecs", ParamKeyAuthSessionMaxAgeSecs, "auth"},
 	}
 
 	for _, tc := range paramKeys {

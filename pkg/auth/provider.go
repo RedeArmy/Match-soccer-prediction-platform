@@ -35,10 +35,25 @@ var ErrProviderUnavailable = errors.New("identity provider temporarily unavailab
 // The middleware should respond with 401 Unauthorised.
 var ErrInvalidToken = errors.New("token is invalid or expired")
 
-// IdentityProvider validates a raw Bearer token and returns the provider's
-// opaque identifier for the authenticated principal (the "subject"). The
-// subject is stored in the request context and used downstream to resolve
-// the internal User row (e.g. via GetByExternalSubject).
+// Claims holds the verified fields extracted from a validated JWT.
+// These values are stored in the request context by RequireAuth and are
+// available to downstream middleware and handlers.
+type Claims struct {
+	// Subject is the identity-provider's opaque principal identifier (JWT "sub").
+	// For Clerk tokens this is the Clerk user_id (e.g. "user_2abc…").
+	Subject string
+	// IssuedAt is when the token was minted (JWT "iat"). Used by PolicyProvider
+	// to enforce a system-controlled maximum session age independently of Clerk.
+	IssuedAt time.Time
+	// SessionID is the provider's session identifier (JWT "sid"). Used by
+	// PolicyProvider to check the local revocation blocklist on logout.
+	// Empty when the JWT does not carry a "sid" claim (e.g. test tokens).
+	SessionID string
+}
+
+// IdentityProvider validates a raw Bearer token and returns the verified Claims
+// for the authenticated principal. The subject is stored in the request context
+// and used downstream to resolve the internal User row (e.g. via GetByExternalSubject).
 //
 // Implementations must be safe for concurrent use by multiple goroutines.
 //
@@ -46,5 +61,5 @@ var ErrInvalidToken = errors.New("token is invalid or expired")
 // ErrInvalidToken for authentication failures. Callers use errors.Is to
 // select the appropriate HTTP response.
 type IdentityProvider interface {
-	ValidateToken(ctx context.Context, rawToken string) (subject string, err error)
+	ValidateToken(ctx context.Context, rawToken string) (Claims, error)
 }

@@ -30,14 +30,17 @@ import (
 )
 
 // stubIdentityProvider is a test double for auth.IdentityProvider. It returns
-// a fixed subject or error, making RequireAuth tests provider-agnostic.
+// a fixed Claims or error, making RequireAuth tests provider-agnostic.
 type stubIdentityProvider struct {
 	subject string
 	err     error
 }
 
-func (p *stubIdentityProvider) ValidateToken(_ context.Context, _ string) (string, error) {
-	return p.subject, p.err
+func (p *stubIdentityProvider) ValidateToken(_ context.Context, _ string) (auth.Claims, error) {
+	if p.err != nil {
+		return auth.Claims{}, p.err
+	}
+	return auth.Claims{Subject: p.subject, IssuedAt: time.Now()}, nil
 }
 
 // stubUserRepo implements repository.UserRepository for middleware tests.

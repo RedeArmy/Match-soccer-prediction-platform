@@ -93,13 +93,14 @@ func NewJWKSProvider(ctx context.Context, jwksURL string, warmupTimeout time.Dur
 }
 
 // ValidateToken fetches the current JWKS keyset, parses and validates the JWT,
-// and returns the "sub" claim on success.
+// and returns Claims on success. The returned Claims carry the "sub", "iat",
+// and "sid" fields extracted from the verified token.
 //
 // When the JWKS endpoint is unreachable the last known-good keyset is used as
 // a fallback. Returns ErrProviderUnavailable when no keyset is available at
 // all (neither live nor cached). Returns ErrInvalidToken when the JWT is
 // malformed, has an invalid signature, or has expired.
-func (p *JWKSProvider) ValidateToken(ctx context.Context, rawToken string) (string, error) {
+func (p *JWKSProvider) ValidateToken(ctx context.Context, rawToken string) (Claims, error) {
 	keySet, err := p.jwkCache.Get(ctx, p.jwksURL)
 	if err != nil {
 		p.fallbackMu.RLock()
@@ -112,7 +113,7 @@ func (p *JWKSProvider) ValidateToken(ctx context.Context, rawToken string) (stri
 		} else {
 			p.log.Error("auth: JWKS fetch failed and no fallback available",
 				zap.Error(err))
-			return "", fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
+			return Claims{}, fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
 		}
 	} else {
 		// Successful fetch: keep the fallback fresh.
@@ -131,9 +132,17 @@ func (p *JWKSProvider) ValidateToken(ctx context.Context, rawToken string) (stri
 		jwt.WithAcceptableSkew(10*time.Second),
 	)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrInvalidToken, err)
+		return Claims{}, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
-	return token.Subject(), nil
+
+	claims := Claims{
+		Subject:  token.Subject(),
+		IssuedAt: token.IssuedAt(),
+	}
+	if sid, ok := token.PrivateClaims()["sid"].(string); ok {
+		claims.SessionID = sid
+	}
+	return claims, nil
 }
 
 // failClosedProvider is returned by NewJWKSProvider when the JWKS URL is
@@ -144,8 +153,8 @@ type failClosedProvider struct {
 	msg string
 }
 
-func (p *failClosedProvider) ValidateToken(_ context.Context, _ string) (string, error) {
-	return "", fmt.Errorf("%w: %s", ErrProviderUnavailable, p.msg)
+func (p *failClosedProvider) ValidateToken(_ context.Context, _ string) (Claims, error) {
+	return Claims{}, fmt.Errorf("%w: %s", ErrProviderUnavailable, p.msg)
 }
 
 var _ IdentityProvider = (*JWKSProvider)(nil)

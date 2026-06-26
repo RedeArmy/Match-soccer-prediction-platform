@@ -332,6 +332,8 @@ var paramIntConstraints = map[string]paramIntRange{
 	// Infrastructure timeouts (restart required)
 	domain.ParamKeyAuditWriteTimeout:     {1, 60},
 	domain.ParamKeyAuthValidationTimeout: {1, 60},
+	// Session max age: 5 min minimum, 30 days maximum (runtime; propagates within 30 s)
+	domain.ParamKeyAuthSessionMaxAgeSecs: {300, 2_592_000},
 
 	// Audit retry policy
 	domain.ParamKeyAuditMaxRetries:   {1, 10},

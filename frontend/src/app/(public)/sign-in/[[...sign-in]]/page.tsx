@@ -6,7 +6,7 @@ export default function SignInPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="font-display text-5xl text-gold-400 mb-5">
-            BIENVENIDO
+            WELCOME
           </h1>
 
           {/* K spinner — spinning arc + brand letter */}

@@ -31,8 +31,10 @@ import (
 type contextKey int
 
 const (
-	contextKeyUserID contextKey = iota
-	contextKeyUser              // resolved *domain.User, set by ResolveUser middleware
+	contextKeyUserID    contextKey = iota
+	contextKeyUser                 // resolved *domain.User, set by ResolveUser middleware
+	contextKeySessionID            // Clerk "sid" claim, set by RequireAuth
+	contextKeyIssuedAt             // JWT "iat" claim, set by RequireAuth
 )
 
 // ContextWithUserID returns a new context with the given Clerk user ID stored
@@ -42,12 +44,30 @@ func ContextWithUserID(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, contextKeyUserID, userID)
 }
 
+// ContextWithSessionID returns a new context with the given Clerk session ID
+// stored under the same key as RequireAuth. Use this in tests alongside
+// ContextWithUserID to exercise handlers that need the session ID.
+func ContextWithSessionID(ctx context.Context, sid string) context.Context {
+	return context.WithValue(ctx, contextKeySessionID, sid)
+}
+
 // UserIDFromContext returns the Clerk user ID stored in ctx by RequireAuth.
 // The second return value is false when the request did not pass through
 // RequireAuth (e.g. public endpoints).
 func UserIDFromContext(ctx context.Context) (string, bool) {
 	id, ok := ctx.Value(contextKeyUserID).(string)
 	return id, ok
+}
+
+// SessionIDFromContext returns the Clerk session ID ("sid" JWT claim) stored
+// in ctx by RequireAuth. Returns ("", false) for public endpoints or tokens
+// that do not carry a "sid" claim (e.g. test JWTs).
+func SessionIDFromContext(ctx context.Context) (string, bool) {
+	sid, ok := ctx.Value(contextKeySessionID).(string)
+	if !ok || sid == "" {
+		return "", false
+	}
+	return sid, true
 }
 
 // RequireRole returns a middleware that verifies the authenticated user holds
@@ -137,7 +157,7 @@ func RequireAuth(provider auth.IdentityProvider, log *zap.Logger) func(http.Hand
 			}
 			rawToken := strings.TrimPrefix(authHeader, "Bearer ")
 
-			subject, err := provider.ValidateToken(r.Context(), rawToken)
+			claims, err := provider.ValidateToken(r.Context(), rawToken)
 			if err != nil {
 				if errors.Is(err, auth.ErrProviderUnavailable) {
 					log.Error("RequireAuth: identity provider unavailable",
@@ -151,7 +171,9 @@ func RequireAuth(provider auth.IdentityProvider, log *zap.Logger) func(http.Hand
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), contextKeyUserID, subject)
+			ctx := context.WithValue(r.Context(), contextKeyUserID, claims.Subject)
+			ctx = context.WithValue(ctx, contextKeySessionID, claims.SessionID)
+			ctx = context.WithValue(ctx, contextKeyIssuedAt, claims.IssuedAt)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

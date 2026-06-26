@@ -249,3 +249,53 @@ func TestGetMine_WithQuinielaID_ServiceError_Returns500(t *testing.T) {
 		t.Errorf(fmtExpect500, w.Code)
 	}
 }
+
+// TestGetMine_NoLimitParam_ReturnsAllPredictions verifies that omitting ?limit
+// returns all predictions without truncation. A user with 60+ predictions would
+// only see the first 50 if the handler defaulted to DefaultPaginationDefaultLimit,
+// causing silent save failures for matches whose predictions exceeded the page.
+func TestGetMine_NoLimitParam_ReturnsAllPredictions(t *testing.T) {
+	preds := make([]*domain.Prediction, 60)
+	for i := range preds {
+		preds[i] = &domain.Prediction{ID: i + 1, UserID: 1, MatchID: i + 1}
+	}
+	svc := &stubPredSvc{preds: preds}
+	req := httptest.NewRequest(http.MethodGet, urlGetMyPredictions, nil) // no ?limit
+	w := httptest.NewRecorder()
+	newPredRouter(svc, true).ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+	var got handler.Paged[handler.PredictionResponse]
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf(predictionDecodeErrFmt, err)
+	}
+	if len(got.Data) != 60 {
+		t.Errorf("expected all 60 predictions without truncation, got %d", len(got.Data))
+	}
+}
+
+// TestGetMine_WithQuinielaID_NoLimitParam_ReturnsAllPredictions ensures the same
+// unbounded-by-default behaviour applies to the quiniela-scoped path. A user
+// playing in a large quiniela spanning 50+ matches would otherwise hit the same
+// truncation that caused silent save failures.
+func TestGetMine_WithQuinielaID_NoLimitParam_ReturnsAllPredictions(t *testing.T) {
+	preds := make([]*domain.Prediction, 60)
+	for i := range preds {
+		preds[i] = &domain.Prediction{ID: i + 1, UserID: 1, MatchID: i + 1}
+	}
+	svc := &stubPredSvc{preds: preds}
+	req := httptest.NewRequest(http.MethodGet, "/me?quiniela_id=1", nil) // no ?limit
+	w := httptest.NewRecorder()
+	newPredRouter(svc, true).ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+	var got handler.Paged[handler.PredictionResponse]
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf(predictionDecodeErrFmt, err)
+	}
+	if len(got.Data) != 60 {
+		t.Errorf("expected all 60 predictions without truncation, got %d", len(got.Data))
+	}
+}
