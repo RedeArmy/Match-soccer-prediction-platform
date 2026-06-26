@@ -47,6 +47,7 @@ const TABS: { key: TabKey; label: string }[] = [
 
 const PHASE_LABEL: Record<string, string> = {
   group_stage: "Fase de Grupos",
+  round_of_32: "Ronda de 32",
   round_of_16: "Ronda de 16",
   quarter_final: "Cuartos de Final",
   semi_final: "Semifinal",

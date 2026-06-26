@@ -122,6 +122,7 @@ function getEmptyState(params: {
 }
 
 const PHASE_KEY_MAP: Record<string, string> = {
+  round_of_32: "phaseRoundOf32",
   round_of_16: "phaseRoundOf16",
   quarter_final: "phaseQuarterFinal",
   semi_final: "phaseSemiF",

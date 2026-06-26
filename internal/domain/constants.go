@@ -383,6 +383,7 @@ const (
 // do not reorder it without updating dependent consumers.
 var AllMatchPhases = [...]MatchPhase{
 	PhaseGroupStage,
+	PhaseRoundOf32,
 	PhaseRoundOf16,
 	PhaseQuarterFinal,
 	PhaseSemiFinal,

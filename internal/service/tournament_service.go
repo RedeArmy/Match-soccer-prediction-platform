@@ -230,6 +230,7 @@ func (s *tournamentService) BackfillSlots(ctx context.Context) error {
 	}
 
 	knockoutPhases := []domain.MatchPhase{
+		domain.PhaseRoundOf32,
 		domain.PhaseRoundOf16,
 		domain.PhaseQuarterFinal,
 		domain.PhaseSemiFinal,

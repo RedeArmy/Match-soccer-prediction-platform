@@ -68,6 +68,7 @@ const SCORING_RULE_META = [
 // rates so knockout predictions carry more weight than group-stage ones.
 const SCORING_BY_PHASE = [
   { phase: "group_stage", exact: 5, correct: 2 },
+  { phase: "round_of_32", exact: 6, correct: 3 },
   { phase: "round_of_16", exact: 8, correct: 4 },
   { phase: "quarter_final", exact: 10, correct: 5 },
   { phase: "semi_final", exact: 12, correct: 6 },
