@@ -66,6 +66,7 @@ type TournamentService interface {
 type tournamentService struct {
 	matchRepo      repository.MatchRepository
 	tournamentRepo repository.TournamentRepository
+	teamRepo       repository.TeamRepository
 	params         SystemParamService
 	audit          AuditLogger
 	log            *zap.Logger
@@ -75,6 +76,7 @@ type tournamentService struct {
 func NewTournamentService(
 	matchRepo repository.MatchRepository,
 	tournamentRepo repository.TournamentRepository,
+	teamRepo repository.TeamRepository,
 	params SystemParamService,
 	audit AuditLogger,
 	log *zap.Logger,
@@ -82,6 +84,7 @@ func NewTournamentService(
 	return &tournamentService{
 		matchRepo:      matchRepo,
 		tournamentRepo: tournamentRepo,
+		teamRepo:       teamRepo,
 		params:         params,
 		audit:          audit,
 		log:            log,
@@ -380,7 +383,7 @@ func lessStanding(a, b *domain.GroupStanding) bool {
 
 // ListTeamNames returns all team names from the teams table sorted A → Z.
 func (s *tournamentService) ListTeamNames(ctx context.Context) ([]string, error) {
-	return s.tournamentRepo.ListTeamNames(ctx)
+	return s.teamRepo.ListTeamNames(ctx)
 }
 
 var _ TournamentService = (*tournamentService)(nil)

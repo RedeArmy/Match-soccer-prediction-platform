@@ -456,7 +456,10 @@ function TeamCombobox({ value, teams, onChange, disabled }: TeamComboboxProps) {
             <li key={team}>
               <button
                 type="button"
-                onMouseDown={() => select(team)}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  select(team);
+                }}
                 className={cn(
                   "w-full text-left px-3 py-2 text-sm transition-colors",
                   team === value
