@@ -119,6 +119,7 @@ func (s *Server) buildHandlers(
 	tiebreakerRepo := repository.NewPostgresTiebreakerRepository(s.db)
 	tiebreakerConfigRepo := repository.NewPostgresTiebreakerConfigRepository(s.db)
 	tournamentRepo := repository.NewPostgresTournamentRepository(s.db)
+	teamRepo := repository.NewPostgresTeamRepository(s.db)
 	auditLogRepo := repository.NewPostgresAuditLogRepository(s.db)
 	paymentRepo := repository.NewPostgresPaymentRecordRepository(s.db)
 	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(s.db)
@@ -202,7 +203,7 @@ func (s *Server) buildHandlers(
 
 	userStatsSvc := service.NewUserStatsService(repos.pred)
 	tiebreakerSvc := service.NewTiebreakerService(tiebreakerConfigRepo, groupAuthz, tiebreakerRepo, auditSvc, s.log)
-	tournamentSvc := service.NewTournamentService(repos.match, tournamentRepo, params, auditSvc, s.log)
+	tournamentSvc := service.NewTournamentService(repos.match, tournamentRepo, teamRepo, params, auditSvc, s.log)
 	snapshotter := service.NewLeaderboardSnapshotService(ranker, snapRepo)
 	adminGroupSvc := service.NewAdminGroupService(quinielaRepo, repos.member, snapshotter, ranker, auditSvc, s.log)
 	adminUserSvc := service.NewAdminUserService(repos.user, repos.member, paymentRepo, auditSvc, s.log)

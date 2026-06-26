@@ -100,6 +100,15 @@ func (r *stubTournamentRepo) AutoConfirmSlot(_ context.Context, _ int, team stri
 	return s, nil
 }
 
+type stubTeamRepo struct {
+	names []string
+	err   error
+}
+
+func (r *stubTeamRepo) ListTeamNames(_ context.Context) ([]string, error) {
+	return r.names, r.err
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func groupLabel(s string) *string { return &s }
@@ -132,6 +141,7 @@ func newTournamentSvc(matches []*domain.Match, tbRepo *stubTournamentRepo) Tourn
 	return NewTournamentService(
 		&stubMatchRepoTournament{matches: matches},
 		tbRepo,
+		&stubTeamRepo{},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -222,6 +232,7 @@ func TestTournamentService_GetAllStandings_RepoError_Propagates(t *testing.T) {
 	svc := NewTournamentService(
 		&stubMatchRepoTournament{err: errors.New("db error")},
 		&stubTournamentRepo{},
+		&stubTeamRepo{},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -471,6 +482,7 @@ func TestAutoConfirmGroupSlots_RepoError_Propagates(t *testing.T) {
 	svc := NewTournamentService(
 		&stubMatchRepoTournament{err: dbErr},
 		&stubTournamentRepo{},
+		&stubTeamRepo{},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -547,6 +559,7 @@ func TestBackfillSlots_DBError_ReturnsNil(t *testing.T) {
 	svc := NewTournamentService(
 		&stubMatchRepoTournament{err: errors.New("db down")},
 		&stubTournamentRepo{slot: nil},
+		&stubTeamRepo{},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),

@@ -575,6 +575,15 @@ type QuinielaRoundEntryRepository interface {
 	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.QuinielaRoundEntry, error)
 }
 
+// TeamRepository provides read access to the FIFA 2026 nation catalogue.
+// It is separate from TournamentRepository because teams are a static reference
+// dataset, not bracket-management state.
+type TeamRepository interface {
+	// ListTeamNames returns all team names from the teams table sorted
+	// alphabetically (A → Z). Never returns nil; an empty catalogue yields [].
+	ListTeamNames(ctx context.Context) ([]string, error)
+}
+
 // TournamentRepository manages bracket position slots created and confirmed by
 // the system administrator as teams advance through the tournament.
 type TournamentRepository interface {
@@ -584,9 +593,6 @@ type TournamentRepository interface {
 	GetSlot(ctx context.Context, id int) (*domain.TournamentSlot, error)
 	// ListSlots returns all slots ordered by id.
 	ListSlots(ctx context.Context) ([]*domain.TournamentSlot, error)
-	// ListTeamNames returns all team names from the teams table sorted
-	// alphabetically (A → Z). Used to populate dropdowns in admin UIs.
-	ListTeamNames(ctx context.Context) ([]string, error)
 	// ConfirmSlot sets the advancing team for the given slot and records who confirmed it.
 	// Returns NotFound when the slot does not exist.
 	ConfirmSlot(ctx context.Context, id, confirmedByUserID int, team string) (*domain.TournamentSlot, error)

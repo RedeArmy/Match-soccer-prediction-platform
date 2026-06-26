@@ -273,7 +273,8 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	matchSvc := service.NewMatchService(matchRepo, bus, scorer, service.NoopAuditLogger{}, log)
 	matchSyncSvc := service.NewMatchSyncService(matchRepo, matchSvc, fpClient, log)
 	tournamentRepo := repository.NewPostgresTournamentRepository(db)
-	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, params, service.NoopAuditLogger{}, log)
+	teamRepo := repository.NewPostgresTeamRepository(db)
+	tournamentSvc := service.NewTournamentService(matchRepo, tournamentRepo, teamRepo, params, service.NoopAuditLogger{}, log)
 
 	quinielaRepo := repository.NewPostgresQuinielaRepository(db, repository.WithQuinielaLogger(log))
 	memberRepo := repository.NewPostgresGroupMembershipRepository(db)
