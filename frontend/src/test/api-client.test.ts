@@ -1350,3 +1350,23 @@ describe("api.adminUpdateMatchSlots", () => {
     expect(body.away_slot_id).toBeNull();
   });
 });
+
+describe("api – getTeams", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns team names array", async () => {
+    const teams = ["Argentina", "Brazil", "Mexico"];
+    mockFetch.mockResolvedValueOnce(makeResponse(teams));
+    const result = await api.getTeams();
+    expect(result).toEqual(teams);
+  });
+
+  it("calls /api/v1/teams without Authorization header", async () => {
+    mockFetch.mockResolvedValueOnce(makeResponse([]));
+    await api.getTeams();
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toContain("/api/v1/teams");
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["Authorization"]).toBeUndefined();
+  });
+});

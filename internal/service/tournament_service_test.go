@@ -100,6 +100,15 @@ func (r *stubTournamentRepo) AutoConfirmSlot(_ context.Context, _ int, team stri
 	return s, nil
 }
 
+type stubTeamRepo struct {
+	names []string
+	err   error
+}
+
+func (r *stubTeamRepo) ListTeamNames(_ context.Context) ([]string, error) {
+	return r.names, r.err
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 func groupLabel(s string) *string { return &s }
@@ -132,6 +141,7 @@ func newTournamentSvc(matches []*domain.Match, tbRepo *stubTournamentRepo) Tourn
 	return NewTournamentService(
 		&stubMatchRepoTournament{matches: matches},
 		tbRepo,
+		&stubTeamRepo{},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -222,6 +232,7 @@ func TestTournamentService_GetAllStandings_RepoError_Propagates(t *testing.T) {
 	svc := NewTournamentService(
 		&stubMatchRepoTournament{err: errors.New("db error")},
 		&stubTournamentRepo{},
+		&stubTeamRepo{},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -471,6 +482,7 @@ func TestAutoConfirmGroupSlots_RepoError_Propagates(t *testing.T) {
 	svc := NewTournamentService(
 		&stubMatchRepoTournament{err: dbErr},
 		&stubTournamentRepo{},
+		&stubTeamRepo{},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -547,6 +559,7 @@ func TestBackfillSlots_DBError_ReturnsNil(t *testing.T) {
 	svc := NewTournamentService(
 		&stubMatchRepoTournament{err: errors.New("db down")},
 		&stubTournamentRepo{slot: nil},
+		&stubTeamRepo{},
 		&noopSystemParamService{},
 		&noopAuditLogger{},
 		zap.NewNop(),
@@ -569,5 +582,45 @@ func TestBackfillSlots_SkipsUnfinishedKnockoutMatches(t *testing.T) {
 	svc := newTournamentSvc([]*domain.Match{scheduled}, repo)
 	if err := svc.BackfillSlots(context.Background()); err != nil {
 		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+}
+
+// ── ListTeamNames ─────────────────────────────────────────────────────────────
+
+func TestTournamentService_ListTeamNames_ReturnsSortedNames(t *testing.T) {
+	expected := []string{"Argentina", "Brazil", "Mexico"}
+	svc := NewTournamentService(
+		&stubMatchRepoTournament{},
+		&stubTournamentRepo{},
+		&stubTeamRepo{names: expected},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+	names, err := svc.ListTeamNames(context.Background())
+	if err != nil {
+		t.Fatalf(tournamentUnexpectedErr, err)
+	}
+	if len(names) != len(expected) {
+		t.Fatalf("expected %d names, got %d", len(expected), len(names))
+	}
+	for i, n := range names {
+		if n != expected[i] {
+			t.Errorf("name[%d]: got %q, want %q", i, n, expected[i])
+		}
+	}
+}
+
+func TestTournamentService_ListTeamNames_PropagatesRepoError(t *testing.T) {
+	svc := NewTournamentService(
+		&stubMatchRepoTournament{},
+		&stubTournamentRepo{},
+		&stubTeamRepo{err: errors.New("db down")},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+	if _, err := svc.ListTeamNames(context.Background()); err == nil {
+		t.Fatal("expected error from team repo, got nil")
 	}
 }

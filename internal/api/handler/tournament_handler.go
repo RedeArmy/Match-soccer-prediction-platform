@@ -59,6 +59,17 @@ func (h *TournamentHandler) GetGroupStanding(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, rows)
 }
 
+// ListTeams handles GET /api/v1/teams.
+// Returns all team names sorted A → Z. Public — no authentication required.
+func (h *TournamentHandler) ListTeams(w http.ResponseWriter, r *http.Request) {
+	names, err := h.svc.ListTeamNames(r.Context())
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, names)
+}
+
 // ListSlots handles GET /api/v1/tournament/slots.
 // Returns all bracket position slots.
 func (h *TournamentHandler) ListSlots(w http.ResponseWriter, r *http.Request) {

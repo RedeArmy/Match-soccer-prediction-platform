@@ -425,3 +425,60 @@ func TestTournamentHandler_ConfirmSlot_500_WhenServiceFails(t *testing.T) {
 		t.Errorf(fmtExpect500, rr.Code)
 	}
 }
+
+func TestTournamentHandler_ListTeams_200_ReturnsNames(t *testing.T) {
+	svc := &stubTournamentSvc{}
+	svc.teamNames = []string{"Argentina", "Brazil", "Mexico"}
+	h := tournamentHandler(svc, t)
+	r := chi.NewRouter()
+	r.Get("/teams", h.ListTeams)
+
+	req := httptest.NewRequest(http.MethodGet, "/teams", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	var names []string
+	if err := json.NewDecoder(rr.Body).Decode(&names); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(names) != 3 || names[0] != "Argentina" {
+		t.Errorf("unexpected names: %v", names)
+	}
+}
+
+func TestTournamentHandler_ListTeams_200_EmptyListNotNull(t *testing.T) {
+	svc := &stubTournamentSvc{}
+	svc.teamNames = []string{}
+	h := tournamentHandler(svc, t)
+	r := chi.NewRouter()
+	r.Get("/teams", h.ListTeams)
+
+	req := httptest.NewRequest(http.MethodGet, "/teams", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if body := rr.Body.String(); !strings.Contains(body, "[") {
+		t.Errorf("empty teams must serialise as [] not null, got: %s", body)
+	}
+}
+
+func TestTournamentHandler_ListTeams_500_WhenServiceFails(t *testing.T) {
+	svc := &stubTournamentSvc{err: errors.New(tournamentHandlerDBError)}
+	h := tournamentHandler(svc, t)
+	r := chi.NewRouter()
+	r.Get("/teams", h.ListTeams)
+
+	req := httptest.NewRequest(http.MethodGet, "/teams", nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf(fmtExpect500, rr.Code)
+	}
+}
