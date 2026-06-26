@@ -84,6 +84,7 @@ func (r *PostgresTournamentRepository) ListSlots(ctx context.Context) ([]*domain
 }
 
 // ListTeamNames returns team names from the teams table sorted A → Z.
+// Returns an empty slice (never nil) so the JSON response is always [] not null.
 func (r *PostgresTournamentRepository) ListTeamNames(ctx context.Context) ([]string, error) {
 	rows, err := r.db.Query(ctx, `SELECT name FROM teams ORDER BY name ASC`)
 	if err != nil {
@@ -91,7 +92,7 @@ func (r *PostgresTournamentRepository) ListTeamNames(ctx context.Context) ([]str
 	}
 	defer rows.Close()
 
-	var names []string
+	names := make([]string, 0)
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {

@@ -408,6 +408,14 @@ interface TeamComboboxProps {
 function TeamCombobox({ value, teams, onChange, disabled }: TeamComboboxProps) {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
+  const [prevValue, setPrevValue] = useState(value);
+
+  // React derived-state pattern: sync query when parent passes a new value
+  // (e.g. modal reopened for a different slot without unmounting).
+  if (prevValue !== value) {
+    setPrevValue(value);
+    setQuery(value);
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -492,7 +500,11 @@ function ConfirmSlotModal({
   return (
     <>
       <ModalHeader
-        title={slot.team ? "Corregir equipo en bracket" : "Confirmar equipo en bracket"}
+        title={
+          slot.team
+            ? "Corregir equipo en bracket"
+            : "Confirmar equipo en bracket"
+        }
         onClose={onClose}
       />
       <div className="space-y-0.5">

@@ -277,6 +277,7 @@ type stubTournamentSvc struct {
 	entries   []*domain.GroupStanding
 	slot      *domain.TournamentSlot
 	slots     []*domain.TournamentSlot
+	teamNames []string
 	err       error
 }
 
@@ -303,7 +304,7 @@ func (s *stubTournamentSvc) AutoConfirmMatchResultSlots(_ context.Context, _, _,
 }
 func (s *stubTournamentSvc) BackfillSlots(_ context.Context) error { return s.err }
 func (s *stubTournamentSvc) ListTeamNames(_ context.Context) ([]string, error) {
-	return nil, s.err
+	return s.teamNames, s.err
 }
 
 // stubMemberSvc implements service.GroupMembershipService with configurable returns.

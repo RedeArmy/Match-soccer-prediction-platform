@@ -284,10 +284,7 @@ class APIClient {
   // ── Teams ─────────────────────────────────────────────────────────────────
 
   getTeams(): Promise<string[]> {
-    return fetch("/api/v1/teams").then((res) => {
-      if (!res.ok) throw new Error("Failed to fetch teams");
-      return res.json() as Promise<string[]>;
-    });
+    return this.request<string[]>("/api/v1/teams");
   }
 
   // ── Tournament slots ──────────────────────────────────────────────────────
