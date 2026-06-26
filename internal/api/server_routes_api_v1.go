@@ -118,17 +118,22 @@ func (s *Server) registerTiebreakerAdminRoutes(r chi.Router, d apiV1Deps) {
 
 // registerTournamentRoutes wires the /tournament subrouter.
 //
-// ResolveUser is applied at the subrouter level so banned users are rejected
-// on read endpoints as well as admin mutations. resolveRequestUser caches the
-// user in context, so admin mutations that use RequireRole do not pay a second
-// database round-trip.
+// GET /slots is public (the bracket is visible to unauthenticated visitors).
+// GET /standings rejects banned users via ResolveUser.
+// POST and PATCH /slots require admin role; RequireRole is self-sufficient and
+// does not need ResolveUser in the middleware chain.
 func (s *Server) registerTournamentRoutes(r chi.Router, d apiV1Deps) {
 	r.Route("/tournament", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
-		r.Use(middleware.ResolveUser(d.repos.user, s.log))
-		r.Get("/standings", d.h.tournament.GetAllStandings)
-		r.Get("/standings/{group}", d.h.tournament.GetGroupStanding)
+		// Public — no auth required.
 		r.Get("/slots", d.h.tournament.ListSlots)
+		// Authenticated reads — banned users are rejected.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.ResolveUser(d.repos.user, s.log))
+			r.Get("/standings", d.h.tournament.GetAllStandings)
+			r.Get("/standings/{group}", d.h.tournament.GetGroupStanding)
+		})
+		// Admin-only mutations.
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/slots", d.h.tournament.CreateSlot)
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Patch("/slots/{id}", d.h.tournament.ConfirmSlot)
 	})
