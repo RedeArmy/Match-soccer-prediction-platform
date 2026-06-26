@@ -281,6 +281,12 @@ class APIClient {
     return this.request("/api/v1/matches", {}, token);
   }
 
+  // ── Teams ─────────────────────────────────────────────────────────────────
+
+  getTeams(): Promise<string[]> {
+    return this.request<string[]>("/api/v1/teams");
+  }
+
   // ── Tournament slots ──────────────────────────────────────────────────────
 
   getSlots(token?: string | null): Promise<TournamentSlotResponse[]> {

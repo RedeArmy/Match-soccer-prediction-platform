@@ -12,6 +12,8 @@ import {
   ChevronRight,
   Ban,
   RefreshCw,
+  ChevronDown,
+  Search,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
@@ -394,8 +396,100 @@ function PaginationBar({
 
 // ── Bracket tab ──────────────────────────────────────────────────────────────
 
+// ── Team combobox ─────────────────────────────────────────────────────────────
+
+interface TeamComboboxProps {
+  readonly id?: string;
+  readonly value: string;
+  readonly teams: string[];
+  readonly onChange: (team: string) => void;
+  readonly disabled?: boolean;
+}
+
+function TeamCombobox({
+  id,
+  value,
+  teams,
+  onChange,
+  disabled,
+}: TeamComboboxProps) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [prevValue, setPrevValue] = useState(value);
+
+  // React derived-state pattern: sync query when parent passes a new value
+  // (e.g. modal reopened for a different slot without unmounting).
+  if (prevValue !== value) {
+    setPrevValue(value);
+    setQuery(value);
+  }
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return teams;
+    return teams.filter((t) => t.toLowerCase().includes(q));
+  }, [teams, query]);
+
+  function select(team: string) {
+    onChange(team);
+    setQuery(team);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/30 pointer-events-none" />
+        <input
+          id={id}
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            onChange(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          disabled={disabled}
+          placeholder="Buscar selección…"
+          className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-8 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50"
+        />
+        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/30 pointer-events-none" />
+      </div>
+
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto rounded-lg border border-white/10 bg-[#1a1f2e] shadow-xl">
+          {filtered.map((team) => (
+            <li key={team}>
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  select(team);
+                }}
+                className={cn(
+                  "w-full text-left px-3 py-2 text-sm transition-colors",
+                  team === value
+                    ? "bg-blue-500/20 text-blue-300"
+                    : "text-white/80 hover:bg-white/5",
+                )}
+              >
+                {team}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Confirm slot modal ────────────────────────────────────────────────────────
+
 interface ConfirmSlotModalProps {
   readonly slot: TournamentSlotResponse;
+  readonly teams: string[];
   readonly isBusy: boolean;
   readonly error: string;
   readonly onConfirm: (team: string) => void;
@@ -404,37 +498,61 @@ interface ConfirmSlotModalProps {
 
 function ConfirmSlotModal({
   slot,
+  teams,
   isBusy,
   error,
   onConfirm,
   onClose,
 }: ConfirmSlotModalProps) {
   const [team, setTeam] = useState(slot.team ?? "");
+
+  const isValid = teams.includes(team.trim()) || team.trim().length >= 2;
+
+  let confirmLabel: string;
+  if (isBusy) {
+    confirmLabel = "Guardando...";
+  } else {
+    confirmLabel = slot.team ? "Corregir" : "Confirmar";
+  }
+
   return (
     <>
-      <ModalHeader title="Corregir equipo en bracket" onClose={onClose} />
+      <ModalHeader
+        title={
+          slot.team
+            ? "Corregir equipo en bracket"
+            : "Confirmar equipo en bracket"
+        }
+        onClose={onClose}
+      />
       <div className="space-y-0.5">
         <p className="font-mono text-[10px] text-white/40">{slot.label}</p>
         <p className="text-sm text-white/60">{slot.description}</p>
-        <p className="text-[11px] text-amber-400/70">
-          Esta corrección sobreescribe el valor asignado automáticamente.
-        </p>
+        {slot.team && (
+          <p className="text-[11px] text-amber-400/70">
+            Esta corrección sobreescribe el valor actual.
+          </p>
+        )}
       </div>
       <div className="space-y-1.5">
         <label
-          htmlFor="slot-team"
+          htmlFor="slot-confirm-team"
           className="block text-xs font-medium text-white/50"
         >
-          Nombre del equipo
+          Selección clasificada
         </label>
-        <input
-          id="slot-team"
-          type="text"
+        <TeamCombobox
+          id="slot-confirm-team"
           value={team}
-          onChange={(e) => setTeam(e.target.value)}
-          placeholder="Ej. Argentina"
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+          teams={teams}
+          onChange={setTeam}
+          disabled={isBusy}
         />
+        {team.trim() && !teams.includes(team.trim()) && (
+          <p className="text-[11px] text-amber-400/70">
+            Nombre no encontrado en la lista — se guardará tal cual.
+          </p>
+        )}
       </div>
       <ModalErrorLine error={error} />
       <div className="flex justify-end gap-3">
@@ -443,16 +561,24 @@ function ConfirmSlotModal({
           onClick={() => {
             if (team.trim()) onConfirm(team.trim());
           }}
-          disabled={isBusy || !team.trim()}
+          disabled={isBusy || !isValid}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <CheckCircle className="h-4 w-4" />
-          {isBusy ? "Guardando..." : "Corregir"}
+          {confirmLabel}
         </button>
       </div>
     </>
   );
 }
+
+type SlotFilter = "all" | "pending" | "manual";
+
+const SLOT_FILTER_OPTIONS: { key: SlotFilter; label: string }[] = [
+  { key: "all", label: "Todos" },
+  { key: "pending", label: "Pendientes" },
+  { key: "manual", label: "Mejor 3.° manual" },
+];
 
 interface BracketTabProps {
   readonly getToken: () => Promise<string | null>;
@@ -465,6 +591,7 @@ function BracketTab({ getToken }: BracketTabProps) {
   );
   const [slotError, setSlotError] = useState("");
   const [page, setPage] = useState(1);
+  const [slotFilter, setSlotFilter] = useState<SlotFilter>("all");
 
   const {
     data: slots = [],
@@ -477,6 +604,12 @@ function BracketTab({ getToken }: BracketTabProps) {
       return api.getSlots(token);
     },
     refetchInterval: 30_000,
+  });
+
+  const { data: teams = [] } = useQuery({
+    queryKey: ["teams"],
+    queryFn: () => api.getTeams(),
+    staleTime: 10 * 60 * 1000,
   });
 
   const confirmMutation = useMutation({
@@ -494,6 +627,32 @@ function BracketTab({ getToken }: BracketTabProps) {
       setSlotError(e instanceof Error ? e.message : "Error al confirmar slot");
     },
   });
+
+  const filteredSlots = useMemo(() => {
+    let result = slots;
+    if (slotFilter === "pending") {
+      result = slots.filter((s) => !s.confirmed_at);
+    } else if (slotFilter === "manual") {
+      // Slots that need manual confirmation: no auto_source and not yet confirmed.
+      result = slots.filter((s) => !s.auto_source && !s.confirmed_at);
+    }
+    // Unconfirmed first, then confirmed.
+    return [...result].sort((a, b) => {
+      if (!a.confirmed_at && b.confirmed_at) return -1;
+      if (a.confirmed_at && !b.confirmed_at) return 1;
+      return a.label.localeCompare(b.label);
+    });
+  }, [slots, slotFilter]);
+
+  const manualPendingCount = useMemo(
+    () => slots.filter((s) => !s.auto_source && !s.confirmed_at).length,
+    [slots],
+  );
+
+  function changeSlotFilter(f: SlotFilter) {
+    setSlotFilter(f);
+    setPage(1);
+  }
 
   if (isLoading) {
     return (
@@ -517,15 +676,89 @@ function BracketTab({ getToken }: BracketTabProps) {
     );
   }
 
-  const totalPages = Math.max(1, Math.ceil(slots.length / BRACKET_PAGE_SIZE));
-  const paginatedSlots = slots.slice(
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredSlots.length / BRACKET_PAGE_SIZE),
+  );
+  const paginatedSlots = filteredSlots.slice(
     (page - 1) * BRACKET_PAGE_SIZE,
     page * BRACKET_PAGE_SIZE,
   );
 
   return (
     <>
+      {manualPendingCount > 0 && (
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-amber-300 text-xs">
+            <strong>{manualPendingCount}</strong> slot
+            {manualPendingCount === 1 ? "" : "s"} de «Mejor 3.° lugar» sin
+            confirmar. Usa el filtro <em>Mejor 3.° manual</em> para acceder
+            directamente y confirma el equipo clasificado en cada posición.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-3">
+        {/* Filter bar */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {SLOT_FILTER_OPTIONS.map(({ key, label }) => {
+            let count: number;
+            if (key === "all") {
+              count = slots.length;
+            } else if (key === "pending") {
+              count = slots.filter((s) => !s.confirmed_at).length;
+            } else {
+              count = manualPendingCount;
+            }
+
+            const isActive = slotFilter === key;
+            const isManual = key === "manual";
+
+            let buttonClass: string;
+            if (isActive && isManual) {
+              buttonClass =
+                "bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40";
+            } else if (isActive) {
+              buttonClass =
+                "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/40";
+            } else {
+              buttonClass =
+                "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80";
+            }
+
+            let badgeClass: string;
+            if (isActive && isManual) {
+              badgeClass = "bg-amber-500/30 text-amber-300";
+            } else if (isActive) {
+              badgeClass = "bg-blue-500/30 text-blue-300";
+            } else {
+              badgeClass = "bg-white/10 text-white/40";
+            }
+
+            return (
+              <button
+                key={key}
+                onClick={() => changeSlotFilter(key)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                  buttonClass,
+                )}
+              >
+                {label}
+                <span
+                  className={cn(
+                    "px-1.5 py-0.5 rounded-full text-[10px] font-semibold",
+                    badgeClass,
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="overflow-x-auto rounded-xl border border-white/10">
           <table className="w-full text-sm">
             <thead>
@@ -538,45 +771,65 @@ function BracketTab({ getToken }: BracketTabProps) {
               </tr>
             </thead>
             <tbody>
-              {paginatedSlots.map((slot) => (
-                <tr
-                  key={slot.id}
-                  className="border-b border-white/5 hover:bg-white/[0.03] transition-colors"
-                >
-                  <td className="px-4 py-3 font-mono text-xs text-white/60">
-                    {slot.label}
-                  </td>
-                  <td className="px-4 py-3 text-white/60 text-xs">
-                    {slot.description || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-white font-medium">
-                    {slot.team ?? (
-                      <span className="text-white/30 italic">Sin equipo</span>
+              {paginatedSlots.map((slot) => {
+                const needsManual = !slot.auto_source && !slot.confirmed_at;
+                return (
+                  <tr
+                    key={slot.id}
+                    className={cn(
+                      "border-b border-white/5 hover:bg-white/[0.03] transition-colors",
+                      needsManual && "bg-amber-500/[0.04]",
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    {slot.confirmed_at ? (
-                      <span className="text-green-400">
-                        ✓ {new Date(slot.confirmed_at).toLocaleDateString("sv")}
-                      </span>
-                    ) : (
-                      <span className="text-white/30">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => {
-                        setConfirmSlot(slot);
-                        setSlotError("");
-                      }}
-                      className="flex items-center gap-1 ml-auto px-2.5 py-1 rounded-md bg-blue-500/15 hover:bg-blue-500/25 text-blue-400 text-xs font-medium transition-colors"
-                    >
-                      <Edit3 className="h-3.5 w-3.5" />
-                      {slot.team ? "Corregir" : "Confirmar"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                  >
+                    <td className="px-4 py-3 font-mono text-xs text-white/60">
+                      {slot.label}
+                      {needsManual && (
+                        <span
+                          className="ml-1.5 inline-block px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-400 uppercase tracking-wide"
+                          title="Requiere confirmación manual"
+                        >
+                          manual
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-white/60 text-xs">
+                      {slot.description || "—"}
+                    </td>
+                    <td className="px-4 py-3 text-white font-medium">
+                      {slot.team ?? (
+                        <span className="text-white/30 italic">Sin equipo</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {slot.confirmed_at ? (
+                        <span className="text-green-400">
+                          ✓{" "}
+                          {new Date(slot.confirmed_at).toLocaleDateString("sv")}
+                        </span>
+                      ) : (
+                        <span className="text-white/30">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => {
+                          setConfirmSlot(slot);
+                          setSlotError("");
+                        }}
+                        className={cn(
+                          "flex items-center gap-1 ml-auto px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                          needsManual
+                            ? "bg-amber-500/20 hover:bg-amber-500/30 text-amber-400"
+                            : "bg-blue-500/15 hover:bg-blue-500/25 text-blue-400",
+                        )}
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        {slot.team ? "Corregir" : "Confirmar"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -586,8 +839,8 @@ function BracketTab({ getToken }: BracketTabProps) {
             page={page}
             totalPages={totalPages}
             start={(page - 1) * BRACKET_PAGE_SIZE + 1}
-            end={Math.min(page * BRACKET_PAGE_SIZE, slots.length)}
-            total={slots.length}
+            end={Math.min(page * BRACKET_PAGE_SIZE, filteredSlots.length)}
+            total={filteredSlots.length}
             unit="slots"
             onPrev={() => setPage((p) => Math.max(1, p - 1))}
             onNext={() => setPage((p) => Math.min(totalPages, p + 1))}
@@ -599,6 +852,7 @@ function BracketTab({ getToken }: BracketTabProps) {
         <AdminModalOverlay onClose={() => setConfirmSlot(null)}>
           <ConfirmSlotModal
             slot={confirmSlot}
+            teams={teams}
             isBusy={confirmMutation.isPending}
             error={slotError}
             onConfirm={(team) =>

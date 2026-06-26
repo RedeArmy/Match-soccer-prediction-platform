@@ -57,12 +57,16 @@ type TournamentService interface {
 	// AutoConfirmMatchResultSlots. Per-slot errors are logged and skipped; the
 	// method always returns nil so startup is not blocked.
 	BackfillSlots(ctx context.Context) error
+	// ListTeamNames returns all registered team names sorted A → Z.
+	// Used to populate selection dropdowns in admin and prediction UIs.
+	ListTeamNames(ctx context.Context) ([]string, error)
 }
 
 // tournamentService is the concrete implementation of TournamentService.
 type tournamentService struct {
 	matchRepo      repository.MatchRepository
 	tournamentRepo repository.TournamentRepository
+	teamRepo       repository.TeamNameLister
 	params         SystemParamService
 	audit          AuditLogger
 	log            *zap.Logger
@@ -72,6 +76,7 @@ type tournamentService struct {
 func NewTournamentService(
 	matchRepo repository.MatchRepository,
 	tournamentRepo repository.TournamentRepository,
+	teamRepo repository.TeamNameLister,
 	params SystemParamService,
 	audit AuditLogger,
 	log *zap.Logger,
@@ -79,6 +84,7 @@ func NewTournamentService(
 	return &tournamentService{
 		matchRepo:      matchRepo,
 		tournamentRepo: tournamentRepo,
+		teamRepo:       teamRepo,
 		params:         params,
 		audit:          audit,
 		log:            log,
@@ -373,6 +379,11 @@ func lessStanding(a, b *domain.GroupStanding) bool {
 		return a.GF > b.GF
 	}
 	return a.Team < b.Team
+}
+
+// ListTeamNames returns all team names from the teams table sorted A → Z.
+func (s *tournamentService) ListTeamNames(ctx context.Context) ([]string, error) {
+	return s.teamRepo.ListTeamNames(ctx)
 }
 
 var _ TournamentService = (*tournamentService)(nil)
