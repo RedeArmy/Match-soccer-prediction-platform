@@ -122,7 +122,13 @@ func (s *Server) registerTiebreakerAdminRoutes(r chi.Router, d apiV1Deps) {
 // GET /standings rejects banned users via ResolveUser.
 // POST and PATCH /slots require admin role; RequireRole is self-sufficient and
 // does not need ResolveUser in the middleware chain.
+//
+// GET /teams is registered at the /api/v1 level (not inside /tournament) because
+// it is a top-level resource unrelated to the bracket management sub-domain.
 func (s *Server) registerTournamentRoutes(r chi.Router, d apiV1Deps) {
+	// Public team list — no auth required.
+	r.With(middleware.RequestBodyLimit(d.bodySizeLimit)).Get("/teams", d.h.tournament.ListTeams)
+
 	r.Route("/tournament", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
 		// Public — no auth required.

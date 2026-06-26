@@ -12,6 +12,8 @@ import {
   ChevronRight,
   Ban,
   RefreshCw,
+  ChevronDown,
+  Search,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
@@ -394,8 +396,81 @@ function PaginationBar({
 
 // ── Bracket tab ──────────────────────────────────────────────────────────────
 
+// ── Team combobox ─────────────────────────────────────────────────────────────
+
+interface TeamComboboxProps {
+  readonly value: string;
+  readonly teams: string[];
+  readonly onChange: (team: string) => void;
+  readonly disabled?: boolean;
+}
+
+function TeamCombobox({ value, teams, onChange, disabled }: TeamComboboxProps) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return teams;
+    return teams.filter((t) => t.toLowerCase().includes(q));
+  }, [teams, query]);
+
+  function select(team: string) {
+    onChange(team);
+    setQuery(team);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/30 pointer-events-none" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            onChange(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          disabled={disabled}
+          placeholder="Buscar selección…"
+          className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-8 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50"
+        />
+        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/30 pointer-events-none" />
+      </div>
+
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto rounded-lg border border-white/10 bg-[#1a1f2e] shadow-xl">
+          {filtered.map((team) => (
+            <li key={team}>
+              <button
+                type="button"
+                onMouseDown={() => select(team)}
+                className={cn(
+                  "w-full text-left px-3 py-2 text-sm transition-colors",
+                  team === value
+                    ? "bg-blue-500/20 text-blue-300"
+                    : "text-white/80 hover:bg-white/5",
+                )}
+              >
+                {team}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Confirm slot modal ────────────────────────────────────────────────────────
+
 interface ConfirmSlotModalProps {
   readonly slot: TournamentSlotResponse;
+  readonly teams: string[];
   readonly isBusy: boolean;
   readonly error: string;
   readonly onConfirm: (team: string) => void;
@@ -404,37 +479,46 @@ interface ConfirmSlotModalProps {
 
 function ConfirmSlotModal({
   slot,
+  teams,
   isBusy,
   error,
   onConfirm,
   onClose,
 }: ConfirmSlotModalProps) {
   const [team, setTeam] = useState(slot.team ?? "");
+
+  const isValid = teams.includes(team.trim()) || team.trim().length >= 2;
+
   return (
     <>
-      <ModalHeader title="Corregir equipo en bracket" onClose={onClose} />
+      <ModalHeader
+        title={slot.team ? "Corregir equipo en bracket" : "Confirmar equipo en bracket"}
+        onClose={onClose}
+      />
       <div className="space-y-0.5">
         <p className="font-mono text-[10px] text-white/40">{slot.label}</p>
         <p className="text-sm text-white/60">{slot.description}</p>
-        <p className="text-[11px] text-amber-400/70">
-          Esta corrección sobreescribe el valor asignado automáticamente.
-        </p>
+        {slot.team && (
+          <p className="text-[11px] text-amber-400/70">
+            Esta corrección sobreescribe el valor actual.
+          </p>
+        )}
       </div>
       <div className="space-y-1.5">
-        <label
-          htmlFor="slot-team"
-          className="block text-xs font-medium text-white/50"
-        >
-          Nombre del equipo
+        <label className="block text-xs font-medium text-white/50">
+          Selección clasificada
         </label>
-        <input
-          id="slot-team"
-          type="text"
+        <TeamCombobox
           value={team}
-          onChange={(e) => setTeam(e.target.value)}
-          placeholder="Ej. Argentina"
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+          teams={teams}
+          onChange={setTeam}
+          disabled={isBusy}
         />
+        {team.trim() && !teams.includes(team.trim()) && (
+          <p className="text-[11px] text-amber-400/70">
+            Nombre no encontrado en la lista — se guardará tal cual.
+          </p>
+        )}
       </div>
       <ModalErrorLine error={error} />
       <div className="flex justify-end gap-3">
@@ -443,11 +527,11 @@ function ConfirmSlotModal({
           onClick={() => {
             if (team.trim()) onConfirm(team.trim());
           }}
-          disabled={isBusy || !team.trim()}
+          disabled={isBusy || !isValid}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <CheckCircle className="h-4 w-4" />
-          {isBusy ? "Guardando..." : "Corregir"}
+          {isBusy ? "Guardando..." : slot.team ? "Corregir" : "Confirmar"}
         </button>
       </div>
     </>
@@ -486,6 +570,12 @@ function BracketTab({ getToken }: BracketTabProps) {
       return api.getSlots(token);
     },
     refetchInterval: 30_000,
+  });
+
+  const { data: teams = [] } = useQuery({
+    queryKey: ["teams"],
+    queryFn: () => api.getTeams(),
+    staleTime: 10 * 60 * 1000,
   });
 
   const confirmMutation = useMutation({
@@ -709,6 +799,7 @@ function BracketTab({ getToken }: BracketTabProps) {
         <AdminModalOverlay onClose={() => setConfirmSlot(null)}>
           <ConfirmSlotModal
             slot={confirmSlot}
+            teams={teams}
             isBusy={confirmMutation.isPending}
             error={slotError}
             onConfirm={(team) =>

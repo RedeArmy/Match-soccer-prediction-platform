@@ -57,6 +57,9 @@ type TournamentService interface {
 	// AutoConfirmMatchResultSlots. Per-slot errors are logged and skipped; the
 	// method always returns nil so startup is not blocked.
 	BackfillSlots(ctx context.Context) error
+	// ListTeamNames returns all registered team names sorted A → Z.
+	// Used to populate selection dropdowns in admin and prediction UIs.
+	ListTeamNames(ctx context.Context) ([]string, error)
 }
 
 // tournamentService is the concrete implementation of TournamentService.
@@ -373,6 +376,11 @@ func lessStanding(a, b *domain.GroupStanding) bool {
 		return a.GF > b.GF
 	}
 	return a.Team < b.Team
+}
+
+// ListTeamNames returns all team names from the teams table sorted A → Z.
+func (s *tournamentService) ListTeamNames(ctx context.Context) ([]string, error) {
+	return s.tournamentRepo.ListTeamNames(ctx)
 }
 
 var _ TournamentService = (*tournamentService)(nil)
