@@ -87,6 +87,7 @@ type paramSpec struct {
 //   - 000186_seed_match_sync_params                    (+6)
 //   - 000187_seed_system_date_param                    (+1)
 //   - 000192_seed_daily_sync_params                    (+3)
+//   - 000211_revoked_sessions                          (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -140,6 +141,7 @@ var allParams = []paramSpec{
 	// Infrastructure timeouts — not runtime: read once at process startup; restart required.
 	{key: domain.ParamKeyAuditWriteTimeout, defaultValue: strconv.Itoa(domain.DefaultAuditWriteTimeoutSeconds), paramType: "int", category: "system", isRuntime: false},
 	{key: domain.ParamKeyAuthValidationTimeout, defaultValue: strconv.Itoa(domain.DefaultAuthValidationTimeoutSeconds), paramType: "int", category: "system", isRuntime: false},
+	{key: domain.ParamKeyAuthSessionMaxAgeSecs, defaultValue: strconv.Itoa(domain.DefaultAuthSessionMaxAgeSecs), paramType: "int", category: "auth", isRuntime: true},
 	{key: domain.ParamKeyPurgeRetentionDays, defaultValue: strconv.Itoa(domain.DefaultPurgeRetentionDays), paramType: "int", category: "system", isRuntime: false},
 
 	// DLQ — not runtime: restart required.

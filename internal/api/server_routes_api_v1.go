@@ -145,6 +145,18 @@ func (s *Server) registerTournamentRoutes(r chi.Router, d apiV1Deps) {
 	})
 }
 
+// registerAuthRoutes wires the /auth subrouter.
+//
+// These endpoints manage the local session lifecycle independently of Clerk.
+// They require RequireAuth (already applied at the /api/v1 level) but do NOT
+// need ResolveUser because they operate on JWT claims only — no DB user lookup.
+func (s *Server) registerAuthRoutes(r chi.Router, d apiV1Deps) {
+	r.Route("/auth", func(r chi.Router) {
+		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
+		r.Post("/logout", d.h.auth.Logout)
+	})
+}
+
 // registerUserRoutes wires the /users subrouter.
 //
 // ResolveUser is applied at the subrouter level so every endpoint can read

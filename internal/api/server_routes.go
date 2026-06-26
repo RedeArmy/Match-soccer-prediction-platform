@@ -95,6 +95,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		pred:     repository.NewPostgresPredictionRepository(s.db),
 		member:   repository.NewPostgresGroupMembershipRepository(s.db),
 		sysParam: repository.NewPostgresSystemParamRepository(s.db),
+		session:  repository.NewPostgresSessionRepository(s.db),
 	}
 
 	paramSvc := service.NewSystemParamService(repos.sysParam, nil, s.log)
@@ -292,10 +293,17 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	}
 	idem := middleware.Idempotency(s.idemStore, meter, s.log, idemTTL, idemKeyMaxLen)
 
-	// Versioned API surface with Clerk JWT authentication.
+	// Versioned API surface with Clerk JWT authentication + local session policy.
 	// Rate limit params are read once at startup (is_runtime=FALSE); a process
 	// restart is required to change the rate or burst.
+	//
+	// PolicyProvider wraps the JWKS provider with two enforcement layers:
+	//   1. iat-based max-age (auth.session_max_age_seconds, is_runtime=TRUE).
+	//   2. Local revocation blocklist (POST /api/v1/auth/logout writes here).
+	// This gives the system session-lifetime control and logout independent of
+	// Clerk's plan-gated session management features.
 	clerkProvider := auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, authWarmup, s.log)
+	sessionProvider := middleware.NewPolicyProvider(clerkProvider, repos.session, paramSvc, s.log)
 
 	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))
 	rateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst)
@@ -330,9 +338,10 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(VersionHeader("v1"))
 		// L1 (ipLimiter.Global) is applied at the root router — not here.
-		r.Use(middleware.RequireAuth(clerkProvider, s.log))
+		r.Use(middleware.RequireAuth(sessionProvider, s.log))
 		r.Use(middleware.RateLimitByUserID(userRateStore, s.log))
 
+		s.registerAuthRoutes(r, d)
 		s.registerMatchRoutes(r, d)
 		s.registerPredictionRoutes(r, d)
 		s.registerGroupRoutes(r, d)

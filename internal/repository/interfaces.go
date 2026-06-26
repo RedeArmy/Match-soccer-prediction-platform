@@ -1278,3 +1278,32 @@ type NotificationTemplateRepository interface {
 	// different pair.
 	GetHistoryEntry(ctx context.Context, id int64, eventType, locale string) (*domain.NotificationTemplateHistory, error)
 }
+
+// SessionRepository manages the local session revocation blocklist.
+//
+// Clerk controls cryptographic token validity; this repository provides a
+// system-side mechanism to reject tokens before Clerk's own expiry fires.
+// It is used by two complementary enforcement layers:
+//
+//  1. POST /api/v1/auth/logout calls RevokeSession to record the current
+//     session's "sid" so that future requests with the same token are rejected.
+//  2. PolicyProvider calls IsRevoked on every authenticated request.
+//
+// Entries only need to live until the system max-age expires (default 7 days).
+// The worker's "session.revoked_prune" job deletes older rows automatically.
+type SessionRepository interface {
+	// RevokeSession records a local revocation for the session identified by sid.
+	// userID is the identity-provider subject stored for audit purposes.
+	// Idempotent: re-revoking the same sid is a no-op (ON CONFLICT DO NOTHING).
+	RevokeSession(ctx context.Context, sid, userID string) error
+	// IsRevoked reports whether sid has been locally revoked.
+	// Returns (false, nil) when sid is unknown. Implementations must fail-open
+	// (return false, nil) on transient storage errors so that a DB blip does not
+	// lock out all authenticated users; the iat-based max-age check still limits
+	// session lifetime even when IsRevoked is unavailable.
+	IsRevoked(ctx context.Context, sid string) (bool, error)
+	// PruneRevoked deletes revocation records created before olderThan.
+	// Called periodically by the worker maintenance job to bound table growth.
+	// Returns the number of rows deleted.
+	PruneRevoked(ctx context.Context, olderThan time.Time) (int64, error)
+}

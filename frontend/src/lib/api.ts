@@ -76,6 +76,9 @@ class APIClient {
     });
 
     if (!res.ok) {
+      if (res.status === 401 && globalThis.window !== undefined) {
+        globalThis.dispatchEvent(new CustomEvent("wcq:session-expired"));
+      }
       const body = await res.json().catch(() => ({}));
       const msg = body?.error?.message ?? `HTTP ${res.status}`;
       const code = body?.error?.code ?? "ERR_UNKNOWN";
@@ -91,6 +94,12 @@ class APIClient {
 
   getExchangeRate(): Promise<PublicExchangeRate> {
     return this.request("/api/exchange-rate");
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+
+  logout(token: string): Promise<void> {
+    return this.request("/api/v1/auth/logout", { method: "POST" }, token);
   }
 
   // ── User ──────────────────────────────────────────────────────────────────
@@ -1087,6 +1096,9 @@ class APIClient {
     });
 
     if (!res.ok) {
+      if (res.status === 401 && globalThis.window !== undefined) {
+        globalThis.dispatchEvent(new CustomEvent("wcq:session-expired"));
+      }
       const body = await res.json().catch(() => ({}));
       const msg = body?.error?.message ?? `HTTP ${res.status}`;
       throw Object.assign(new Error(msg), {

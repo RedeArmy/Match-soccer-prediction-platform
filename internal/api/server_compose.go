@@ -24,15 +24,16 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/tempoclient"
 )
 
-// coreRepos bundles the five shared repository instances constructed once in
-// Routes and forwarded to buildHandlers. Grouping them reduces the parameter
-// count and makes future additions a single-field change.
+// coreRepos bundles the shared repository instances constructed once in Routes
+// and forwarded to buildHandlers. Grouping them reduces the parameter count and
+// makes future additions a single-field change.
 type coreRepos struct {
 	user     repository.UserRepository
 	match    repository.MatchRepository
 	pred     repository.PredictionRepository
 	member   repository.GroupMembershipRepository
 	sysParam repository.SystemParamRepository
+	session  repository.SessionRepository
 }
 
 // kycModuleDeps groups the shared dependencies forwarded from buildHandlers to
@@ -53,6 +54,7 @@ type kycModuleDeps struct {
 // the stores that depend on param values.
 type appHandlers struct {
 	paramSvc           service.SystemParamService // audit-enabled; for mutation hooks in Routes()
+	auth               *handler.AuthHandler
 	match              *handler.MatchHandler
 	prediction         *handler.PredictionHandler
 	group              *handler.GroupHandler
@@ -287,6 +289,7 @@ func (s *Server) buildHandlers(
 
 	h := appHandlers{
 		paramSvc: paramSvcWithAudit,
+		auth:     handler.NewAuthHandler(repos.session, s.log),
 		notification: handler.NewNotificationHandler(handler.NotificationHandlerConfig{
 			NotifRepo:         notifRepo,
 			PrefRepo:          prefRepo,

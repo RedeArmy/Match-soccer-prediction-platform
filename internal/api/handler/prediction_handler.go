@@ -180,6 +180,14 @@ func (h *PredictionHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit, offset := parsePaginationParams(r)
+	// The Swagger docs declare this endpoint as "defaults to unbounded" when no
+	// ?limit param is supplied. parsePaginationParams would otherwise default to
+	// DefaultPaginationDefaultLimit (50), which silently truncates the list for
+	// active users who have predicted more than 50 matches — those predictions
+	// beyond the first page become invisible, causing silent save failures.
+	if r.URL.Query().Get("limit") == "" {
+		limit = 0 // applySlicePagination: 0 = unbounded
+	}
 
 	var (
 		predictions []*domain.Prediction

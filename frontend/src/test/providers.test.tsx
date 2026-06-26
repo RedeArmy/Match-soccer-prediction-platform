@@ -8,6 +8,9 @@ vi.mock("@clerk/nextjs", () => ({
     getToken: vi.fn().mockResolvedValue(null),
     isSignedIn: false,
   }),
+  useClerk: vi.fn().mockReturnValue({
+    signOut: vi.fn(),
+  }),
 }));
 
 describe("Providers", () => {
