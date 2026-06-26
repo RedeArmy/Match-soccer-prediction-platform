@@ -83,6 +83,28 @@ func (r *PostgresTournamentRepository) ListSlots(ctx context.Context) ([]*domain
 	return slots, nil
 }
 
+// ListTeamNames returns team names from the teams table sorted A → Z.
+func (r *PostgresTournamentRepository) ListTeamNames(ctx context.Context) ([]string, error) {
+	rows, err := r.db.Query(ctx, `SELECT name FROM teams ORDER BY name ASC`)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, apperrors.Internal(err)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	return names, nil
+}
+
 // ConfirmSlot sets the team for a slot and records who confirmed it.
 // Propagates the team name to any matches that reference this slot via
 // home_slot_id or away_slot_id. Returns NotFound when the slot does not exist.

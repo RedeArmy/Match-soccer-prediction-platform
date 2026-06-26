@@ -584,6 +584,9 @@ type TournamentRepository interface {
 	GetSlot(ctx context.Context, id int) (*domain.TournamentSlot, error)
 	// ListSlots returns all slots ordered by id.
 	ListSlots(ctx context.Context) ([]*domain.TournamentSlot, error)
+	// ListTeamNames returns all team names from the teams table sorted
+	// alphabetically (A → Z). Used to populate dropdowns in admin UIs.
+	ListTeamNames(ctx context.Context) ([]string, error)
 	// ConfirmSlot sets the advancing team for the given slot and records who confirmed it.
 	// Returns NotFound when the slot does not exist.
 	ConfirmSlot(ctx context.Context, id, confirmedByUserID int, team string) (*domain.TournamentSlot, error)
