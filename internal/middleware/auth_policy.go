@@ -11,9 +11,9 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/auth"
 )
 
-// SessionMaxAger is the subset of SystemParamService consumed by PolicyProvider.
+// IntGetter is the subset of SystemParamService consumed by PolicyProvider.
 // Using a narrow interface prevents an import cycle between middleware and service.
-type SessionMaxAger interface {
+type IntGetter interface {
 	GetInt(ctx context.Context, key string, def int) int
 }
 
@@ -46,7 +46,7 @@ type SessionBlocklist interface {
 type PolicyProvider struct {
 	inner     auth.IdentityProvider
 	blocklist SessionBlocklist
-	params    SessionMaxAger
+	params    IntGetter
 	log       *zap.Logger
 }
 
@@ -56,7 +56,7 @@ type PolicyProvider struct {
 func NewPolicyProvider(
 	inner auth.IdentityProvider,
 	blocklist SessionBlocklist,
-	params SessionMaxAger,
+	params IntGetter,
 	log *zap.Logger,
 ) auth.IdentityProvider {
 	return &PolicyProvider{

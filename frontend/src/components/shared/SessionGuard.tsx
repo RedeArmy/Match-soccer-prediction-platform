@@ -10,9 +10,9 @@ export function SessionGuard() {
     function handleSessionExpired() {
       void signOut({ redirectUrl: "/sign-in" });
     }
-    window.addEventListener("wcq:session-expired", handleSessionExpired);
+    globalThis.addEventListener("wcq:session-expired", handleSessionExpired);
     return () => {
-      window.removeEventListener("wcq:session-expired", handleSessionExpired);
+      globalThis.removeEventListener("wcq:session-expired", handleSessionExpired);
     };
   }, [signOut]);
 
