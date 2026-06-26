@@ -399,13 +399,20 @@ function PaginationBar({
 // ── Team combobox ─────────────────────────────────────────────────────────────
 
 interface TeamComboboxProps {
+  readonly id?: string;
   readonly value: string;
   readonly teams: string[];
   readonly onChange: (team: string) => void;
   readonly disabled?: boolean;
 }
 
-function TeamCombobox({ value, teams, onChange, disabled }: TeamComboboxProps) {
+function TeamCombobox({
+  id,
+  value,
+  teams,
+  onChange,
+  disabled,
+}: TeamComboboxProps) {
   const [query, setQuery] = useState(value);
   const [open, setOpen] = useState(false);
   const [prevValue, setPrevValue] = useState(value);
@@ -434,6 +441,7 @@ function TeamCombobox({ value, teams, onChange, disabled }: TeamComboboxProps) {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/30 pointer-events-none" />
         <input
+          id={id}
           type="text"
           value={query}
           onChange={(e) => {
@@ -500,6 +508,13 @@ function ConfirmSlotModal({
 
   const isValid = teams.includes(team.trim()) || team.trim().length >= 2;
 
+  let confirmLabel: string;
+  if (isBusy) {
+    confirmLabel = "Guardando...";
+  } else {
+    confirmLabel = slot.team ? "Corregir" : "Confirmar";
+  }
+
   return (
     <>
       <ModalHeader
@@ -520,10 +535,14 @@ function ConfirmSlotModal({
         )}
       </div>
       <div className="space-y-1.5">
-        <label className="block text-xs font-medium text-white/50">
+        <label
+          htmlFor="slot-confirm-team"
+          className="block text-xs font-medium text-white/50"
+        >
           Selección clasificada
         </label>
         <TeamCombobox
+          id="slot-confirm-team"
           value={team}
           teams={teams}
           onChange={setTeam}
@@ -546,7 +565,7 @@ function ConfirmSlotModal({
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <CheckCircle className="h-4 w-4" />
-          {isBusy ? "Guardando..." : slot.team ? "Corregir" : "Confirmar"}
+          {confirmLabel}
         </button>
       </div>
     </>
@@ -673,7 +692,7 @@ function BracketTab({ getToken }: BracketTabProps) {
           <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
           <p className="text-amber-300 text-xs">
             <strong>{manualPendingCount}</strong> slot
-            {manualPendingCount !== 1 ? "s" : ""} de «Mejor 3.° lugar» sin
+            {manualPendingCount === 1 ? "" : "s"} de «Mejor 3.° lugar» sin
             confirmar. Usa el filtro <em>Mejor 3.° manual</em> para acceder
             directamente y confirma el equipo clasificado en cada posición.
           </p>
@@ -684,34 +703,53 @@ function BracketTab({ getToken }: BracketTabProps) {
         {/* Filter bar */}
         <div className="flex items-center gap-2 flex-wrap">
           {SLOT_FILTER_OPTIONS.map(({ key, label }) => {
-            const count =
-              key === "all"
-                ? slots.length
-                : key === "pending"
-                  ? slots.filter((s) => !s.confirmed_at).length
-                  : manualPendingCount;
+            let count: number;
+            if (key === "all") {
+              count = slots.length;
+            } else if (key === "pending") {
+              count = slots.filter((s) => !s.confirmed_at).length;
+            } else {
+              count = manualPendingCount;
+            }
+
+            const isActive = slotFilter === key;
+            const isManual = key === "manual";
+
+            let buttonClass: string;
+            if (isActive && isManual) {
+              buttonClass =
+                "bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40";
+            } else if (isActive) {
+              buttonClass =
+                "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/40";
+            } else {
+              buttonClass =
+                "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80";
+            }
+
+            let badgeClass: string;
+            if (isActive && isManual) {
+              badgeClass = "bg-amber-500/30 text-amber-300";
+            } else if (isActive) {
+              badgeClass = "bg-blue-500/30 text-blue-300";
+            } else {
+              badgeClass = "bg-white/10 text-white/40";
+            }
+
             return (
               <button
                 key={key}
                 onClick={() => changeSlotFilter(key)}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
-                  slotFilter === key
-                    ? key === "manual"
-                      ? "bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40"
-                      : "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/40"
-                    : "bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80",
+                  buttonClass,
                 )}
               >
                 {label}
                 <span
                   className={cn(
                     "px-1.5 py-0.5 rounded-full text-[10px] font-semibold",
-                    slotFilter === key
-                      ? key === "manual"
-                        ? "bg-amber-500/30 text-amber-300"
-                        : "bg-blue-500/30 text-blue-300"
-                      : "bg-white/10 text-white/40",
+                    badgeClass,
                   )}
                 >
                   {count}

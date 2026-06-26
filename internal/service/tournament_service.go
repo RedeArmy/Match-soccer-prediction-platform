@@ -66,7 +66,7 @@ type TournamentService interface {
 type tournamentService struct {
 	matchRepo      repository.MatchRepository
 	tournamentRepo repository.TournamentRepository
-	teamRepo       repository.TeamRepository
+	teamRepo       repository.TeamNameLister
 	params         SystemParamService
 	audit          AuditLogger
 	log            *zap.Logger
@@ -76,7 +76,7 @@ type tournamentService struct {
 func NewTournamentService(
 	matchRepo repository.MatchRepository,
 	tournamentRepo repository.TournamentRepository,
-	teamRepo repository.TeamRepository,
+	teamRepo repository.TeamNameLister,
 	params SystemParamService,
 	audit AuditLogger,
 	log *zap.Logger,

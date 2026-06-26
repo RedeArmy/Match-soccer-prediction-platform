@@ -41,4 +41,4 @@ func (r *PostgresTeamRepository) ListTeamNames(ctx context.Context) ([]string, e
 	return names, nil
 }
 
-var _ TeamRepository = (*PostgresTeamRepository)(nil)
+var _ TeamNameLister = (*PostgresTeamRepository)(nil)

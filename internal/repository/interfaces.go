@@ -575,10 +575,10 @@ type QuinielaRoundEntryRepository interface {
 	ListByQuiniela(ctx context.Context, quinielaID int) ([]*domain.QuinielaRoundEntry, error)
 }
 
-// TeamRepository provides read access to the FIFA 2026 nation catalogue.
+// TeamNameLister provides read access to the FIFA 2026 nation catalogue.
 // It is separate from TournamentRepository because teams are a static reference
 // dataset, not bracket-management state.
-type TeamRepository interface {
+type TeamNameLister interface {
 	// ListTeamNames returns all team names from the teams table sorted
 	// alphabetically (A → Z). Never returns nil; an empty catalogue yields [].
 	ListTeamNames(ctx context.Context) ([]string, error)
