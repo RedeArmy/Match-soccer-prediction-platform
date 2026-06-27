@@ -52,11 +52,15 @@ type idemConfig struct {
 func Idempotency(store idempotency.Store, meter metric.Meter, log *zap.Logger, ttl time.Duration, keyMaxLen int) func(http.Handler) http.Handler {
 	var degradedTotal metric.Int64Counter
 	if meter != nil {
-		degradedTotal, _ = meter.Int64Counter(
+		if c, err := meter.Int64Counter(
 			"wcq_idempotency_degraded_total",
 			metric.WithDescription("Number of requests for which idempotency enforcement was skipped because the Redis store was unavailable. "+
 				"Non-zero on POST /withdrawals or /bank-transfers indicates duplicate-execution risk on multi-replica deployments."),
-		)
+		); err != nil {
+			log.Warn("metrics: failed to register wcq_idempotency_degraded_total", zap.Error(err))
+		} else {
+			degradedTotal = c
+		}
 	}
 	cfg := idemConfig{store: store, ttl: ttl, keyMaxLen: keyMaxLen}
 	return func(next http.Handler) http.Handler {

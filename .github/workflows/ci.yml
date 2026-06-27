@@ -153,6 +153,62 @@ jobs:
           version: v2.11.4
           args: --timeout=5m
 
+      # Warn when a new migration creates an index without CONCURRENTLY.
+      # Non-CONCURRENTLY CREATE INDEX acquires an AccessExclusiveLock that
+      # blocks reads and writes for the duration of the build — acceptable
+      # when the table is empty at creation time but hazardous on a live
+      # table with existing rows.
+      #
+      # Note: golang-migrate wraps each migration in a transaction by
+      # default. CONCURRENTLY cannot run inside a transaction, so indexes
+      # on large live tables must be applied in a separate manual step
+      # outside golang-migrate.  Use CREATE INDEX CONCURRENTLY IF NOT EXISTS
+      # and run the file directly via psql, then commit the migration without
+      # re-running the index step.
+      - name: Check new migrations use CREATE INDEX CONCURRENTLY
+        run: |
+          BASE=${{ github.event.pull_request.base.sha || 'HEAD~1' }}
+          NEW=$(git diff --name-only "$BASE"...HEAD -- 'migrations/*.up.sql' 2>/dev/null || true)
+          FAIL=0
+          for f in $NEW; do
+            [ -f "$f" ] || continue
+            # Extract CREATE INDEX lines that are NOT followed by CONCURRENTLY.
+            BAD=$(grep -Ei "CREATE (UNIQUE )?INDEX[[:space:]]" "$f" \
+                  | grep -Eiv "CREATE (UNIQUE )?INDEX[[:space:]]+CONCURRENTLY" || true)
+            if [ -n "$BAD" ]; then
+              echo "::warning file=$f::CREATE INDEX without CONCURRENTLY detected — acquires AccessExclusiveLock on live tables. Use CONCURRENTLY (run outside golang-migrate transaction; see migration 000127 as reference)."
+              echo "$BAD"
+              FAIL=1
+            fi
+          done
+          if [ "$FAIL" -eq 1 ]; then
+            echo "One or more new migrations use CREATE INDEX without CONCURRENTLY."
+            echo "See the step annotation above for details."
+            exit 1
+          fi
+
+      # Warn when a new multi-statement migration has no explicit BEGIN/COMMIT.
+      # golang-migrate wraps every migration in a transaction automatically, but
+      # migrations that are applied manually (e.g. psql < file.sql) run without
+      # a transaction and can leave the schema in a partial state on failure.
+      # Adding explicit BEGIN/COMMIT makes them safe to run both ways.
+      # Exemption: migrations that use CONCURRENTLY cannot run inside a
+      # transaction — those are expected to be single-statement files.
+      - name: Check multi-statement migrations have explicit transactions
+        run: |
+          BASE=${{ github.event.pull_request.base.sha || 'HEAD~1' }}
+          NEW=$(git diff --name-only "$BASE"...HEAD -- 'migrations/*.up.sql' 2>/dev/null || true)
+          for f in $NEW; do
+            [ -f "$f" ] || continue
+            # Count non-comment, non-blank lines containing a semicolon.
+            STMTS=$(grep -v "^[[:space:]]*--" "$f" | grep -c ";" || true)
+            HAS_TXN=$(grep -Eic "^BEGIN[[:space:]]*;?" "$f" || true)
+            HAS_CONCURRENT=$(grep -ic "CONCURRENTLY" "$f" || true)
+            if [ "$STMTS" -gt 1 ] && [ "$HAS_TXN" -eq 0 ] && [ "$HAS_CONCURRENT" -eq 0 ]; then
+              echo "::warning file=$f::Multi-statement migration without explicit BEGIN/COMMIT — safe under golang-migrate (auto-wrapped) but unsafe when applied manually via psql. Add BEGIN; ... COMMIT; to make it idempotent in both contexts."
+            fi
+          done
+
   # --------------------------------------------------------------------------
   # Vet, test and SonarCloud analysis
   # --------------------------------------------------------------------------
@@ -194,6 +250,21 @@ jobs:
         run: |
           make swagger-gen
           git diff --exit-code docs/
+
+      # Guard against accidental annotation deletion by asserting that the
+      # spec contains at least as many paths as the established baseline.
+      # Update SWAGGER_PATH_FLOOR when adding new endpoints (never decrease it).
+      - name: Assert swagger path coverage floor
+        run: |
+          SWAGGER_PATH_FLOOR=102
+          COUNT=$(jq '.paths | length' docs/swagger.json)
+          if [ "$COUNT" -lt "$SWAGGER_PATH_FLOOR" ]; then
+            echo "Swagger spec has $COUNT paths — below the floor of $SWAGGER_PATH_FLOOR."
+            echo "If routes were intentionally removed, lower SWAGGER_PATH_FLOOR in ci.yml."
+            echo "If annotations were accidentally deleted, restore them and re-run make swagger-gen."
+            exit 1
+          fi
+          echo "Swagger path count: $COUNT / $SWAGGER_PATH_FLOOR minimum ✓"
 
       - name: Vet
         run: go vet ./...

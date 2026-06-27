@@ -310,7 +310,7 @@ func TestWithdrawalRequestRepository_ListAll_ReturnsAll(t *testing.T) {
 	seedWithdrawalRequest(t, u1.ID, 1000)
 	seedWithdrawalRequest(t, u2.ID, 2000)
 
-	all, err := repo.ListAll(context.Background(), "")
+	all, err := repo.ListAll(context.Background(), "", repository.Pagination{Limit: 50})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -332,7 +332,7 @@ func TestWithdrawalRequestRepository_ListAll_FilterByStatus(t *testing.T) {
 		t.Fatalf("ApproveAndDebit: %v", err)
 	}
 
-	pending, err := repo.ListAll(context.Background(), "pending")
+	pending, err := repo.ListAll(context.Background(), "pending", repository.Pagination{Limit: 50})
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}

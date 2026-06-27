@@ -208,21 +208,25 @@ func (r *PostgresWithdrawalRequestRepository) ListPending(ctx context.Context) (
 	})
 }
 
-// ListAll returns all requests optionally filtered by status, ordered by
-// created_at DESC. An empty status returns all records up to the 500-row cap.
-func (r *PostgresWithdrawalRequestRepository) ListAll(ctx context.Context, status string) ([]*domain.WithdrawalRequest, error) {
+// ListAll returns requests optionally filtered by status, ordered by
+// created_at DESC. Results are bounded by p.Limit and offset by p.Offset.
+func (r *PostgresWithdrawalRequestRepository) ListAll(ctx context.Context, status string, p Pagination) ([]*domain.WithdrawalRequest, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
 	defer cancel()
+	if p.Limit <= 0 && !p.IsUnbounded() {
+		return nil, apperrors.Validation("pagination limit must be positive")
+	}
 	var rows pgx.Rows
 	var err error
 	if status == "" {
 		rows, err = r.db.Query(ctx,
-			`SELECT `+withdrawalColumns+` FROM withdrawal_requests ORDER BY created_at DESC LIMIT 500`,
+			`SELECT `+withdrawalColumns+` FROM withdrawal_requests ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+			p.Limit, p.Offset,
 		)
 	} else {
 		rows, err = r.db.Query(ctx,
-			`SELECT `+withdrawalColumns+` FROM withdrawal_requests WHERE status = $1 ORDER BY created_at DESC LIMIT 500`,
-			status,
+			`SELECT `+withdrawalColumns+` FROM withdrawal_requests WHERE status = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+			status, p.Limit, p.Offset,
 		)
 	}
 	if err != nil {

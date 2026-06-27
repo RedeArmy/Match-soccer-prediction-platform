@@ -24,52 +24,48 @@ type contentBuilderFunc func(entry *notification.OutboxEntry, locale Locale) (us
 // contentRegistry maps each event type to its content builder function.
 // Lookups are O(1); adding a new event type requires one registry entry and
 // one builder function — no changes to resolveUserContent are needed.
-var contentRegistry map[notification.EventType]contentBuilderFunc
-
-func init() {
-	contentRegistry = map[notification.EventType]contentBuilderFunc{
-		// Predictions
-		notification.EventPredictionConfirmed:        buildPredictionConfirmedContent,
-		notification.EventPredictionDeadlineApproach: buildPredictionDeadlineApproachContent,
-		notification.EventPredictionMissingReminder:  buildPredictionMissingReminderContent,
-		notification.EventPredictionLocked:           buildPredictionLockedContent,
-		notification.EventPredictionScored:           buildPredictionScoredContent,
-		notification.EventPredictionDailyReminder:    buildPredictionDailyReminderContent,
-		notification.EventDailySummary:               buildDailySummaryContent,
-		// Matches
-		notification.EventMatchResultEntered: buildMatchResultEnteredContent,
-		notification.EventMatchPostponed:     buildMatchPostponedContent,
-		notification.EventMatchCancelled:     buildMatchCancelledContent,
-		// Groups
-		notification.EventGroupJoinRequested:        buildGroupJoinRequestedContent,
-		notification.EventGroupJoinApproved:         buildGroupJoinApprovedContent,
-		notification.EventGroupJoinRejected:         buildGroupJoinRejectedContent,
-		notification.EventGroupDisbanded:            buildGroupDisbandedContent,
-		notification.EventGroupDeadline24h:          buildGroupDeadline24hContent,
-		notification.EventGroupLeaderboardMilestone: buildGroupLeaderboardMilestoneContent,
-		notification.EventGroupMemberJoined:         buildGroupMemberJoinedContent,
-		notification.EventGroupMemberLeft:           buildGroupMemberLeftContent,
-		// Payments
-		notification.EventPaymentConfirmed:             buildPaymentConfirmedContent,
-		notification.EventPaymentFailed:                buildPaymentFailedContent,
-		notification.EventPaymentBankTransferSubmitted: buildPaymentBankTransferSubmittedContent,
-		notification.EventPaymentBankTransferApproved:  buildPaymentBankTransferApprovedContent,
-		notification.EventPaymentBankTransferRejected:  buildPaymentBankTransferRejectedContent,
-		notification.EventPaymentPendingTimeout:        buildPaymentPendingTimeoutContent,
-		// Withdrawals
-		notification.EventWithdrawalRequested:      buildWithdrawalRequestedContent,
-		notification.EventWithdrawalApproved:       buildWithdrawalApprovedContent,
-		notification.EventWithdrawalRejected:       buildWithdrawalRejectedContent,
-		notification.EventWithdrawalCompleted:      buildWithdrawalCompletedContent,
-		notification.EventWithdrawalFailed:         buildWithdrawalFailedContent,
-		notification.EventWithdrawalProcessing:     buildWithdrawalProcessingContent,
-		notification.EventWithdrawalPendingTimeout: buildWithdrawalPendingTimeoutContent,
-		// Account
-		notification.EventAccountWelcome:         buildAccountWelcomeContent,
-		notification.EventAccountBalanceCredited: buildAccountBalanceCreditedContent,
-		notification.EventAccountBalanceDebited:  buildAccountBalanceDebitedContent,
-		notification.EventAccountLowBalance:      buildAccountLowBalanceContent,
-	}
+var contentRegistry = map[notification.EventType]contentBuilderFunc{
+	// Predictions
+	notification.EventPredictionConfirmed:        buildPredictionConfirmedContent,
+	notification.EventPredictionDeadlineApproach: buildPredictionDeadlineApproachContent,
+	notification.EventPredictionMissingReminder:  buildPredictionMissingReminderContent,
+	notification.EventPredictionLocked:           buildPredictionLockedContent,
+	notification.EventPredictionScored:           buildPredictionScoredContent,
+	notification.EventPredictionDailyReminder:    buildPredictionDailyReminderContent,
+	notification.EventDailySummary:               buildDailySummaryContent,
+	// Matches
+	notification.EventMatchResultEntered: buildMatchResultEnteredContent,
+	notification.EventMatchPostponed:     buildMatchPostponedContent,
+	notification.EventMatchCancelled:     buildMatchCancelledContent,
+	// Groups
+	notification.EventGroupJoinRequested:        buildGroupJoinRequestedContent,
+	notification.EventGroupJoinApproved:         buildGroupJoinApprovedContent,
+	notification.EventGroupJoinRejected:         buildGroupJoinRejectedContent,
+	notification.EventGroupDisbanded:            buildGroupDisbandedContent,
+	notification.EventGroupDeadline24h:          buildGroupDeadline24hContent,
+	notification.EventGroupLeaderboardMilestone: buildGroupLeaderboardMilestoneContent,
+	notification.EventGroupMemberJoined:         buildGroupMemberJoinedContent,
+	notification.EventGroupMemberLeft:           buildGroupMemberLeftContent,
+	// Payments
+	notification.EventPaymentConfirmed:             buildPaymentConfirmedContent,
+	notification.EventPaymentFailed:                buildPaymentFailedContent,
+	notification.EventPaymentBankTransferSubmitted: buildPaymentBankTransferSubmittedContent,
+	notification.EventPaymentBankTransferApproved:  buildPaymentBankTransferApprovedContent,
+	notification.EventPaymentBankTransferRejected:  buildPaymentBankTransferRejectedContent,
+	notification.EventPaymentPendingTimeout:        buildPaymentPendingTimeoutContent,
+	// Withdrawals
+	notification.EventWithdrawalRequested:      buildWithdrawalRequestedContent,
+	notification.EventWithdrawalApproved:       buildWithdrawalApprovedContent,
+	notification.EventWithdrawalRejected:       buildWithdrawalRejectedContent,
+	notification.EventWithdrawalCompleted:      buildWithdrawalCompletedContent,
+	notification.EventWithdrawalFailed:         buildWithdrawalFailedContent,
+	notification.EventWithdrawalProcessing:     buildWithdrawalProcessingContent,
+	notification.EventWithdrawalPendingTimeout: buildWithdrawalPendingTimeoutContent,
+	// Account
+	notification.EventAccountWelcome:         buildAccountWelcomeContent,
+	notification.EventAccountBalanceCredited: buildAccountBalanceCreditedContent,
+	notification.EventAccountBalanceDebited:  buildAccountBalanceDebitedContent,
+	notification.EventAccountLowBalance:      buildAccountLowBalanceContent,
 }
 
 // resolveUserContent maps an outbox entry to its title/body/actionURL for the

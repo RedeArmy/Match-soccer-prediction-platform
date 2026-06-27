@@ -10,6 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
 // retryPolicyMu guards retryMaxAttempts, retryBaseDelay, and retryMaxDelay.
@@ -70,13 +73,37 @@ func withRetryTx(ctx context.Context, db *pgxpool.Pool, caller string, fn func(p
 	maxDelay := retryMaxDelay
 	retryPolicyMu.RUnlock()
 
+	ctx, span := repoTracer.Start(ctx, "db.tx.retry",
+		oteltrace.WithSpanKind(oteltrace.SpanKindClient),
+		oteltrace.WithAttributes(
+			attribute.String("db.system", "postgresql"),
+			attribute.String("db.caller", caller),
+		),
+	)
+	defer span.End()
+
 	for attempt := range maxAttempts {
 		err := withTx(ctx, db, caller, fn)
-		if err == nil || !isTransientPGError(err) {
+		if err == nil {
+			if attempt > 0 {
+				span.SetAttributes(attribute.Int("db.retry.attempts", attempt+1))
+			}
+			return nil
+		}
+		if !isTransientPGError(err) {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return err
 		}
+		span.AddEvent("transient_error_retry",
+			oteltrace.WithAttributes(
+				attribute.Int("db.retry.attempt", attempt+1),
+				attribute.String("db.error", err.Error()),
+			),
+		)
 		if attempt == maxAttempts-1 {
-			return err // exhausted attempts
+			span.SetStatus(codes.Error, "retry limit exhausted")
+			return err
 		}
 		// Equal-jitter backoff: delay = half_fixed + rand[0, half_fixed]
 		full := min(baseDelay*(1<<attempt), maxDelay)
@@ -85,6 +112,7 @@ func withRetryTx(ctx context.Context, db *pgxpool.Pool, caller string, fn func(p
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():
+			span.SetStatus(codes.Error, "context cancelled during retry")
 			return ctx.Err()
 		}
 	}

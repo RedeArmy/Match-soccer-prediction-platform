@@ -189,18 +189,19 @@ func (h *WithdrawalHandler) AdminListPending(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, data)
 }
 
-// AdminListAll handles GET /admin/withdrawals?status=...
+// AdminListAll handles GET /admin/withdrawals?status=&limit=&page=
 //
 // @Summary      List all withdrawals
-// @Description  Returns all withdrawal requests optionally filtered by status. Requires admin role.
+// @Description  Returns withdrawal requests optionally filtered by status with pagination. Requires admin role.
 //
 //	Payout details are masked in the list; full details appear only in action responses.
-//	The result set is capped at 500 rows.
 //
 // @Tags         admin-payments
 // @Produce      json
 // @Security     BearerAuth
 // @Param        status  query  string  false  "Filter by status: pending, approved, rejected, processed"
+// @Param        limit   query  int     false  "Page size (default 50, max 200)"
+// @Param        page    query  int     false  "Page number, 1-based (default 1)"
 // @Success      200  {array}   handler.WithdrawalResponse
 // @Failure      401  {object}  handler.ErrorResponse
 // @Failure      403  {object}  handler.ErrorResponse
@@ -218,7 +219,7 @@ func (h *WithdrawalHandler) AdminListAll(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	requests, err := h.svc.ListAll(r.Context(), statusFilter)
+	requests, err := h.svc.ListAll(r.Context(), statusFilter, parsePagination(r))
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

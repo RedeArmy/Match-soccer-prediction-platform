@@ -40,12 +40,16 @@ type IPRateLimiter struct {
 func NewIPRateLimiter(global, webhook IPAllower, meter metric.Meter, log *zap.Logger) *IPRateLimiter {
 	l := &IPRateLimiter{global: global, webhook: webhook, log: log}
 	if meter != nil {
-		l.blockedTotal, _ = meter.Int64Counter(
+		if c, err := meter.Int64Counter(
 			"wcq_ip_rate_limit_blocked_total",
 			metric.WithDescription("Number of requests blocked by the per-IP rate limiter. "+
 				"Label layer=global is the L1 all-routes bucket; layer=webhook is the L2 "+
 				"stricter bucket applied only to /webhooks/* routes."),
-		)
+		); err != nil {
+			log.Warn("metrics: failed to register wcq_ip_rate_limit_blocked_total", zap.Error(err))
+		} else {
+			l.blockedTotal = c
+		}
 	}
 	return l
 }

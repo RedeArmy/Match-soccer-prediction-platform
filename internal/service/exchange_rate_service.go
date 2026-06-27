@@ -226,11 +226,11 @@ func (s *ExchangeRateServiceImpl) RefreshRate(ctx context.Context) (*domain.Exch
 		s.log.Warn("exchange_rate: all sources failed, using last known rate", zap.Error(fetchErr))
 		last, dbErr := s.repo.GetLatest(ctx)
 		if dbErr != nil {
-			s.recordRefreshMetric("stale", false)
+			s.recordRefreshMetric(ctx, "stale", false)
 			return nil, fmt.Errorf("exchange_rate: fetch failed and DB fallback unavailable: fetch=%w db=%v", fetchErr, dbErr)
 		}
 		if last == nil {
-			s.recordRefreshMetric("stale", false)
+			s.recordRefreshMetric(ctx, "stale", false)
 			return nil, fmt.Errorf("exchange_rate: all sources failed and no historical rate available: %w", fetchErr)
 		}
 		rates = last.ToRates()
@@ -286,8 +286,8 @@ func (s *ExchangeRateServiceImpl) RefreshRate(ctx context.Context) (*domain.Exch
 	}
 
 	s.cache.set(rates, fetchedAt)
-	s.recordRefreshMetric(source, true)
-	s.recordRateGauges(rates)
+	s.recordRefreshMetric(ctx, source, true)
+	s.recordRateGauges(ctx, rates)
 
 	s.log.Info("exchange_rate: refreshed",
 		zap.String("source", source),
@@ -364,7 +364,7 @@ func (s *ExchangeRateServiceImpl) OverrideRate(
 	if s.overrideCounter != nil {
 		s.overrideCounter.Add(ctx, 1)
 	}
-	s.recordRateGauges(rates)
+	s.recordRateGauges(ctx, rates)
 
 	s.log.Info("exchange_rate: admin override applied",
 		zap.Int("admin_id", adminID),
@@ -459,7 +459,7 @@ func (s *ExchangeRateServiceImpl) writeUSDGTQRate(ctx context.Context, sellRate 
 	return err
 }
 
-func (s *ExchangeRateServiceImpl) recordRefreshMetric(source string, success bool) {
+func (s *ExchangeRateServiceImpl) recordRefreshMetric(ctx context.Context, source string, success bool) {
 	if s.refreshCounter == nil {
 		return
 	}
@@ -470,7 +470,7 @@ func (s *ExchangeRateServiceImpl) recordRefreshMetric(source string, success boo
 	if source == "stale" {
 		status = "stale"
 	}
-	s.refreshCounter.Add(context.Background(), 1,
+	s.refreshCounter.Add(ctx, 1,
 		metric.WithAttributes(
 			attribute.String("source", source),
 			attribute.String("status", status),
@@ -478,11 +478,10 @@ func (s *ExchangeRateServiceImpl) recordRefreshMetric(source string, success boo
 	)
 }
 
-func (s *ExchangeRateServiceImpl) recordRateGauges(rates *domain.ExchangeRates) {
+func (s *ExchangeRateServiceImpl) recordRateGauges(ctx context.Context, rates *domain.ExchangeRates) {
 	if s.rateGauge == nil {
 		return
 	}
-	ctx := context.Background()
 	refF, _ := rates.ReferenceRate.Float64()
 	buyF, _ := rates.BuyRate.Float64()
 	sellF, _ := rates.SellRate.Float64()

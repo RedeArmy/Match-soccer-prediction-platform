@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/internal/repository"
 )
 
 // ── stubs ─────────────────────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ func (r *withdrawalReqRepoStub) ListByUser(_ context.Context, _ int) ([]*domain.
 func (r *withdrawalReqRepoStub) ListPending(_ context.Context) ([]*domain.WithdrawalRequest, error) {
 	return r.reqs, r.err
 }
-func (r *withdrawalReqRepoStub) ListAll(_ context.Context, _ string) ([]*domain.WithdrawalRequest, error) {
+func (r *withdrawalReqRepoStub) ListAll(_ context.Context, _ string, _ repository.Pagination) ([]*domain.WithdrawalRequest, error) {
 	return r.reqs, r.err
 }
 func (r *withdrawalReqRepoStub) ApproveAndDebit(_ context.Context, _ int, _ int, _ string) (*domain.WithdrawalRequest, error) {
@@ -244,7 +245,7 @@ func TestWithdrawalService_ListAll_ReturnsAll(t *testing.T) {
 	}
 	svc := newWithdrawalSvc(&withdrawalReqRepoStub{reqs: reqs}, nil)
 
-	got, err := svc.ListAll(context.Background(), "")
+	got, err := svc.ListAll(context.Background(), "", repository.Pagination{Limit: 50})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,7 +258,7 @@ func TestWithdrawalService_ListAll_WithStatusFilter(t *testing.T) {
 	reqs := []*domain.WithdrawalRequest{{ID: 3, Status: domain.WithdrawalApproved}}
 	svc := newWithdrawalSvc(&withdrawalReqRepoStub{reqs: reqs}, nil)
 
-	got, err := svc.ListAll(context.Background(), "approved")
+	got, err := svc.ListAll(context.Background(), "approved", repository.Pagination{Limit: 50})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

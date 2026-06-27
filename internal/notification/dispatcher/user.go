@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -18,10 +19,43 @@ import (
 	infrapush "github.com/rede/world-cup-quiniela/internal/infrastructure/webpush"
 	"github.com/rede/world-cup-quiniela/internal/notification"
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
-	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/internal/service"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
+
+// Narrow persistence interfaces used by UserDispatcher. Defined here so the
+// dispatcher package does not import the repository package, avoiding the
+// horizontal coupling between notification and repository layers. The concrete
+// repository implementations satisfy these interfaces through Go's structural
+// typing without any change to the call sites.
+
+// notificationPersister is the write-side of the user notification inbox.
+type notificationPersister interface {
+	Create(ctx context.Context, n *domain.UserNotification) (inserted bool, err error)
+}
+
+// preferenceLookup resolves per-user channel opt-in flags.
+type preferenceLookup interface {
+	Get(ctx context.Context, userID int, eventType string) (*domain.NotificationPreference, error)
+	GlobalEmailOptedOut(ctx context.Context, userID int) (bool, error)
+}
+
+// pushSubscriptionStore manages Web Push subscriptions for a single user.
+type pushSubscriptionStore interface {
+	ListActiveByUser(ctx context.Context, userID int) ([]*domain.PushSubscription, error)
+	MarkInactive(ctx context.Context, id int64) error
+	UpdateLastUsed(ctx context.Context, id int64) error
+}
+
+// dlqAppender writes failed delivery attempts to the dead-letter queue.
+type dlqAppender interface {
+	CreateEntry(ctx context.Context, entry *domain.NotificationDLQEntry) error
+}
+
+// templateLookup returns the operator-editable template for an event type.
+type templateLookup interface {
+	Get(ctx context.Context, eventType, locale string) (*domain.NotificationTemplate, error)
+}
 
 // userContent holds the rendered title and body for a user-facing notification.
 type userContent struct {
@@ -135,10 +169,10 @@ type notifPref struct {
 //     are configured.  Global email opt-out (one-click unsubscribe) is honoured.
 //  9. On persist failure, writes a DLQ entry and returns the error for retry.
 type UserDispatcher struct {
-	notifRepo         repository.UserNotificationRepository
-	prefRepo          repository.NotificationPreferenceRepository
-	pushRepo          repository.PushSubscriptionRepository
-	dlqRepo           repository.NotificationDLQEntryCreator
+	notifRepo         notificationPersister
+	prefRepo          preferenceLookup
+	pushRepo          pushSubscriptionStore
+	dlqRepo           dlqAppender
 	hub               *hub.Hub
 	pusher            infrapush.Sender
 	mailer            infraemail.Sender
@@ -149,41 +183,62 @@ type UserDispatcher struct {
 	appBaseURL        string // WCQ_SERVER_APPBASEURL; used to build absolute links in emails
 	pgNotifier        PgNotifier
 	params            service.SystemParamService
-	templateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
-	memberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
-	digestGate        notification.Recorder                     // nil disables digest (all pushes sent individually)
+	templateRepo      templateLookup        // nil falls back to compiled defaults
+	memberLister      GroupMemberLister     // nil disables broadcast fan-out (tests without DB)
+	digestGate        notification.Recorder // nil disables digest (all pushes sent individually)
 	log               *zap.Logger
 	instruments       dispatcherInstruments
+	// clock returns the current time. Defaults to time.Now. Override in tests
+	// to make digest-gate behaviour deterministic without real-time coupling.
+	clock func() time.Time
+	// wg tracks fire-and-forget goroutines (e.g. UpdateLastUsed writes) so
+	// Wait() can drain them before process shutdown.
+	wg sync.WaitGroup
+}
+
+// Wait blocks until all background goroutines spawned by this dispatcher
+// (e.g. best-effort UpdateLastUsed writes) have completed. Call it during
+// graceful shutdown after the outbox worker has stopped dispatching.
+func (d *UserDispatcher) Wait() {
+	d.wg.Wait()
 }
 
 // UserDispatcherConfig bundles constructor arguments for UserDispatcher.
 type UserDispatcherConfig struct {
-	NotifRepo         repository.UserNotificationRepository
-	PrefRepo          repository.NotificationPreferenceRepository
-	PushRepo          repository.PushSubscriptionRepository
-	DLQRepo           repository.NotificationDLQEntryCreator
+	NotifRepo         notificationPersister
+	PrefRepo          preferenceLookup
+	PushRepo          pushSubscriptionStore
+	DLQRepo           dlqAppender
 	Hub               *hub.Hub
 	Pusher            infrapush.Sender
 	Mailer            infraemail.Sender
 	EmailResolver     UserEmailResolver  // nil disables email delivery
 	LocaleResolver    UserLocaleResolver // nil falls back to system-wide locale
 	FromAddr          string
-	UnsubscribeSecret string                                    // WCQ_EMAIL_UNSUBSCRIBESECRET; empty omits link
-	AppBaseURL        string                                    // WCQ_SERVER_APPBASEURL; needed for absolute links
-	PgNotifier        PgNotifier                                // nil disables pg_notify (tests without DB)
-	Params            service.SystemParamService                // nil uses defaults
-	TemplateRepo      repository.NotificationTemplateRepository // nil falls back to compiled defaults
-	MemberLister      GroupMemberLister                         // nil disables broadcast fan-out (tests without DB)
+	UnsubscribeSecret string                     // WCQ_EMAIL_UNSUBSCRIBESECRET; empty omits link
+	AppBaseURL        string                     // WCQ_SERVER_APPBASEURL; needed for absolute links
+	PgNotifier        PgNotifier                 // nil disables pg_notify (tests without DB)
+	Params            service.SystemParamService // nil uses defaults
+	TemplateRepo      templateLookup             // nil falls back to compiled defaults
+	MemberLister      GroupMemberLister          // nil disables broadcast fan-out (tests without DB)
 	// Recorder throttles P2/P3 push bursts cluster-wide. Use
 	// notification.NewRedisPushDigestGate when Redis is available; fall back to
 	// notification.NewPushDigestGate for single-process deployments. nil disables
 	// digest gating (all pushes delivered individually).
 	Recorder notification.Recorder
-	Log      *zap.Logger
+	// Clock overrides time.Now for digest-gate decisions. Defaults to time.Now
+	// when nil. Inject a fixed func in tests to drive push-throttle logic
+	// deterministically without sleeping.
+	Clock func() time.Time
+	Log   *zap.Logger
 }
 
 // NewUserDispatcher constructs a UserDispatcher.
 func NewUserDispatcher(cfg UserDispatcherConfig) *UserDispatcher {
+	clk := cfg.Clock
+	if clk == nil {
+		clk = time.Now
+	}
 	return &UserDispatcher{
 		notifRepo:         cfg.NotifRepo,
 		prefRepo:          cfg.PrefRepo,
@@ -202,6 +257,7 @@ func NewUserDispatcher(cfg UserDispatcherConfig) *UserDispatcher {
 		templateRepo:      cfg.TemplateRepo,
 		memberLister:      cfg.MemberLister,
 		digestGate:        cfg.Recorder,
+		clock:             clk,
 		log:               cfg.Log,
 	}
 }
