@@ -60,9 +60,16 @@ func (r *PostgresTournamentRepository) GetSlot(ctx context.Context, id int) (*do
 }
 
 // ListSlots returns all bracket position slots ordered by id.
+// Each slot is joined with its associated match (via home_slot_id or away_slot_id)
+// to populate MatchKickoffAt for display in the public bracket view.
 func (r *PostgresTournamentRepository) ListSlots(ctx context.Context) ([]*domain.TournamentSlot, error) {
-	rows, err := r.db.Query(ctx,
-		`SELECT `+slotColumns+` FROM tournament_slots ORDER BY id`,
+	rows, err := r.db.Query(ctx, `
+		SELECT ts.id, ts.label, ts.description, ts.team, ts.auto_source,
+		       ts.confirmed_at, ts.confirmed_by_user_id, ts.created_at, ts.updated_at,
+		       m.kickoff_at AS match_kickoff_at
+		FROM tournament_slots ts
+		LEFT JOIN matches m ON (m.home_slot_id = ts.id OR m.away_slot_id = ts.id)
+		ORDER BY ts.id`,
 	)
 	if err != nil {
 		return nil, apperrors.Internal(err)
@@ -72,7 +79,11 @@ func (r *PostgresTournamentRepository) ListSlots(ctx context.Context) ([]*domain
 	var slots []*domain.TournamentSlot
 	for rows.Next() {
 		s := &domain.TournamentSlot{}
-		if err := rows.Scan(&s.ID, &s.Label, &s.Description, &s.Team, &s.AutoSource, &s.ConfirmedAt, &s.ConfirmedByUserID, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&s.ID, &s.Label, &s.Description, &s.Team, &s.AutoSource,
+			&s.ConfirmedAt, &s.ConfirmedByUserID, &s.CreatedAt, &s.UpdatedAt,
+			&s.MatchKickoffAt,
+		); err != nil {
 			return nil, apperrors.Internal(err)
 		}
 		slots = append(slots, s)

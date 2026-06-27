@@ -644,7 +644,7 @@ const translations: TranslationNode = {
     points:       { es: 'pts',                       en: 'pts'                        },
   },
   bracket:           { es: 'Llave',                                en: 'Bracket'                                },
-  bracketTitle:      { es: 'Llave del Torneo',                     en: 'Tournament Bracket'                     },
+  bracketTitle:      { es: 'Rondas Finales',                       en: 'Final Rounds'                           },
   bracketNoSlots:    { es: 'La llave se irá llenando conforme avancen las rondas.', en: 'The bracket will fill in as rounds progress.' },
   phaseRoundOf32:    { es: 'Dieciseisavos',                        en: 'Round of 32'                            },
   phaseRoundOf16:    { es: 'Octavos',                              en: 'Round of 16'                            },

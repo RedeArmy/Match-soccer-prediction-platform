@@ -34,6 +34,7 @@ type TournamentSlotResponse struct {
 	ConfirmedByUserID *int    `json:"confirmed_by_user_id,omitempty"`
 	CreatedAt         string  `json:"created_at"`
 	UpdatedAt         string  `json:"updated_at"`
+	MatchKickoffAt    *string `json:"match_kickoff_at,omitempty"`
 }
 
 func standingToResponse(st *domain.GroupStanding) GroupStandingResponse {
@@ -77,6 +78,10 @@ func slotToResponse(s *domain.TournamentSlot) TournamentSlotResponse {
 	if s.ConfirmedAt != nil {
 		t := s.ConfirmedAt.Format(timeFormat)
 		resp.ConfirmedAt = &t
+	}
+	if s.MatchKickoffAt != nil {
+		k := s.MatchKickoffAt.Format(timeFormat)
+		resp.MatchKickoffAt = &k
 	}
 	return resp
 }

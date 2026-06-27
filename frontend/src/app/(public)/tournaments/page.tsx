@@ -38,11 +38,7 @@ export default function TournamentsPage() {
       </div>
 
       <GroupStandingsSection />
-      <div className="px-4 pb-8">
-        <div className="mx-auto max-w-7xl">
-          <KnockoutBracket />
-        </div>
-      </div>
+      <KnockoutBracket />
     </div>
   );
 }
