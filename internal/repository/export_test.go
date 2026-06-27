@@ -19,3 +19,9 @@ func RetryPolicySnapshot() (maxAttempts int, baseDelay, maxDelay time.Duration) 
 func WithTx(ctx context.Context, db *pgxpool.Pool, caller string, fn func(pgx.Tx) error) error {
 	return withTx(ctx, db, caller, fn)
 }
+
+// DBTimeoutsSnapshot returns the current dbWriteTimeout and dbReadTimeout values
+// for assertion in tests. Only valid for use in tests; not part of the public API.
+func DBTimeoutsSnapshot() (write, read time.Duration) {
+	return dbWriteTimeout, dbReadTimeout
+}

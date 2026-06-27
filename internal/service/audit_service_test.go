@@ -98,6 +98,48 @@ func waitForAuditEntry(t *testing.T, repo *stubAuditLogRepo, n int) {
 	t.Fatalf("timed out after 2 s waiting for %d audit entries to be persisted", n)
 }
 
+// ── Drain shutdown-interrupt test ────────────────────────────────────────────
+
+// TestAuditService_Drain_InterruptsRetryDelay verifies that calling Drain while
+// writeWithRetry is sleeping between attempts causes the sleep to be cut short
+// and the goroutine to exit without waiting the full retry interval. This is
+// the key correctness property of the s.shutdown channel added in this branch:
+// graceful shutdown should not block for the entire retry delay on each
+// in-flight goroutine.
+func TestAuditService_Drain_InterruptsRetryDelay(t *testing.T) {
+	// Always-failing repo: forces writeWithRetry to exhaust all attempts and
+	// sleep between them. We configure a very long retry delay so the test would
+	// time out if Drain did not interrupt the sleep.
+	repo := &stubAuditLogRepo{err: errors.New("transient db error")}
+	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
+
+	// Override retry policy: 2 attempts with a 5-second delay between them.
+	// Without the shutdown interrupt, Drain would block for ~5 s.
+	origAttempts := auditMaxAttempts
+	origDelay := auditRetryDelay
+	auditMaxAttempts = 2
+	auditRetryDelay = 5 * time.Second
+	defer func() {
+		auditMaxAttempts = origAttempts
+		auditRetryDelay = origDelay
+	}()
+
+	svc.Log(context.Background(), nil, nil, "drain.interrupt.test", nil, nil, nil)
+
+	// Wait briefly to let the goroutine start its first write attempt and enter
+	// the retry sleep before Drain is called.
+	time.Sleep(50 * time.Millisecond)
+
+	start := time.Now()
+	svc.Drain()
+	elapsed := time.Since(start)
+
+	// Drain must return well before the 5 s retry delay elapses.
+	if elapsed >= 2*time.Second {
+		t.Errorf("Drain took %v — shutdown channel did not interrupt the retry sleep", elapsed)
+	}
+}
+
 // ── Drain tests ───────────────────────────────────────────────────────────────
 
 // TestAuditService_Drain_WaitsForInFlightGoroutines validates that Drain
