@@ -207,6 +207,8 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"ParamKeyMatchDailySyncHour":              ParamKeyMatchDailySyncHour,
 		"ParamKeyMatchSyncPrematchWindowMin":      ParamKeyMatchSyncPrematchWindowMin,
 		"ParamKeyMatchSyncStopAfterZeroLiveCount": ParamKeyMatchSyncStopAfterZeroLiveCount,
+		// Polling pause when no upcoming matches found (migration 000212)
+		"ParamKeyMatchSyncNoMatchesPauseSec": ParamKeyMatchSyncNoMatchesPauseSec,
 		// System clock override — dev/test only (migration 000187)
 		"ParamKeySystemDate": ParamKeySystemDate,
 		// Feature flags (migration 000198)
@@ -401,7 +403,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 158 // update when adding a new ParamKey* constant (+1 featflag.paypal from 000198; +2 daily summary from 000202; +1 auth.session_max_age_seconds from 000211)
+		const expectedCount = 159 // update when adding a new ParamKey* constant (+1 featflag.paypal from 000198; +2 daily summary from 000202; +1 auth.session_max_age_seconds from 000211; +1 match.sync.no_matches_pause_sec from 000212)
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -641,6 +643,7 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyMatchDailySyncHour", ParamKeyMatchDailySyncHour, "match"},
 		{"ParamKeyMatchSyncPrematchWindowMin", ParamKeyMatchSyncPrematchWindowMin, "match"},
 		{"ParamKeyMatchSyncStopAfterZeroLiveCount", ParamKeyMatchSyncStopAfterZeroLiveCount, "match"},
+		{"ParamKeyMatchSyncNoMatchesPauseSec", ParamKeyMatchSyncNoMatchesPauseSec, "match"},
 		// System clock override — dev/test only (migration 000187)
 		{"ParamKeySystemDate", ParamKeySystemDate, "system"},
 		// Feature flags (migration 000198)

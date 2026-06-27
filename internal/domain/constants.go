@@ -127,9 +127,10 @@ const (
 	DefaultMatchSyncSeason              = 2026           // match.sync.season
 
 	// Daily fixture sync — validates linked matches via API-Football (migration 000192)
-	DefaultMatchDailySyncHour              = 1  // match.dailysync.hour (Guatemala local time)
-	DefaultMatchSyncPrematchWindowMin      = 10 // match.sync.prematch_window_min
-	DefaultMatchSyncStopAfterZeroLiveCount = 3  // match.sync.stop_after_zero_live_count
+	DefaultMatchDailySyncHour              = 1   // match.dailysync.hour (Guatemala local time)
+	DefaultMatchSyncPrematchWindowMin      = 10  // match.sync.prematch_window_min
+	DefaultMatchSyncStopAfterZeroLiveCount = 3   // match.sync.stop_after_zero_live_count
+	DefaultMatchSyncNoMatchesPauseSec      = 300 // match.sync.no_matches_pause_sec
 
 	// Pagination
 	DefaultPaginationDefaultLimit = 50  // pagination.default_limit
@@ -281,6 +282,12 @@ const (
 	// cycles that return zero live matches before the polling job pauses and waits
 	// for the next scheduled match kickoff window. Defaults to 3. is_runtime=TRUE.
 	ParamKeyMatchSyncStopAfterZeroLiveCount = "match.sync.stop_after_zero_live_count"
+	// ParamKeyMatchSyncNoMatchesPauseSec is the number of seconds the polling job
+	// waits before re-checking when no upcoming linked matches are found in the DB
+	// (i.e. all matches are finished and no future kickoffs exist yet). During this
+	// window a new match manually linked via external_match_id is picked up on the
+	// next DB re-check. Defaults to 300 (5 min). is_runtime=TRUE.
+	ParamKeyMatchSyncNoMatchesPauseSec = "match.sync.no_matches_pause_sec"
 
 	// ParamKeySystemDate overrides the wall-clock time reported by the application
 	// clock. Accepts an RFC 3339 datetime string (e.g. "2026-06-20T15:00:00Z").
@@ -441,6 +448,7 @@ func AllParamKeys() []string {
 		ParamKeyMatchDailySyncHour,
 		ParamKeyMatchSyncPrematchWindowMin,
 		ParamKeyMatchSyncStopAfterZeroLiveCount,
+		ParamKeyMatchSyncNoMatchesPauseSec,
 		// System clock override (dev/test only)
 		ParamKeySystemDate,
 		// Admin

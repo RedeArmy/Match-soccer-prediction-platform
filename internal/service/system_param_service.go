@@ -512,9 +512,10 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyMatchSyncLeagueID:            {1, 99_999},
 	domain.ParamKeyMatchSyncSeason:              {2020, 2100},
 	// Daily fixture sync + polling control (migration 000192)
-	domain.ParamKeyMatchDailySyncHour:              {0, 23},  // valid hour 0–23
-	domain.ParamKeyMatchSyncPrematchWindowMin:      {0, 120}, // 0 = no filter; max 2 h
-	domain.ParamKeyMatchSyncStopAfterZeroLiveCount: {1, 20},  // 1–20 consecutive zero polls
+	domain.ParamKeyMatchDailySyncHour:              {0, 23},     // valid hour 0–23
+	domain.ParamKeyMatchSyncPrematchWindowMin:      {0, 120},    // 0 = no filter; max 2 h
+	domain.ParamKeyMatchSyncStopAfterZeroLiveCount: {1, 20},     // 1–20 consecutive zero polls
+	domain.ParamKeyMatchSyncNoMatchesPauseSec:      {60, 86400}, // 1 min–24 h pause window
 }
 
 // paramStringValidator validates a string system-param value for a specific key.

@@ -111,7 +111,7 @@ jobs:
           format: table
           exit-code: '1'
           ignore-unfixed: true
-          severity: CRITICAL
+          severity: CRITICAL,HIGH
 
       # Scans the full git history and the working tree for secrets (API keys,
       # passwords, private keys).  Uses .gitleaks.toml to suppress known-safe
@@ -308,7 +308,7 @@ jobs:
 
   # --------------------------------------------------------------------------
   # Base-image CVE scan — detects known vulnerabilities in the alpine base
-  # image before they reach the deploy pipeline. Only fails on CRITICAL
+  # image before they reach the deploy pipeline. Fails on CRITICAL and HIGH
   # severity with available fixes; unfixed CVEs are informational only.
   # Uses the same alpine version pinned in Dockerfile and Dockerfile.worker.
   # Runs in parallel with the filesystem trivy job for faster PR feedback.
@@ -333,7 +333,7 @@ jobs:
           image-ref: alpine:3.22
           format: table
           exit-code: '1'
-          severity: CRITICAL
+          severity: CRITICAL,HIGH
           ignore-unfixed: true
 
   # --------------------------------------------------------------------------

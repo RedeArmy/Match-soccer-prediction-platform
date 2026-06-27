@@ -13,15 +13,29 @@ import (
 )
 
 // dbWriteTimeout bounds the wall-clock time of any mutating DB operation
-// (transaction or single-row write). 10 s is sufficient for multi-query
-// transactions on local/RDS Postgres while protecting against a hung
-// connection stalling an HTTP handler indefinitely.
-const dbWriteTimeout = 10 * time.Second
+// (transaction or single-row write). Override via SetDBTimeouts at startup
+// using WCQ_DATABASE_QUERYWRITETIMEOUT; the default (10 s) is used when not
+// explicitly configured.
+var dbWriteTimeout = 10 * time.Second
 
 // dbReadTimeout bounds read-only queries. Single-row and small set reads
 // are expected to complete in milliseconds; 5 s is a generous allowance for
 // index-scanned paginated lists before treating the connection as stuck.
-const dbReadTimeout = 5 * time.Second
+// Override via SetDBTimeouts at startup using WCQ_DATABASE_QUERYREADTIMEOUT.
+var dbReadTimeout = 5 * time.Second
+
+// SetDBTimeouts replaces the package-wide query timeout values. It must be
+// called once at process startup before any repository method is invoked.
+// Zero values are ignored so callers can leave unset fields as zero and rely
+// on the package defaults.
+func SetDBTimeouts(write, read time.Duration) {
+	if write > 0 {
+		dbWriteTimeout = write
+	}
+	if read > 0 {
+		dbReadTimeout = read
+	}
+}
 
 // withTx executes fn inside a single pgx transaction. The transaction is
 // committed when fn returns nil; it is rolled back on any error returned by fn.

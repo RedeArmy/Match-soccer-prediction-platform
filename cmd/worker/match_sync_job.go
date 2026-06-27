@@ -156,13 +156,15 @@ func suspendPollingIfThresholdReached(
 		return
 	}
 	if !found {
+		// Re-check after a configurable window instead of pausing indefinitely.
+		// This ensures that a match linked manually after the pause (setting
+		// external_match_id in the DB) is picked up within one re-check cycle
+		// rather than waiting for the daily sync or an operator restart.
+		pauseSec := params.GetInt(ctx, domain.ParamKeyMatchSyncNoMatchesPauseSec, domain.DefaultMatchSyncNoMatchesPauseSec)
 		globalMatchSyncState.pollingPaused.Store(true)
-		// Re-check in 5 minutes instead of pausing indefinitely. This ensures
-		// that a match linked manually after the pause (setting external_match_id
-		// in the DB) is picked up within one re-check cycle rather than waiting
-		// for the daily sync or an operator restart.
-		globalMatchSyncState.resumeAtUnix.Store(time.Now().Add(5 * time.Minute).Unix())
-		log.Info("match sync: no upcoming matches found — polling suspended for 5 min")
+		globalMatchSyncState.resumeAtUnix.Store(time.Now().Add(time.Duration(pauseSec) * time.Second).Unix())
+		log.Info("match sync: no upcoming matches found — polling suspended",
+			zap.Int("pause_sec", pauseSec))
 		return
 	}
 
