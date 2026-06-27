@@ -91,16 +91,14 @@ class APIClient {
         // Non-JSON body (HTML error page, plain text, etc.). The status code is
         // used as the fallback message; raw text is available in debug tooling.
       }
+      const errorBody = body?.error as Record<string, unknown> | undefined;
+      const rawMsg = errorBody?.message;
+      const rawCode = errorBody?.code;
       const msg =
-        (body?.error as Record<string, unknown> | undefined)?.message ??
-        `HTTP ${res.status}`;
+        typeof rawMsg === "string" ? rawMsg : `HTTP ${res.status}`;
       const code =
-        (body?.error as Record<string, unknown> | undefined)?.code ??
-        "ERR_UNKNOWN";
-      throw Object.assign(new Error(String(msg)), {
-        code: String(code),
-        status: res.status,
-      });
+        typeof rawCode === "string" ? rawCode : "ERR_UNKNOWN";
+      throw Object.assign(new Error(msg), { code, status: res.status });
     }
 
     // 204 No Content — return empty object

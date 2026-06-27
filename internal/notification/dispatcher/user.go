@@ -52,8 +52,8 @@ type dlqAppender interface {
 	CreateEntry(ctx context.Context, entry *domain.NotificationDLQEntry) error
 }
 
-// templateLookup returns the operator-editable template for an event type.
-type templateLookup interface {
+// templateGetter returns the operator-editable template for an event type.
+type templateGetter interface {
 	Get(ctx context.Context, eventType, locale string) (*domain.NotificationTemplate, error)
 }
 
@@ -183,7 +183,7 @@ type UserDispatcher struct {
 	appBaseURL        string // WCQ_SERVER_APPBASEURL; used to build absolute links in emails
 	pgNotifier        PgNotifier
 	params            service.SystemParamService
-	templateRepo      templateLookup        // nil falls back to compiled defaults
+	templateRepo      templateGetter        // nil falls back to compiled defaults
 	memberLister      GroupMemberLister     // nil disables broadcast fan-out (tests without DB)
 	digestGate        notification.Recorder // nil disables digest (all pushes sent individually)
 	log               *zap.Logger
@@ -219,7 +219,7 @@ type UserDispatcherConfig struct {
 	AppBaseURL        string                     // WCQ_SERVER_APPBASEURL; needed for absolute links
 	PgNotifier        PgNotifier                 // nil disables pg_notify (tests without DB)
 	Params            service.SystemParamService // nil uses defaults
-	TemplateRepo      templateLookup             // nil falls back to compiled defaults
+	TemplateRepo      templateGetter             // nil falls back to compiled defaults
 	MemberLister      GroupMemberLister          // nil disables broadcast fan-out (tests without DB)
 	// Recorder throttles P2/P3 push bursts cluster-wide. Use
 	// notification.NewRedisPushDigestGate when Redis is available; fall back to
