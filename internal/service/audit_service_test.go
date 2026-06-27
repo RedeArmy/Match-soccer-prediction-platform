@@ -71,8 +71,11 @@ func TestAuditService_Log_RepoError_DoesNotPanic(t *testing.T) {
 	svc := NewAuditService(repo, 5*time.Second, zap.NewNop())
 
 	svc.Log(context.Background(), nil, nil, "some.action", nil, nil, nil)
-	// Give the goroutine time to run. A panic would fail the test immediately.
-	waitForAuditEntry(t, repo, 0)
+	// Drain closes the shutdown channel (interrupting any retry sleep) and waits
+	// for the goroutine to finish. Without Drain, the goroutine lives past the
+	// test boundary and races with subsequent tests that mutate the package-level
+	// auditMaxAttempts / auditRetryDelay globals.
+	svc.Drain()
 }
 
 // waitForAuditEntry polls until repo has at least n entries or 2 s elapses.
