@@ -4154,13 +4154,21 @@ paths:
       - admin-users
   /api/v1/admin/withdrawals:
     get:
-      description: Returns all withdrawal requests optionally filtered by status.
-        Requires admin role.
+      description: Returns withdrawal requests optionally filtered by status with
+        pagination. Requires admin role.
       parameters:
       - description: 'Filter by status: pending, approved, rejected, processed'
         in: query
         name: status
         type: string
+      - description: Page size (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Page number, 1-based (default 1)
+        in: query
+        name: page
+        type: integer
       produces:
       - application/json
       responses:
