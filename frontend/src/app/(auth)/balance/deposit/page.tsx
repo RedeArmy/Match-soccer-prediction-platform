@@ -158,12 +158,15 @@ export default function DepositPage() {
   const clearFeedback = () => setFeedback(null);
 
   // When geo or flags resolve, drop the active tab if it is no longer available.
+  // `method` is included so a stale closure never misses a pending reset when
+  // the user switches tabs just as geo data arrives. `setMethod` is a stable
+  // React dispatcher and is intentionally omitted per the rules-of-hooks spec.
   useEffect(() => {
     if (geoLoading) return;
     if (isGuatemala && method === "paypal") setMethod("recurrente");
     if (!isGuatemala && method === "bank") setMethod("recurrente");
     if (!paypalEnabled && method === "paypal") setMethod("recurrente");
-  }, [geoLoading, isGuatemala, paypalEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [geoLoading, isGuatemala, paypalEnabled, method]);
 
   const gtqEquiv =
     rate && amountUSD

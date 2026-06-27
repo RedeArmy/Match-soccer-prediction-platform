@@ -37,16 +37,18 @@ const (
 	paypalCertBodyLimit          = 16 << 10 // 16 KB — generous for a PEM certificate
 
 	// paypalTimestampTolerance is the maximum age (or future skew) allowed for
-	// the PAYPAL-TRANSMISSION-TIME header. PayPal sets this header to the time
-	// of the ORIGINAL delivery attempt and never refreshes it on retries or
-	// manual resends from the developer dashboard — meaning every retry and
-	// every manual Resend arrives with the original, stale timestamp.
-	// 24 hours covers same-day automatic retries and any manual Resend issued
-	// within a business day, without opening an unnecessarily wide replay window.
-	// Replay attacks are already mitigated by the RSA signature (which binds the
-	// webhook ID, transmission ID, and body CRC32) and by the capture_id
-	// idempotency constraint in the database that prevents double-crediting.
-	paypalTimestampTolerance = 24 * time.Hour
+	// the PAYPAL-TRANSMISSION-TIME header. 5 minutes matches the industry
+	// standard used by Stripe, Svix, and other webhook providers.
+	//
+	// Note: PayPal sets PAYPAL-TRANSMISSION-TIME to the ORIGINAL delivery
+	// attempt and does not refresh it on retries, so late retry attempts (> 5
+	// min) will be rejected with 401 and PayPal will continue retrying.
+	// This is intentional: replay attacks are already prevented by the RSA
+	// signature (which binds webhookID + transmissionID + body CRC32) and by
+	// the capture_id idempotency constraint, so the timestamp check is
+	// defence-in-depth. A 5-minute window limits the replay surface without
+	// relying solely on the signature and idempotency for freshness.
+	paypalTimestampTolerance = 5 * time.Minute
 )
 
 // CertFetcher retrieves a parsed X.509 certificate from the given URL.
@@ -54,9 +56,10 @@ const (
 type CertFetcher func(ctx context.Context, certURL string) (*x509.Certificate, error)
 
 // DefaultPayPalCertFetcher returns a CertFetcher backed by a package-level
-// in-memory cache. PayPal cert URLs are versioned: a new URL is issued when
-// the certificate rotates, so cached entries are never stale. The underlying
-// HTTP client enforces a 10-second timeout on cert downloads.
+// in-memory cache. PayPal cert URLs are versioned, so a URL change on rotation
+// is already a cache miss. Additionally, each entry is evicted when the cert's
+// own NotAfter timestamp passes, ensuring that an expired or emergency-revoked
+// certificate is not used beyond its validity window.
 func DefaultPayPalCertFetcher() CertFetcher {
 	return defaultPayPalFetcher.fetch
 }
@@ -68,20 +71,34 @@ var defaultPayPalFetcher = &cachedCertFetcher{
 	},
 }
 
+// cachedCertEntry pairs a certificate with the wall-clock time after which it
+// must be evicted, derived from the certificate's own NotAfter field.
+type cachedCertEntry struct {
+	cert      *x509.Certificate
+	expiresAt time.Time
+}
+
 type cachedCertFetcher struct {
-	cache  sync.Map // key: certURL string → value: *x509.Certificate
+	cache  sync.Map // key: certURL string → *cachedCertEntry
 	client *http.Client
 }
 
 func (c *cachedCertFetcher) fetch(ctx context.Context, certURL string) (*x509.Certificate, error) {
 	if v, ok := c.cache.Load(certURL); ok {
-		return v.(*x509.Certificate), nil
+		entry := v.(*cachedCertEntry)
+		if time.Now().Before(entry.expiresAt) {
+			return entry.cert, nil
+		}
+		// Cert has passed its NotAfter — evict and re-fetch. Concurrent goroutines
+		// may also evict and re-fetch the same URL; that is harmless because all
+		// fetch the same cert and the last Store wins with an identical value.
+		c.cache.Delete(certURL)
 	}
 	cert, err := downloadCert(ctx, c.client, certURL)
 	if err != nil {
 		return nil, err
 	}
-	c.cache.Store(certURL, cert)
+	c.cache.Store(certURL, &cachedCertEntry{cert: cert, expiresAt: cert.NotAfter})
 	return cert, nil
 }
 

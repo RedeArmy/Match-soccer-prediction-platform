@@ -58,14 +58,12 @@ func (h *PublicGroupHandler) GetPublicLeaderboard(w http.ResponseWriter, r *http
 		result = &service.LeaderboardResult{}
 	}
 
-	entries := make([]LeaderboardEntryResponse, 0, len(result.Entries))
+	entries := make([]PublicLeaderboardEntryResponse, 0, len(result.Entries))
 	for _, e := range result.Entries {
-		entries = append(entries, LeaderboardEntryResponse{
+		entries = append(entries, PublicLeaderboardEntryResponse{
 			Rank:        e.Rank,
-			UserID:      e.User.ID,
 			UserName:    userDisplayName(e.User),
 			TotalPoints: e.TotalPoints,
-			PrizeWinner: false, // deliberately omitted on the public endpoint
 			RoundPoints: e.RoundPoints,
 		})
 	}
@@ -76,8 +74,18 @@ func (h *PublicGroupHandler) GetPublicLeaderboard(w http.ResponseWriter, r *http
 	})
 }
 
+// PublicLeaderboardEntryResponse is the per-user row in the unauthenticated
+// leaderboard. Internal user IDs are omitted; UserName is the only
+// user-identifying field exposed to anonymous callers.
+type PublicLeaderboardEntryResponse struct {
+	Rank        int            `json:"rank"`
+	UserName    string         `json:"user_name"`
+	TotalPoints int            `json:"total_points"`
+	RoundPoints map[string]int `json:"round_points,omitempty"`
+}
+
 // PublicLeaderboardResponse is the JSON body for GET /api/public/groups/leaderboard.
 type PublicLeaderboardResponse struct {
-	GroupName string                     `json:"group_name"`
-	Entries   []LeaderboardEntryResponse `json:"entries"`
+	GroupName string                           `json:"group_name"`
+	Entries   []PublicLeaderboardEntryResponse `json:"entries"`
 }

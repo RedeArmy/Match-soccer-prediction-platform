@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BASE_URL = "https://v3.football.api-sports.io";
+const BASE_URL =
+  process.env.FOOTBALL_API_BASE_URL ?? "https://v3.football.api-sports.io";
 
 // ── API-Football v3 response types ────────────────────────────────────────────
 

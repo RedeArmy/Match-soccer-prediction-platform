@@ -308,6 +308,13 @@ type DatabaseConfig struct {
 	ConnMaxLifetime       time.Duration `mapstructure:"connMaxLifetime"`
 	ConnMaxIdleTime       time.Duration `mapstructure:"connMaxIdleTime"`
 	ConnMaxLifetimeJitter time.Duration `mapstructure:"connMaxLifetimeJitter"`
+	// QueryWriteTimeout caps each mutating DB operation (INSERT/UPDATE/DELETE,
+	// multi-query transactions). When zero the repository default (10 s) is used.
+	// Env: WCQ_DATABASE_QUERYWRITETIMEOUT (e.g. "10s")
+	QueryWriteTimeout time.Duration `mapstructure:"queryWriteTimeout"`
+	// QueryReadTimeout caps read-only queries (SELECT). When zero the repository
+	// default (5 s) is used. Env: WCQ_DATABASE_QUERYREADTIMEOUT (e.g. "5s")
+	QueryReadTimeout time.Duration `mapstructure:"queryReadTimeout"`
 }
 
 // RedisConfig carries the address and credentials for the Redis instance

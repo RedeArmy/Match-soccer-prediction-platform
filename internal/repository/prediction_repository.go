@@ -129,6 +129,8 @@ func (r *PostgresPredictionRepository) UpdateIfUnchanged(ctx context.Context, p 
 }
 
 func (r *PostgresPredictionRepository) GetByUserAndMatch(ctx context.Context, userID, matchID int) (*domain.Prediction, error) {
+	ctx, span := startRepoSpan(ctx, "PredictionRepository.GetByUserAndMatch")
+	defer span.End()
 	row := r.db.QueryRow(ctx,
 		`SELECT `+predictionColumns+` FROM predictions WHERE user_id=$1 AND match_id=$2`,
 		userID, matchID,
@@ -148,6 +150,8 @@ func (r *PostgresPredictionRepository) ListByUser(ctx context.Context, userID in
 }
 
 func (r *PostgresPredictionRepository) ListByMatch(ctx context.Context, matchID int) ([]*domain.Prediction, error) {
+	ctx, span := startRepoSpan(ctx, "PredictionRepository.ListByMatch")
+	defer span.End()
 	rows, err := r.db.Query(ctx,
 		`SELECT `+predictionColumns+` FROM predictions WHERE match_id=$1 ORDER BY created_at ASC`, matchID,
 	)

@@ -487,7 +487,7 @@ func TestPayPalWebhookAuth_MalformedBase64Sig_Returns401(t *testing.T) {
 // the stale timestamp; signature verification is never reached because the
 // timestamp check happens first.
 func TestPayPalWebhookAuth_StaleTimestamp_Returns401(t *testing.T) {
-	staleTime := time.Now().UTC().Add(-25 * time.Hour).Format(time.RFC3339)
+	staleTime := time.Now().UTC().Add(-6 * time.Minute).Format(time.RFC3339)
 
 	downstream := &captureHandler{}
 	mw := applyPayPalMiddleware(t, testPayPalWebhookID, mockFetcher(testPair.cert), downstream)
@@ -516,7 +516,7 @@ func TestPayPalWebhookAuth_StaleTimestamp_Returns401(t *testing.T) {
 // more than the tolerance window in the future is rejected, preventing
 // clock-skew abuse.
 func TestPayPalWebhookAuth_FutureTimestamp_Returns401(t *testing.T) {
-	futureTime := time.Now().UTC().Add(25 * time.Hour).Format(time.RFC3339)
+	futureTime := time.Now().UTC().Add(6 * time.Minute).Format(time.RFC3339)
 
 	downstream := &captureHandler{}
 	mw := applyPayPalMiddleware(t, testPayPalWebhookID, mockFetcher(testPair.cert), downstream)

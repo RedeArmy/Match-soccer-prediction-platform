@@ -33,18 +33,7 @@ type DraftScores = Record<number, { home: number; away: number }>;
 type Filter = "all" | "pending" | "saved" | "past";
 const PAGE_SIZE = 6;
 type GroupLabel =
-  | "A"
-  | "B"
-  | "C"
-  | "D"
-  | "E"
-  | "F"
-  | "G"
-  | "H"
-  | "I"
-  | "J"
-  | "K"
-  | "L";
+  "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L";
 
 const GROUPS: GroupLabel[] = [
   "A",
@@ -993,8 +982,7 @@ function MatchCalendar({
   const dayHeaders = t("predictions.calendarDayHdrs").split(",");
 
   type CalendarCell =
-    | { blank: true; key: string }
-    | { blank: false; dateStr: string };
+    { blank: true; key: string } | { blank: false; dateStr: string };
   const cells: CalendarCell[] = [];
   for (let i = 0; i < startOffset; i++)
     cells.push({ blank: true, key: `${viewMonth}-f${i}` });

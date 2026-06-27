@@ -57,13 +57,13 @@ type AppError struct {
 
 	// HTTPStatus is the HTTP status code the handler should write in the
 	// response. It is set by each constructor and corresponds to the Code.
-	HTTPStatus int
+	HTTPStatus int `json:"-"`
 
 	// Cause holds the underlying error that triggered this AppError.
 	// It is intended for server-side logging only and must never be serialised
 	// into the API response. For CodeInternal errors, this is typically the
 	// raw database or I/O error. For other codes, Cause is usually nil.
-	Cause error
+	Cause error `json:"-"`
 }
 
 // Sentinel errors allow call sites to use errors.Is to check the category

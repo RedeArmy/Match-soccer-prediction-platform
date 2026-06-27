@@ -4247,7 +4247,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns all withdrawal requests optionally filtered by status. Requires admin role.",
+                "description": "Returns withdrawal requests optionally filtered by status with pagination. Requires admin role.",
                 "produces": [
                     "application/json"
                 ],
@@ -4260,6 +4260,18 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by status: pending, approved, rejected, processed",
                         "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page number, 1-based (default 1)",
+                        "name": "page",
                         "in": "query"
                     }
                 ],

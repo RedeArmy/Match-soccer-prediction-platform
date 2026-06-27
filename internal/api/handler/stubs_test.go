@@ -404,7 +404,7 @@ func (s *stubWithdrawalSvc) ListByUser(_ context.Context, _ int) ([]*domain.With
 func (s *stubWithdrawalSvc) ListPending(_ context.Context) ([]*domain.WithdrawalRequest, error) {
 	return s.reqs, s.err
 }
-func (s *stubWithdrawalSvc) ListAll(_ context.Context, _ string) ([]*domain.WithdrawalRequest, error) {
+func (s *stubWithdrawalSvc) ListAll(_ context.Context, _ string, _ repository.Pagination) ([]*domain.WithdrawalRequest, error) {
 	return s.reqs, s.err
 }
 func (s *stubWithdrawalSvc) ApproveRequest(_ context.Context, _, _ int, _ string) (*domain.WithdrawalRequest, error) {

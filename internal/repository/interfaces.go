@@ -1012,10 +1012,10 @@ type WithdrawalRequestRepository interface {
 	ListByUser(ctx context.Context, userID int) ([]*domain.WithdrawalRequest, error)
 	// ListPending returns all pending requests ordered by created_at ASC.
 	ListPending(ctx context.Context) ([]*domain.WithdrawalRequest, error)
-	// ListAll returns all requests optionally filtered by status, ordered by
-	// created_at DESC. An empty status returns all records. The result set is
-	// capped at 500 rows as a safety limit for admin queries.
-	ListAll(ctx context.Context, status string) ([]*domain.WithdrawalRequest, error)
+	// ListAll returns requests optionally filtered by status, ordered by
+	// created_at DESC. An empty status returns all statuses. Results are
+	// paginated via p; callers must supply an explicit Pagination value.
+	ListAll(ctx context.Context, status string, p Pagination) ([]*domain.WithdrawalRequest, error)
 	// ApproveAndDebit atomically transitions a pending request to approved AND
 	// deducts the GTQ amount from the user's balance_cents AND inserts a ledger
 	// row (withdrawal_deduct). Returns Conflict when the available balance is

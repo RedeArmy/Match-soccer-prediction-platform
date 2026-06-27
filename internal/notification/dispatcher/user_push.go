@@ -41,7 +41,7 @@ func (d *UserDispatcher) deliverPush(ctx context.Context, entry *notification.Ou
 	if d.digestGate != nil {
 		priority := notification.PriorityOf(entry.EventType)
 		var sendIndividual bool
-		sendIndividual, digestCount = d.digestGate.Record(ctx, userID, priority, time.Now())
+		sendIndividual, digestCount = d.digestGate.Record(ctx, userID, priority, d.clock())
 		if !sendIndividual {
 			if digestCount == 0 {
 				return // already sent a digest push for this window; drop
@@ -176,9 +176,12 @@ func (d *UserDispatcher) sendPushToSubscription(ctx context.Context, entry *noti
 	}
 	// Successful delivery. Update last_used_at as best-effort metadata so
 	// cleanup jobs can identify stale subscriptions. Fire-and-forget: a slow or
-	// failed write must not block the delivery path.
+	// failed write must not block the delivery path. Tracked by d.wg so
+	// Wait() can drain pending writes on graceful shutdown.
 	subID := sub.ID
+	d.wg.Add(1)
 	go func() {
+		defer d.wg.Done()
 		// WithoutCancel strips request cancellation so this outlives the HTTP
 		// response, while still propagating tracing context from the parent.
 		updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)

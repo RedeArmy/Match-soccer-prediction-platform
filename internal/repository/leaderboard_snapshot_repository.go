@@ -147,6 +147,8 @@ func (r *PostgresLeaderboardSnapshotRepository) ListByQuiniela(ctx context.Conte
 // GetLatest returns the most recently taken snapshot for a quiniela. Returns
 // nil, nil when no snapshot exists yet.
 func (r *PostgresLeaderboardSnapshotRepository) GetLatest(ctx context.Context, quinielaID int) (*domain.LeaderboardSnapshot, error) {
+	ctx, span := startRepoSpan(ctx, "LeaderboardSnapshotRepository.GetLatest")
+	defer span.End()
 	row := r.db.QueryRow(ctx,
 		`SELECT `+snapshotColumns+`
 		   FROM leaderboard_snapshots

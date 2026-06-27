@@ -5,10 +5,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
-	"github.com/rede/world-cup-quiniela/internal/notification"
-	"github.com/rede/world-cup-quiniela/internal/notification/scheduler"
 )
 
 // PostgresSchedulerStore implements scheduler.Store backed by PostgreSQL.
@@ -46,10 +45,10 @@ func (s *PostgresSchedulerStore) OldestPendingTransferSince(ctx context.Context)
 
 // DailySummary returns aggregated operational metrics for the 24-hour window
 // starting at since.
-func (s *PostgresSchedulerStore) DailySummary(ctx context.Context, since time.Time) (scheduler.DailySummaryRow, error) {
+func (s *PostgresSchedulerStore) DailySummary(ctx context.Context, since time.Time) (domain.DailySummaryRow, error) {
 	until := since.Add(24 * time.Hour)
 
-	var row scheduler.DailySummaryRow
+	var row domain.DailySummaryRow
 
 	// New users registered in the window.
 	if err := s.db.QueryRow(ctx,
@@ -95,10 +94,10 @@ func (s *PostgresSchedulerStore) DailySummary(ctx context.Context, since time.Ti
 }
 
 // WeeklySummary returns aggregated metrics for the 7-day window starting at since.
-func (s *PostgresSchedulerStore) WeeklySummary(ctx context.Context, since time.Time) (scheduler.WeeklySummaryRow, error) {
+func (s *PostgresSchedulerStore) WeeklySummary(ctx context.Context, since time.Time) (domain.WeeklySummaryRow, error) {
 	until := since.Add(7 * 24 * time.Hour)
 
-	var row scheduler.WeeklySummaryRow
+	var row domain.WeeklySummaryRow
 
 	if err := s.db.QueryRow(ctx,
 		`SELECT COUNT(*) FROM users WHERE created_at >= $1 AND created_at < $2`,
@@ -139,7 +138,11 @@ func (s *PostgresSchedulerStore) WeeklySummary(ctx context.Context, since time.T
 	}
 
 	// Top leaderboard group: highest total points scored in the window.
-	_ = s.db.QueryRow(ctx, `
+	// This query is best-effort enrichment: no result (no predictions yet, empty
+	// window) leaves TopGroupName and TopGroupPoints at their zero values, which
+	// the caller handles gracefully. Errors are logged but do not abort the
+	// summary so that all other fields (revenue, user counts, etc.) are still sent.
+	if err := s.db.QueryRow(ctx, `
 		SELECT q.name, COALESCE(SUM(p.points), 0) AS pts
 		FROM quinielas q
 		JOIN group_memberships gm ON gm.quiniela_id = q.id AND gm.status = 'active'
@@ -149,7 +152,10 @@ func (s *PostgresSchedulerStore) WeeklySummary(ctx context.Context, since time.T
 		ORDER BY pts DESC
 		LIMIT 1`,
 		since, until,
-	).Scan(&row.TopGroupName, &row.TopGroupPoints)
+	).Scan(&row.TopGroupName, &row.TopGroupPoints); err != nil {
+		defensiveLog.Warn("scheduler: top-group query failed — weekly summary will omit TopGroupName/TopGroupPoints",
+			zap.Error(err))
+	}
 
 	return row, nil
 }
@@ -235,7 +241,7 @@ func (s *PostgresSchedulerStore) ListStaleWithdrawals(ctx context.Context, befor
 // ListUnpredictedUpcomingMatchesByUsers returns, for each user ID in the provided
 // slice, every scheduled match with kickoff_at > after for which no prediction
 // has been submitted.  Results per user are ordered by kickoff_at ascending.
-func (s *PostgresSchedulerStore) ListUnpredictedUpcomingMatchesByUsers(ctx context.Context, userIDs []int, after time.Time) (map[int][]notification.DailyReminderMatch, error) {
+func (s *PostgresSchedulerStore) ListUnpredictedUpcomingMatchesByUsers(ctx context.Context, userIDs []int, after time.Time) (map[int][]domain.DailyReminderMatch, error) {
 	if len(userIDs) == 0 {
 		return nil, nil
 	}
@@ -264,7 +270,7 @@ func (s *PostgresSchedulerStore) ListUnpredictedUpcomingMatchesByUsers(ctx conte
 	}
 	defer rows.Close()
 
-	result := make(map[int][]notification.DailyReminderMatch)
+	result := make(map[int][]domain.DailyReminderMatch)
 	for rows.Next() {
 		var matchID, userID int
 		var homeTeam, awayTeam string
@@ -272,7 +278,7 @@ func (s *PostgresSchedulerStore) ListUnpredictedUpcomingMatchesByUsers(ctx conte
 		if err := rows.Scan(&matchID, &homeTeam, &awayTeam, &kickoffAt, &userID); err != nil {
 			return nil, err
 		}
-		result[userID] = append(result[userID], notification.DailyReminderMatch{
+		result[userID] = append(result[userID], domain.DailyReminderMatch{
 			MatchID:   matchID,
 			HomeTeam:  homeTeam,
 			AwayTeam:  awayTeam,
@@ -315,7 +321,7 @@ func (s *PostgresSchedulerStore) GetUserTimezones(ctx context.Context, userIDs [
 
 // ListUpcomingMatchesWithDeadline returns matches whose kickoff is within
 // deadlineWindow and that have users with no prediction submitted.
-func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Context, deadlineWindow time.Duration) ([]scheduler.DeadlineMatch, error) {
+func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Context, deadlineWindow time.Duration) ([]domain.DeadlineMatch, error) {
 	now := time.Now().UTC()
 	cutoff := now.Add(deadlineWindow)
 
@@ -339,7 +345,7 @@ func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Con
 	}
 	defer rows.Close()
 
-	byMatch := make(map[int]*scheduler.DeadlineMatch)
+	byMatch := make(map[int]*domain.DeadlineMatch)
 	var order []int
 
 	for rows.Next() {
@@ -351,7 +357,7 @@ func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Con
 		}
 
 		if _, ok := byMatch[matchID]; !ok {
-			byMatch[matchID] = &scheduler.DeadlineMatch{
+			byMatch[matchID] = &domain.DeadlineMatch{
 				Match: &domain.Match{
 					ID:        matchID,
 					HomeTeam:  homeTeam,
@@ -368,7 +374,7 @@ func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Con
 		return nil, err
 	}
 
-	result := make([]scheduler.DeadlineMatch, 0, len(order))
+	result := make([]domain.DeadlineMatch, 0, len(order))
 	for _, id := range order {
 		result = append(result, *byMatch[id])
 	}
@@ -380,7 +386,7 @@ func (s *PostgresSchedulerStore) ListUpcomingMatchesWithDeadline(ctx context.Con
 // (derived from now and their stored IANA timezone). Returns an empty slice
 // when no eligible user-day pairs exist or results are not yet ready.
 // defaultTZ is used as a fallback for users who have no stored timezone.
-func (s *PostgresSchedulerStore) ListDailySummaryTargets(ctx context.Context, now time.Time, defaultTZ string, resultDelay time.Duration) ([]notification.DailySummaryPayload, error) {
+func (s *PostgresSchedulerStore) ListDailySummaryTargets(ctx context.Context, now time.Time, defaultTZ string, resultDelay time.Duration) ([]domain.DailySummaryPayload, error) {
 	cutoff := now.Add(-resultDelay)
 
 	rows, err := s.db.Query(ctx, `
@@ -453,7 +459,7 @@ ORDER BY t.user_id, udm.kickoff_at`,
 	defer rows.Close()
 
 	index := make(map[int]int) // userID → index in payloads
-	var payloads []notification.DailySummaryPayload
+	var payloads []domain.DailySummaryPayload
 
 	for rows.Next() {
 		var (
@@ -478,7 +484,7 @@ ORDER BY t.user_id, udm.kickoff_at`,
 
 		idx, ok := index[userID]
 		if !ok {
-			payloads = append(payloads, notification.DailySummaryPayload{
+			payloads = append(payloads, domain.DailySummaryPayload{
 				UserID:    userID,
 				MatchDate: matchDate,
 				Timezone:  timezone,
@@ -487,7 +493,7 @@ ORDER BY t.user_id, udm.kickoff_at`,
 			index[userID] = idx
 		}
 
-		row := notification.DailySummaryMatchRow{
+		row := domain.DailySummaryMatchRow{
 			MatchID:      matchID,
 			HomeTeam:     homeTeam,
 			AwayTeam:     awayTeam,

@@ -170,6 +170,7 @@ func main() {
 
 	// Wire the defensive logger for repository deferred rollback failures.
 	repository.SetDefensiveLogger(log)
+	repository.SetDBTimeouts(cfg.Database.QueryWriteTimeout, cfg.Database.QueryReadTimeout)
 
 	logStartupBanner(cfg, log)
 

@@ -59,7 +59,7 @@ func newMemoryStoreWithClock(nowFn func() time.Time) *MemoryStore {
 // Get retrieves the value stored under key and JSON-unmarshals it into dest.
 // Returns ErrCacheMiss when the key does not exist or has expired (the expired
 // entry is lazily removed on first access).
-func (s *MemoryStore) Get(_ context.Context, key string, dest interface{}) error {
+func (s *MemoryStore) Get(_ context.Context, key string, dest any) error {
 	now := s.nowFunc()
 
 	// Fast path: read lock for non-expired entries.
@@ -89,7 +89,7 @@ func (s *MemoryStore) Get(_ context.Context, key string, dest interface{}) error
 // A zero TTL stores the entry without an expiry (it persists until explicitly
 // deleted or the store is discarded). A positive TTL causes the entry to be
 // treated as expired after the deadline passes and lazily evicted on next Get.
-func (s *MemoryStore) Set(_ context.Context, key string, value interface{}, ttl time.Duration) error {
+func (s *MemoryStore) Set(_ context.Context, key string, value any, ttl time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("memory_store set %q: %w", key, err)
