@@ -79,7 +79,16 @@ func (p *PolicyProvider) ValidateToken(ctx context.Context, rawToken string) (au
 	}
 
 	maxAgeSecs := p.params.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
-	if time.Since(claims.IssuedAt) > time.Duration(maxAgeSecs)*time.Second {
+	// Use SessionStartedAt (derived from Clerk's fva[0] claim) as the session
+	// origin for max-age enforcement. Clerk issues short-lived JWTs (~60 s) that
+	// are refreshed automatically; IssuedAt is always recent and would make the
+	// max-age check a no-op. SessionStartedAt is stable across refreshes.
+	// Falls back to IssuedAt for tokens that predate the fva claim (e.g. tests).
+	sessionStart := claims.SessionStartedAt
+	if sessionStart.IsZero() {
+		sessionStart = claims.IssuedAt
+	}
+	if time.Since(sessionStart) > time.Duration(maxAgeSecs)*time.Second {
 		return auth.Claims{}, fmt.Errorf("%w: session exceeded maximum age of %d seconds", auth.ErrInvalidToken, maxAgeSecs)
 	}
 

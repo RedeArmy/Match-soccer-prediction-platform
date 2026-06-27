@@ -202,12 +202,22 @@ func (p *JWKSProvider) ValidateToken(ctx context.Context, rawToken string) (Clai
 		return Claims{}, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
 
+	issuedAt := token.IssuedAt()
 	claims := Claims{
 		Subject:  token.Subject(),
-		IssuedAt: token.IssuedAt(),
+		IssuedAt: issuedAt,
 	}
 	if sid, ok := token.PrivateClaims()["sid"].(string); ok {
 		claims.SessionID = sid
+	}
+	// Clerk v2 "fva" (factors_verified_at): []interface{}{float64, float64}
+	// fva[0] = seconds elapsed since first-factor verification relative to iat.
+	// Computing iat − fva[0] gives the session origin, which is stable across
+	// token refreshes and is the correct reference point for max-age enforcement.
+	if fva, ok := token.PrivateClaims()["fva"].([]interface{}); ok && len(fva) > 0 {
+		if firstFactorAgeSecs, ok := fva[0].(float64); ok && firstFactorAgeSecs >= 0 {
+			claims.SessionStartedAt = issuedAt.Add(-time.Duration(firstFactorAgeSecs) * time.Second)
+		}
 	}
 	return claims, nil
 }
