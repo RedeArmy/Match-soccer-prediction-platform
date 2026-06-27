@@ -430,7 +430,7 @@ func (h *NotificationHandler) UnsubscribePush(w http.ResponseWriter, r *http.Req
 // (event_type = '*', channel_email = FALSE).  The dispatcher honours this flag
 // and skips future email delivery for the affected user regardless of per-event
 // preferences.
-// ConfirmUnsubscribe handles GET /api/v1/notifications/unsubscribe.
+// ConfirmUnsubscribe handles GET /api/v1/notifications/unsubscribe?token=<tok>.
 // It validates the token but does NOT perform the opt-out, so that email
 // clients and security crawlers that prefetch GET links cannot accidentally
 // unsubscribe users. The response signals to the caller (e.g. the frontend
