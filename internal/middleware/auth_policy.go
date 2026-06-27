@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -44,10 +45,11 @@ type IsRevoker interface {
 // PolicyProvider is constructed in Routes() and replaces the raw JWKSProvider
 // in RequireAuth. It implements IdentityProvider so RequireAuth is unmodified.
 type PolicyProvider struct {
-	inner     auth.IdentityProvider
-	blocklist IsRevoker
-	params    GetInter
-	log       *zap.Logger
+	inner        auth.IdentityProvider
+	blocklist    IsRevoker
+	params       GetInter
+	log          *zap.Logger
+	revokedCache sync.Map // string → struct{}; SIDs confirmed revoked by the DB
 }
 
 // NewPolicyProvider wraps inner with the two session-policy enforcement layers.
@@ -84,11 +86,19 @@ func (p *PolicyProvider) ValidateToken(ctx context.Context, rawToken string) (au
 	if claims.SessionID != "" && p.blocklist != nil {
 		revoked, checkErr := p.blocklist.IsRevoked(ctx, claims.SessionID)
 		if checkErr != nil {
-			p.log.Warn("session blocklist check failed; treating as not revoked (fail-open)",
+			// DB failure: check whether we previously confirmed this SID was
+			// revoked.  If so, fail-closed to prevent a revoked session from
+			// regaining access during a DB outage.  Unknown SIDs remain
+			// fail-open so a DB outage doesn't lock out all active users.
+			if _, cached := p.revokedCache.Load(claims.SessionID); cached {
+				return auth.Claims{}, fmt.Errorf("%w: session has been revoked", auth.ErrInvalidToken)
+			}
+			p.log.Warn("session blocklist check failed; treating as not revoked (fail-open for uncached session)",
 				zap.String("sid", claims.SessionID),
 				zap.Error(checkErr),
 			)
 		} else if revoked {
+			p.revokedCache.Store(claims.SessionID, struct{}{})
 			return auth.Claims{}, fmt.Errorf("%w: session has been revoked", auth.ErrInvalidToken)
 		}
 	}

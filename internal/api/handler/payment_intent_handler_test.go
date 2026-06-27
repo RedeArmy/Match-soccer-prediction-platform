@@ -317,6 +317,11 @@ func (s *stubCapturingFileStore) Delete(_ context.Context, _ string) error { ret
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+// minimalJPEG returns the smallest byte sequence http.DetectContentType
+// recognises as image/jpeg. Use this in tests that need to pass the
+// server-side content-type sniffing check.
+func minimalJPEG() string { return "\xff\xd8\xff\xe0" }
+
 func buildMultipart(t *testing.T, fieldName, filename, content string) (*bytes.Buffer, string) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -370,7 +375,7 @@ func TestUploadComprobante_StorageKeyFormat_Paypal(t *testing.T) {
 	fs := &stubCapturingFileStore{}
 	router := uploadRouter(t, svc, fs)
 
-	body, ct := buildMultipart(t, "file", "receipt.jpg", "fake-image-data")
+	body, ct := buildMultipart(t, "file", "receipt.jpg", minimalJPEG())
 	rec := doUpload(router, intent.Token, "/comprobante", body, ct, callerUser)
 
 	if rec.Code != http.StatusOK {
@@ -395,7 +400,7 @@ func TestUploadComprobante_StorageKeyFormat_Recurrente(t *testing.T) {
 	fs := &stubCapturingFileStore{}
 	router := uploadRouter(t, svc, fs)
 
-	body, ct := buildMultipart(t, "file", "comprobante.png", "fake-image-data")
+	body, ct := buildMultipart(t, "file", "comprobante.jpg", minimalJPEG())
 	rec := doUpload(router, intent.Token, "/comprobante", body, ct, callerUser)
 
 	if rec.Code != http.StatusOK {
@@ -412,7 +417,7 @@ func TestUploadComprobante_TokenNotInPending_Returns404(t *testing.T) {
 	fs := &stubCapturingFileStore{}
 	router := uploadRouter(t, svc, fs)
 
-	body, ct := buildMultipart(t, "file", "x.jpg", "data")
+	body, ct := buildMultipart(t, "file", "x.jpg", minimalJPEG())
 	rec := doUpload(router, "unknowntoken00000000", "/comprobante", body, ct, callerUser)
 
 	if rec.Code != http.StatusNotFound {
@@ -442,7 +447,7 @@ func TestResubmitForReview_StorageKeyFormat_WithFile(t *testing.T) {
 	w := multipart.NewWriter(&buf)
 	_ = w.WriteField("notes", "El monto es correcto, adjunto nuevo comprobante.")
 	fw, _ := w.CreateFormFile("file", "evidence.jpg")
-	_, _ = io.WriteString(fw, "fake-image-data")
+	_, _ = fw.Write([]byte(minimalJPEG()))
 	w.Close()
 
 	rec := doUpload(router, intent.Token, "/resubmit", &buf, w.FormDataContentType(), callerUser)
@@ -642,7 +647,7 @@ func TestUploadComprobante_FileStorePutError_Returns500(t *testing.T) {
 	svc := &stubUploadSvc{pending: []*domain.PaymentIntent{intent}}
 	fs := &stubCapturingFileStore{putErr: errors.New("storage unavailable")}
 	router := uploadRouter(t, svc, fs)
-	buf, ct := buildMultipart(t, "file", "r.jpg", "data")
+	buf, ct := buildMultipart(t, "file", "r.jpg", minimalJPEG())
 	rec := doUpload(router, "putfail", "/comprobante", buf, ct, callerUser)
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", rec.Code)
@@ -656,7 +661,7 @@ func TestUploadComprobante_SetComprobanteError_Returns500(t *testing.T) {
 	}
 	svc := &stubUploadSvc{pending: []*domain.PaymentIntent{intent}, uploadErr: errors.New("db write failed")}
 	router := uploadRouter(t, svc, &stubCapturingFileStore{})
-	buf, ct := buildMultipart(t, "file", "r.jpg", "data")
+	buf, ct := buildMultipart(t, "file", "r.jpg", minimalJPEG())
 	rec := doUpload(router, "setfail", "/comprobante", buf, ct, callerUser)
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", rec.Code)
@@ -731,7 +736,7 @@ func TestResubmitForReview_UploadFileStorePutError_Returns500(t *testing.T) {
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("notes", "trying again with proof")
 	fw, _ := mw.CreateFormFile("file", "r.jpg")
-	_, _ = io.WriteString(fw, "data")
+	_, _ = fw.Write([]byte(minimalJPEG()))
 	mw.Close()
 
 	rec := doUpload(router, "t22", "/resubmit", &buf, mw.FormDataContentType(), callerUser)

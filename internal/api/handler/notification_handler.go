@@ -430,7 +430,12 @@ func (h *NotificationHandler) UnsubscribePush(w http.ResponseWriter, r *http.Req
 // (event_type = '*', channel_email = FALSE).  The dispatcher honours this flag
 // and skips future email delivery for the affected user regardless of per-event
 // preferences.
-func (h *NotificationHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
+// ConfirmUnsubscribe handles GET /api/v1/notifications/unsubscribe.
+// It validates the token but does NOT perform the opt-out, so that email
+// clients and security crawlers that prefetch GET links cannot accidentally
+// unsubscribe users. The response signals to the caller (e.g. the frontend
+// confirmation page) that the token is valid and the action is ready.
+func (h *NotificationHandler) ConfirmUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	if h.unsubscribeSecret == "" {
 		writeError(w, r, h.log, apperrors.Internal(errors.New("unsubscribe endpoint not configured")))
 		return
@@ -440,7 +445,30 @@ func (h *NotificationHandler) Unsubscribe(w http.ResponseWriter, r *http.Request
 		writeError(w, r, h.log, apperrors.Validation("token is required"))
 		return
 	}
-	userID, err := unsubscribe.VerifyToken(tok, h.unsubscribeSecret)
+	if _, err := unsubscribe.VerifyToken(tok, h.unsubscribeSecret); err != nil {
+		writeError(w, r, h.log, apperrors.Validation("invalid or expired unsubscribe token"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "confirmation_required", "token": tok})
+}
+
+// Unsubscribe handles POST /api/v1/notifications/unsubscribe.
+// It reads the token from the JSON body, verifies it, and records the global
+// email opt-out. Must be POST so that prefetch agents cannot trigger an
+// unintended unsubscribe by visiting the link embedded in an email.
+func (h *NotificationHandler) Unsubscribe(w http.ResponseWriter, r *http.Request) {
+	if h.unsubscribeSecret == "" {
+		writeError(w, r, h.log, apperrors.Internal(errors.New("unsubscribe endpoint not configured")))
+		return
+	}
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
+		writeError(w, r, h.log, apperrors.Validation("token is required"))
+		return
+	}
+	userID, err := unsubscribe.VerifyToken(req.Token, h.unsubscribeSecret)
 	if err != nil {
 		writeError(w, r, h.log, apperrors.Validation("invalid or expired unsubscribe token"))
 		return

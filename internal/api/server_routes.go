@@ -279,7 +279,10 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	//
 	//  If middleware is added to the root router in the future, audit this route
 	//  to confirm the new middleware is compatible with unauthenticated access.
-	r.Get("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
+	// GET validates the token only (no side-effect) so email-client prefetch
+	// crawlers cannot trigger an opt-out. POST is the actual action.
+	r.Get("/api/v1/notifications/unsubscribe", h.notification.ConfirmUnsubscribe)
+	r.Post("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
 
 	// Idempotency store for payment write endpoints.
 	// SetIdempotencyStore (called from cmd/api/main.go before Routes()) wires the

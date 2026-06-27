@@ -6,10 +6,7 @@
 import type { SSENotificationPayload } from "./api-types";
 
 export type SSEConnectionStatus =
-  | "connecting"
-  | "connected"
-  | "reconnecting"
-  | "failed";
+  "connecting" | "connected" | "reconnecting" | "failed";
 
 export interface SSEHandlers {
   onNotification?: (payload: SSENotificationPayload) => void;

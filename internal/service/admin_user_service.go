@@ -90,6 +90,17 @@ func NewAdminUserService(
 // quiniela where the banned user holds MembershipRoleCreateOwner. Ownership
 // transfer is best-effort: a failure is logged but does not roll back the ban.
 func (s *adminUserService) BanUser(ctx context.Context, targetUserID, adminID int, reason string) (*domain.User, error) {
+	if targetUserID == adminID {
+		return nil, apperrors.Validation("cannot ban your own account")
+	}
+	target, err := s.userRepo.GetByID(ctx, targetUserID)
+	if err != nil {
+		return nil, err
+	}
+	if target != nil && target.Role == domain.RoleAdmin {
+		return nil, apperrors.Validation("cannot ban an admin account; demote to user first")
+	}
+
 	banned, err := s.userRepo.Ban(ctx, targetUserID, adminID, reason)
 	if err != nil {
 		return nil, err

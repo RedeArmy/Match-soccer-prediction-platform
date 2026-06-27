@@ -222,19 +222,14 @@ func (h *PaymentIntentHandler) UploadComprobante(w http.ResponseWriter, r *http.
 		return
 	}
 
-	file, header, err := r.FormFile("file")
+	file, _, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, r, h.log, apperrors.Validation("file field is required"))
 		return
 	}
 	defer func() { _ = file.Close() }()
 
-	contentType := header.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	// Read fully so we can detect size and stream to the store.
+	// Read fully so we can enforce the size limit and sniff the content type.
 	full, err := io.ReadAll(io.LimitReader(file, h.maxUpload+1))
 	if err != nil {
 		writeError(w, r, h.log, apperrors.Internal(fmt.Errorf("read file: %w", err)))
@@ -242,6 +237,14 @@ func (h *PaymentIntentHandler) UploadComprobante(w http.ResponseWriter, r *http.
 	}
 	if int64(len(full)) > h.maxUpload {
 		writeError(w, r, h.log, apperrors.RequestBodyTooLarge())
+		return
+	}
+
+	// Detect content type from the file bytes rather than trusting the
+	// client-supplied Content-Type header, which can be trivially spoofed.
+	contentType := http.DetectContentType(full[:min(512, len(full))])
+	if !allowedProofContentType(contentType) {
+		writeError(w, r, h.log, apperrors.Validation("unsupported file type; only JPEG, PNG, WebP and PDF are accepted"))
 		return
 	}
 
@@ -347,7 +350,7 @@ type resubmitUpload struct {
 // resubmit key, and returns its metadata. Returns (nil, nil) when no file was
 // supplied.
 func (h *PaymentIntentHandler) uploadResubmitFile(r *http.Request, intent *domain.PaymentIntent) (*resubmitUpload, error) {
-	file, header, fileErr := r.FormFile("file")
+	file, _, fileErr := r.FormFile("file")
 	if fileErr != nil {
 		return nil, nil //nolint:nilerr // no file is allowed
 	}
@@ -357,17 +360,17 @@ func (h *PaymentIntentHandler) uploadResubmitFile(r *http.Request, intent *domai
 		return nil, apperrors.Internal(fmt.Errorf("file store not configured"))
 	}
 
-	ct := header.Header.Get("Content-Type")
-	if ct == "" {
-		ct = "application/octet-stream"
-	}
-
 	full, err := io.ReadAll(io.LimitReader(file, h.maxUpload+1))
 	if err != nil {
 		return nil, apperrors.Internal(fmt.Errorf("read file: %w", err))
 	}
 	if int64(len(full)) > h.maxUpload {
 		return nil, apperrors.RequestBodyTooLarge()
+	}
+
+	ct := http.DetectContentType(full[:min(512, len(full))])
+	if !allowedProofContentType(ct) {
+		return nil, apperrors.Validation("unsupported file type; only JPEG, PNG, WebP and PDF are accepted")
 	}
 
 	// Key format: comprobantes/voucher_{userID}_{provider}_{intentCreatedAt}_review

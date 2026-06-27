@@ -37,16 +37,18 @@ const (
 	paypalCertBodyLimit          = 16 << 10 // 16 KB — generous for a PEM certificate
 
 	// paypalTimestampTolerance is the maximum age (or future skew) allowed for
-	// the PAYPAL-TRANSMISSION-TIME header. PayPal sets this header to the time
-	// of the ORIGINAL delivery attempt and never refreshes it on retries or
-	// manual resends from the developer dashboard — meaning every retry and
-	// every manual Resend arrives with the original, stale timestamp.
-	// 24 hours covers same-day automatic retries and any manual Resend issued
-	// within a business day, without opening an unnecessarily wide replay window.
-	// Replay attacks are already mitigated by the RSA signature (which binds the
-	// webhook ID, transmission ID, and body CRC32) and by the capture_id
-	// idempotency constraint in the database that prevents double-crediting.
-	paypalTimestampTolerance = 24 * time.Hour
+	// the PAYPAL-TRANSMISSION-TIME header. 5 minutes matches the industry
+	// standard used by Stripe, Svix, and other webhook providers.
+	//
+	// Note: PayPal sets PAYPAL-TRANSMISSION-TIME to the ORIGINAL delivery
+	// attempt and does not refresh it on retries, so late retry attempts (> 5
+	// min) will be rejected with 401 and PayPal will continue retrying.
+	// This is intentional: replay attacks are already prevented by the RSA
+	// signature (which binds webhookID + transmissionID + body CRC32) and by
+	// the capture_id idempotency constraint, so the timestamp check is
+	// defence-in-depth. A 5-minute window limits the replay surface without
+	// relying solely on the signature and idempotency for freshness.
+	paypalTimestampTolerance = 5 * time.Minute
 )
 
 // CertFetcher retrieves a parsed X.509 certificate from the given URL.
