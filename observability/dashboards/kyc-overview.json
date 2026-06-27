@@ -44,7 +44,7 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "expr": "kyc_review_queue_depth",
+          "expr": "kyc_queue_depth",
           "legendFormat": "Queue depth",
           "refId": "A"
         }
@@ -78,7 +78,7 @@
       "pluginVersion": "11.0.0",
       "targets": [
         {
-          "expr": "kyc_frozen_balance_cents / 100",
+          "expr": "kyc_frozen_balances_total_gtq",
           "legendFormat": "Frozen GTQ",
           "refId": "A"
         }

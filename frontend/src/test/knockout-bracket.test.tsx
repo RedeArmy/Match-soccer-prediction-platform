@@ -108,7 +108,7 @@ describe("KnockoutBracket", () => {
 
     renderBracket();
 
-    expect(await screen.findByText("Llave del Torneo")).toBeInTheDocument();
+    expect(await screen.findByText("Rondas Finales")).toBeInTheDocument();
     expect(screen.getByText("Final")).toBeInTheDocument();
   });
 
@@ -160,7 +160,7 @@ describe("KnockoutBracket", () => {
     // Only r32 is visible (has a complete match)
     expect(await screen.findByText("Dieciseisavos")).toBeInTheDocument();
     expect(screen.getByText("México")).toBeInTheDocument();
-    expect(screen.getByText("USA")).toBeInTheDocument();
+    expect(screen.getByText("Estados Unidos")).toBeInTheDocument();
 
     // Incomplete slot in r32 shows placeholder description
     expect(screen.getByText("2.° Grupo D")).toBeInTheDocument();
@@ -287,8 +287,8 @@ describe("slot descriptions – English", () => {
     renderBracket();
     expect(await screen.findByText("2nd Group B")).toBeInTheDocument();
     expect(screen.queryByText("2.° Grupo B")).toBeNull();
-    // confirmed slot still shows the team name, not the description
-    expect(screen.getByText("México")).toBeInTheDocument();
+    // confirmed slot shows the team name translated to the active locale (en)
+    expect(screen.getByText("Mexico")).toBeInTheDocument();
   });
 
   it("translates 'Mejor 3.° (p.2)' → 'Best 3rd (p.2)'", async () => {

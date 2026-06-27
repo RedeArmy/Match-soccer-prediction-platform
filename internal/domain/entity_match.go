@@ -190,4 +190,5 @@ type TournamentSlot struct {
 	ConfirmedByUserID *int       // nil until confirmed
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	MatchKickoffAt    *time.Time // kickoff time of the match this slot belongs to; nil when no match is linked yet
 }
