@@ -296,6 +296,7 @@ export interface TournamentSlotResponse {
   confirmed_by_user_id?: number;
   created_at: string;
   updated_at: string;
+  match_kickoff_at?: string | null;
 }
 
 // ── KYC ───────────────────────────────────────────────────────────────────────

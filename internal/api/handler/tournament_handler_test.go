@@ -214,6 +214,47 @@ func TestTournamentHandler_ListSlots_200_ReturnsList(t *testing.T) {
 	}
 }
 
+func TestTournamentHandler_ListSlots_200_IncludesMatchKickoffAt(t *testing.T) {
+	team := tournamentHandlerMexico
+	kickoff := time.Date(2026, 6, 17, 20, 0, 0, 0, time.UTC)
+	confirmedAt := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	slots := []*domain.TournamentSlot{
+		{ID: 1, Label: "r32_01_a", Team: &team, ConfirmedAt: &confirmedAt, MatchKickoffAt: &kickoff, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: 2, Label: "r32_01_b", MatchKickoffAt: &kickoff, CreatedAt: time.Now(), UpdatedAt: time.Now()},
+		{ID: 3, Label: "r32_02_a", CreatedAt: time.Now(), UpdatedAt: time.Now()},
+	}
+	svc := &stubTournamentSvc{slots: slots}
+	h := tournamentHandler(svc, t)
+	router := testTournamentRouter(h, &domain.User{ID: 1})
+
+	req := httptest.NewRequest(http.MethodGet, tournamentHandlerPathSlots, nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, rr.Code)
+	}
+	var resp []handler.TournamentSlotResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf(fmtDecodeFail, err)
+	}
+	if len(resp) != 3 {
+		t.Fatalf("slots: want 3, got %d", len(resp))
+	}
+	if resp[0].MatchKickoffAt == nil {
+		t.Error("slot 0: want match_kickoff_at set, got nil")
+	}
+	if resp[0].ConfirmedAt == nil {
+		t.Error("slot 0: want confirmed_at set, got nil")
+	}
+	if resp[1].MatchKickoffAt == nil {
+		t.Error("slot 1: want match_kickoff_at set, got nil")
+	}
+	if resp[2].MatchKickoffAt != nil {
+		t.Errorf("slot 2: want match_kickoff_at nil (no linked match), got %v", *resp[2].MatchKickoffAt)
+	}
+}
+
 func TestTournamentHandler_ListSlots_200_EmptyList(t *testing.T) {
 	svc := &stubTournamentSvc{slots: []*domain.TournamentSlot{}}
 	h := tournamentHandler(svc, t)

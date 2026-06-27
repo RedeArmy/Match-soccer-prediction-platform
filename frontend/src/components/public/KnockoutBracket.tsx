@@ -19,7 +19,6 @@ const PHASE_ORDER = [
 ] as const;
 
 function phasePrefix(label: string): string {
-  // label = "r32_01_a" → prefix = "r32"
   return label.split("_")[0] ?? "";
 }
 
@@ -45,11 +44,19 @@ function groupByPhase(
   return map;
 }
 
-// A phase is visible as soon as any of its slots has a confirmed team.
-// Unconfirmed slots (e.g. "Mejor 3.°" positions pending admin action) continue
-// to show their placeholder description alongside confirmed ones.
 function hasAnyConfirmedSlot(slots: TournamentSlotResponse[]): boolean {
   return slots.some((s) => s.team != null);
+}
+
+// Format a UTC ISO string to the viewer's local date/time.
+function formatKickoff(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(iso));
 }
 
 interface SlotRowProps {
@@ -57,7 +64,7 @@ interface SlotRowProps {
 }
 
 function SlotRow({ slot }: SlotRowProps) {
-  const { slotDesc } = useI18n();
+  const { slotDesc, teamName } = useI18n();
   const hasTeam = !!slot?.team;
   return (
     <div className="flex items-center gap-2 px-3 py-2">
@@ -67,11 +74,8 @@ function SlotRow({ slot }: SlotRowProps) {
           hasTeam ? "font-semibold text-white" : "italic text-text-muted",
         )}
       >
-        {hasTeam ? slot!.team : slotDesc(slot?.description)}
+        {hasTeam ? teamName(slot!.team) : slotDesc(slot?.description)}
       </span>
-      {hasTeam && (
-        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-gold-400" />
-      )}
     </div>
   );
 }
@@ -79,17 +83,21 @@ function SlotRow({ slot }: SlotRowProps) {
 interface MatchPairProps {
   readonly home: TournamentSlotResponse | undefined;
   readonly away: TournamentSlotResponse | undefined;
-  readonly index: number;
 }
 
-function MatchPair({ home, away, index }: MatchPairProps) {
+function MatchPair({ home, away }: MatchPairProps) {
+  const kickoff = formatKickoff(
+    home?.match_kickoff_at ?? away?.match_kickoff_at,
+  );
   return (
     <div className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
-      <div className="border-b border-white/5 px-3 pt-1.5 pb-0.5">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted/60">
-          M{String(index).padStart(2, "0")}
-        </span>
-      </div>
+      {kickoff && (
+        <div className="border-b border-white/5 px-3 pt-1.5 pb-0.5">
+          <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted/60">
+            {kickoff}
+          </span>
+        </div>
+      )}
       <SlotRow slot={home} />
       <div className="h-px bg-white/10" />
       <SlotRow slot={away} />
@@ -114,7 +122,6 @@ function PhaseAccordion({
 
   const confirmedCount = slots.filter((s) => s.team !== null).length;
 
-  // Build ordered match pairs: sort by match number, group a+b per match
   const byMatch = new Map<
     number,
     { a?: TournamentSlotResponse; b?: TournamentSlotResponse }
@@ -155,7 +162,7 @@ function PhaseAccordion({
       {open && (
         <div className="grid grid-cols-1 gap-3 border-t border-white/10 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {pairs.map(({ num, home, away }) => (
-            <MatchPair key={num} index={num} home={home} away={away} />
+            <MatchPair key={num} home={home} away={away} />
           ))}
         </div>
       )}
@@ -168,19 +175,17 @@ export function KnockoutBracket() {
   const { slots, isLoading } = useSlots();
   const byPhase = groupByPhase(slots);
 
-  // A phase appears as soon as any of its slots has a confirmed team.
-  // Once visible, all its slots render — confirmed ones show the team name,
-  // unconfirmed ones show their placeholder description.
   const visiblePhases = PHASE_ORDER.filter((p) =>
     hasAnyConfirmedSlot(byPhase.get(p.prefix) ?? []),
   );
 
   if (isLoading) {
     return (
-      <section className="panel">
-        <div className="wc26-stripe" />
-        <div className="space-y-3 p-4 sm:p-5">
-          <div className="h-5 w-40 animate-pulse rounded bg-white/10" />
+      <section className="px-4 py-16 bg-white/[0.012]">
+        <div className="mx-auto max-w-7xl space-y-8">
+          <div className="text-center">
+            <div className="mx-auto h-12 w-56 animate-pulse rounded bg-white/10" />
+          </div>
           {[1, 2].map((i) => (
             <div key={i} className="h-12 animate-pulse rounded-xl bg-white/5" />
           ))}
@@ -192,12 +197,13 @@ export function KnockoutBracket() {
   if (visiblePhases.length === 0) return null;
 
   return (
-    <section className="panel">
-      <div className="wc26-stripe" />
-      <div className="p-4 sm:p-5">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-text-secondary">
-          {t("bracketTitle")}
-        </h2>
+    <section className="px-4 py-16 bg-white/[0.012]">
+      <div className="mx-auto max-w-7xl space-y-8">
+        <div className="text-center">
+          <h2 className="font-display text-4xl text-white sm:text-5xl">
+            {t("bracketTitle")}
+          </h2>
+        </div>
         <div className="space-y-3">
           {visiblePhases.map((phase, idx) => (
             <PhaseAccordion
