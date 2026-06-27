@@ -277,12 +277,18 @@ func (h *AdminPaymentIntentHandler) DownloadComprobante(w http.ResponseWriter, r
 	}
 	defer func() { _ = rc.Close() }()
 
-	if ct != "" {
-		w.Header().Set("Content-Type", ct)
-	} else if intent.ComprobanteContentType != nil {
-		w.Header().Set("Content-Type", *intent.ComprobanteContentType)
+	resolvedCT := ct
+	if resolvedCT == "" && intent.ComprobanteContentType != nil {
+		resolvedCT = *intent.ComprobanteContentType
 	}
-	w.Header().Set("Content-Disposition", "inline")
+	ext := extensionForContentType(resolvedCT)
+	if ext == "" {
+		ext = ".bin"
+	}
+	if resolvedCT != "" {
+		w.Header().Set("Content-Type", resolvedCT)
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="comprobante`+ext+`"`)
 	w.WriteHeader(http.StatusOK)
 	if _, err := io.Copy(w, rc); err != nil {
 		h.log.Warn("admin comprobante: stream interrupted", zap.Int64("intent_id", id), zap.Error(err))

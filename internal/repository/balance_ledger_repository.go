@@ -159,6 +159,8 @@ func (r *PostgresBalanceLedgerRepository) CommitReservation(ctx context.Context,
 
 // ListByUser returns ledger entries for userID ordered by created_at DESC.
 func (r *PostgresBalanceLedgerRepository) ListByUser(ctx context.Context, userID int, p Pagination) ([]*domain.BalanceLedger, error) {
+	ctx, span := startRepoSpan(ctx, "BalanceLedgerRepository.ListByUser")
+	defer span.End()
 	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
 	defer cancel()
 	q := `SELECT id, user_id, delta_cents, kind, balance_after, ref_id, ref_type, created_by, created_at, COALESCE(source_currency, ''), COALESCE(source_amount_cents, 0)

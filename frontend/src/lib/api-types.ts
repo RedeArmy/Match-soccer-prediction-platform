@@ -102,10 +102,7 @@ export interface LedgerEntry {
 
 // ── Match ─────────────────────────────────────────────────────────────────────
 export type MatchStatus =
-  | "scheduled"
-  | "in_progress"
-  | "finished"
-  | "cancelled";
+  "scheduled" | "in_progress" | "finished" | "cancelled";
 
 export interface CountryInfo {
   id: number;
@@ -309,10 +306,7 @@ export type KYCStatus =
   | "expired"
   | "escalated";
 export type KYCDocumentType =
-  | "gov_id"
-  | "selfie"
-  | "proof_of_address"
-  | "proof_of_funds";
+  "gov_id" | "selfie" | "proof_of_address" | "proof_of_funds";
 export type KYCDocumentStatus = "pending" | "approved" | "rejected";
 
 export interface KYCProfileResponse {
@@ -380,10 +374,7 @@ export interface AdminBankResponse {
 
 export type BankTransferStatus = "pending" | "approved" | "rejected";
 export type WithdrawalStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "processed";
+  "pending" | "approved" | "rejected" | "processed";
 
 export interface BankTransferResponse {
   id: number;

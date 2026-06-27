@@ -66,6 +66,9 @@ func main() {
 	// Wire the defensive logger for repository deferred rollback failures.
 	// Must be called after logger initialization but before any repository methods.
 	repository.SetDefensiveLogger(log)
+	// Apply operator-configured DB query timeouts (env WCQ_DATABASE_QUERYWRITETIMEOUT /
+	// WCQ_DATABASE_QUERYREADTIMEOUT). Zero values leave the package defaults in place.
+	repository.SetDBTimeouts(cfg.Database.QueryWriteTimeout, cfg.Database.QueryReadTimeout)
 
 	logStartupBanner(cfg, log)
 

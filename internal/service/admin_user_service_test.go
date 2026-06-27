@@ -43,6 +43,25 @@ func TestAdminUserService_BanUser_RepoError_Propagates(t *testing.T) {
 	}
 }
 
+func TestAdminUserService_BanUser_SelfBan_ReturnsValidationError(t *testing.T) {
+	svc := newAdminUserSvc(&stubUserRepo{}, &stubMemberRepo{})
+
+	_, err := svc.BanUser(context.Background(), 99, 99, "")
+	if err == nil {
+		t.Fatal("expected validation error for self-ban, got nil")
+	}
+}
+
+func TestAdminUserService_BanUser_TargetIsAdmin_ReturnsValidationError(t *testing.T) {
+	target := &domain.User{ID: 5, Role: domain.RoleAdmin}
+	svc := newAdminUserSvc(&stubUserRepo{user: target}, &stubMemberRepo{})
+
+	_, err := svc.BanUser(context.Background(), 5, 99, "")
+	if err == nil {
+		t.Fatal("expected validation error when banning an admin, got nil")
+	}
+}
+
 func TestAdminUserService_BanUser_TransfersOwnedGroups(t *testing.T) {
 	// The banned user is CreateOwner of quiniela 1; there is a successor member.
 	ownerMembership := &domain.GroupMembership{

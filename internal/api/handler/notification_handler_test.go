@@ -683,6 +683,90 @@ func TestNotifHandler_UnsubscribePush_RepoError_500(t *testing.T) {
 
 // ── Unsubscribe (one-click email opt-out) ─────────────────────────────────────
 
+// ── ConfirmUnsubscribe (GET) ──────────────────────────────────────────────────
+
+func TestNotifHandler_ConfirmUnsubscribe_ValidToken_ReturnsConfirmationRequired(t *testing.T) {
+	t.Parallel()
+
+	const secret = "test-unsub-secret-32-bytes-XXXXX"
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo:         &stubUserNotifRepo{},
+		PrefRepo:          &stubNotifPrefRepo{},
+		PushRepo:          &stubNotifPushRepo{},
+		Hub:               hub.New(),
+		Params:            &stubAdminParamSvc{},
+		UnsubscribeSecret: secret,
+		Log:               zaptest.NewLogger(t),
+	})
+
+	tok := signUnsubToken(42, secret)
+	req := httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe?token="+tok, nil)
+	w := httptest.NewRecorder()
+	h.ConfirmUnsubscribe(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200; got %d — %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["status"] != "confirmation_required" {
+		t.Errorf("expected status confirmation_required, got %q", resp["status"])
+	}
+}
+
+func TestNotifHandler_ConfirmUnsubscribe_MissingToken_422(t *testing.T) {
+	t.Parallel()
+
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: &stubUserNotifRepo{}, PrefRepo: &stubNotifPrefRepo{},
+		PushRepo: &stubNotifPushRepo{}, Hub: hub.New(),
+		Params: &stubAdminParamSvc{}, UnsubscribeSecret: "s",
+		Log: zaptest.NewLogger(t),
+	})
+	w := httptest.NewRecorder()
+	h.ConfirmUnsubscribe(w, httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe", nil))
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422; got %d", w.Code)
+	}
+}
+
+func TestNotifHandler_ConfirmUnsubscribe_InvalidToken_422(t *testing.T) {
+	t.Parallel()
+
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: &stubUserNotifRepo{}, PrefRepo: &stubNotifPrefRepo{},
+		PushRepo: &stubNotifPushRepo{}, Hub: hub.New(),
+		Params: &stubAdminParamSvc{}, UnsubscribeSecret: "correct-secret",
+		Log: zaptest.NewLogger(t),
+	})
+	tok := signUnsubToken(5, "wrong-secret")
+	req := httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe?token="+tok, nil)
+	w := httptest.NewRecorder()
+	h.ConfirmUnsubscribe(w, req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422; got %d", w.Code)
+	}
+}
+
+func TestNotifHandler_ConfirmUnsubscribe_NoSecretConfigured_500(t *testing.T) {
+	t.Parallel()
+
+	h := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: &stubUserNotifRepo{}, PrefRepo: &stubNotifPrefRepo{},
+		PushRepo: &stubNotifPushRepo{}, Hub: hub.New(),
+		Params: &stubAdminParamSvc{}, Log: zaptest.NewLogger(t),
+	})
+	w := httptest.NewRecorder()
+	h.ConfirmUnsubscribe(w, httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe?token=x", nil))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500; got %d", w.Code)
+	}
+}
+
+// ── Unsubscribe (POST) ────────────────────────────────────────────────────────
+
 func TestNotifHandler_Unsubscribe_ValidToken_200(t *testing.T) {
 	t.Parallel()
 
@@ -699,7 +783,9 @@ func TestNotifHandler_Unsubscribe_ValidToken_200(t *testing.T) {
 	})
 
 	tok := signUnsubToken(42, secret)
-	req := httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe?token="+tok, nil)
+	body := strings.NewReader(`{"token":"` + tok + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/notifications/unsubscribe", body)
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	h.Unsubscribe(w, req)
 
@@ -722,7 +808,7 @@ func TestNotifHandler_Unsubscribe_MissingToken_422(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	h.Unsubscribe(w, httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe", nil))
+	h.Unsubscribe(w, httptest.NewRequest(http.MethodPost, "/notifications/unsubscribe", strings.NewReader(`{}`)))
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422; got %d", w.Code)
 	}
@@ -741,9 +827,10 @@ func TestNotifHandler_Unsubscribe_InvalidToken_422(t *testing.T) {
 		Log:               zaptest.NewLogger(t),
 	})
 
-	// Token signed with the wrong secret — must be rejected.
 	tok := signUnsubToken(5, "wrong-secret")
-	req := httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe?token="+tok, nil)
+	body := strings.NewReader(`{"token":"` + tok + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/notifications/unsubscribe", body)
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	h.Unsubscribe(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
@@ -764,8 +851,9 @@ func TestNotifHandler_Unsubscribe_NoSecretConfigured_500(t *testing.T) {
 		Log: zaptest.NewLogger(t),
 	})
 
+	body := strings.NewReader(`{"token":"anything"}`)
 	w := httptest.NewRecorder()
-	h.Unsubscribe(w, httptest.NewRequest(http.MethodGet, "/notifications/unsubscribe?token=anything", nil))
+	h.Unsubscribe(w, httptest.NewRequest(http.MethodPost, "/notifications/unsubscribe", body))
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 when secret not configured; got %d", w.Code)
 	}

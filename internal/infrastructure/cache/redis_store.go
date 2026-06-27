@@ -50,7 +50,7 @@ func (s *RedisStore) RegisterMetrics(meter metric.Meter) error {
 
 // Get retrieves the value stored under key and JSON-unmarshals it into dest.
 // Returns ErrCacheMiss when the key does not exist or has expired.
-func (s *RedisStore) Get(ctx context.Context, key string, dest interface{}) error {
+func (s *RedisStore) Get(ctx context.Context, key string, dest any) error {
 	raw, err := s.client.Get(ctx, key).Bytes()
 	if errors.Is(err, redis.Nil) {
 		if s.misses != nil {
@@ -77,7 +77,7 @@ func (s *RedisStore) Get(ctx context.Context, key string, dest interface{}) erro
 
 // Set JSON-marshals value and stores it under key with the given TTL.
 // A ttl of zero stores the value without expiry (use sparingly).
-func (s *RedisStore) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (s *RedisStore) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("cache set %q: marshal: %w", key, err)

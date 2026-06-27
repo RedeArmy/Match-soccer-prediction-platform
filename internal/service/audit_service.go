@@ -170,13 +170,23 @@ type auditService struct {
 	// retries exhausted, and synchronous fallback also failed). Exposed via
 	// Dropped() for health checks and Prometheus scraping.
 	dropped atomic.Int64
+	// shutdown is closed by Drain to interrupt inter-attempt sleeps in
+	// writeWithRetry, allowing graceful shutdown to complete without waiting
+	// for the full retryDelay on each in-flight retry.
+	shutdown  chan struct{}
+	drainOnce sync.Once
 }
 
 // NewAuditService constructs an auditService backed by the given repository.
 // writeTimeout caps the time each write attempt waits to persist an entry;
 // pass 5*time.Second when no override is available.
 func NewAuditService(repo repository.AuditLogRepository, writeTimeout time.Duration, log *zap.Logger) AuditService {
-	return &auditService{repo: repo, writeTimeout: writeTimeout, log: log}
+	return &auditService{
+		repo:         repo,
+		writeTimeout: writeTimeout,
+		log:          log,
+		shutdown:     make(chan struct{}),
+	}
 }
 
 // Log persists an audit entry in a detached goroutine (fire-and-forget).
@@ -319,7 +329,20 @@ func (s *auditService) writeWithRetry(baseCtx context.Context, entry *domain.Aud
 				zap.Error(err),
 			}, tracing.LogFields(ctx)...)...)
 		if attempt < maxAttempts {
-			time.Sleep(retryDelay)
+			select {
+			case <-time.After(retryDelay):
+			case <-s.shutdown:
+				// Graceful shutdown signalled during inter-attempt sleep; exit
+				// immediately rather than waiting the full retryDelay. The entry
+				// may be lost, which is acceptable: the business operation already
+				// committed, and a transient DB issue at shutdown is logged above.
+				s.log.Warn("audit log: retry sleep interrupted by shutdown",
+					append([]zap.Field{
+						zap.String("action", action),
+						zap.Int("attempt", attempt),
+					}, tracing.LogFields(baseCtx)...)...)
+				return
+			}
 		}
 	}
 	// All retries exhausted: the entry is permanently lost. Emit a structured
@@ -344,15 +367,16 @@ func (s *auditService) ListAuditLogsByEntity(ctx context.Context, resourceType s
 	return s.repo.ListByEntity(ctx, resourceType, resourceID, p)
 }
 
-// Drain blocks until all in-flight audit goroutines complete. Must be called
-// during graceful shutdown before closing the database connection pool to
-// prevent losing audit entries that were queued but not yet persisted.
+// Drain signals all in-flight retry sleeps to abort, then blocks until all
+// audit goroutines complete. Must be called during graceful shutdown before
+// closing the database connection pool to prevent connection-closed errors
+// in goroutines still attempting writes.
 //
-// Drain is safe to call multiple times; subsequent calls are no-ops.
-// The writeTimeout (default 5 s) caps the maximum time any single goroutine
-// can block, so Drain returns within (writeTimeout * auditMaxAttempts) in
-// the worst case. With concurrent writes the effective wait is much shorter.
+// Drain is safe to call multiple times; the shutdown signal and wg.Wait are
+// both idempotent. The writeTimeout caps the time any single DB attempt can
+// block, so Drain returns within writeTimeout + εscheduling after the signal.
 func (s *auditService) Drain() {
+	s.drainOnce.Do(func() { close(s.shutdown) })
 	s.wg.Wait()
 }
 

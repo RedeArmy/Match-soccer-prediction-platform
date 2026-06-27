@@ -88,6 +88,7 @@ type paramSpec struct {
 //   - 000187_seed_system_date_param                    (+1)
 //   - 000192_seed_daily_sync_params                    (+3)
 //   - 000211_revoked_sessions                          (+1)
+//   - 000212_match_sync_no_matches_pause               (+1)
 var allParams = []paramSpec{
 	// Scoring — runtime: re-read on every ScoreMatch call.
 	{key: domain.ParamKeyScoringExactScore, defaultValue: strconv.Itoa(domain.PointsExactScore), paramType: "int", category: "scoring", isRuntime: true},
@@ -347,6 +348,7 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyMatchDailySyncHour, defaultValue: strconv.Itoa(domain.DefaultMatchDailySyncHour), paramType: "int", category: "match", isRuntime: true},
 	{key: domain.ParamKeyMatchSyncPrematchWindowMin, defaultValue: strconv.Itoa(domain.DefaultMatchSyncPrematchWindowMin), paramType: "int", category: "match", isRuntime: true},
 	{key: domain.ParamKeyMatchSyncStopAfterZeroLiveCount, defaultValue: strconv.Itoa(domain.DefaultMatchSyncStopAfterZeroLiveCount), paramType: "int", category: "match", isRuntime: true},
+	{key: domain.ParamKeyMatchSyncNoMatchesPauseSec, defaultValue: strconv.Itoa(domain.DefaultMatchSyncNoMatchesPauseSec), paramType: "int", category: "match", isRuntime: true},
 
 	// System clock override — dev/test only (migration 000187).
 	// Empty default = real wall-clock time. Ignored in production.

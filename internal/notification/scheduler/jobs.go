@@ -95,34 +95,16 @@ type Store interface {
 }
 
 // DailySummaryRow carries the aggregated stats returned by Store.DailySummary.
-type DailySummaryRow struct {
-	NewUsers           int
-	NewTransfers       int
-	ApprovedTransfers  int
-	TotalCreditedCents int
-	NewWithdrawals     int
-	PendingTransfers   int
-	PendingWithdrawals int
-}
+// Type alias for domain.DailySummaryRow.
+type DailySummaryRow = domain.DailySummaryRow
 
 // WeeklySummaryRow carries the aggregated stats returned by Store.WeeklySummary.
-type WeeklySummaryRow struct {
-	TotalRevenueCents int
-	NewUsers          int
-	ActiveQuinielas   int
-	TopGroupName      string
-	TopGroupPoints    int
-	TotalWithdrawals  int
-	WithdrawalCents   int
-}
+// Type alias for domain.WeeklySummaryRow.
+type WeeklySummaryRow = domain.WeeklySummaryRow
 
 // DeadlineMatch pairs a match with the user IDs that have not yet submitted
-// a prediction for it.
-type DeadlineMatch struct {
-	Match          *domain.Match
-	MissingUserIDs []int
-	MinutesLeft    int
-}
+// a prediction for it. Type alias for domain.DeadlineMatch.
+type DeadlineMatch = domain.DeadlineMatch
 
 // JobsConfig bundles the dependencies for NewJobs.
 type JobsConfig struct {

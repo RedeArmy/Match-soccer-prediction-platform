@@ -724,7 +724,7 @@ const translations: TranslationNode = {
     errFileType:       { es: 'Tipo no permitido. Usa JPEG, PNG, WebP o PDF.', en: 'File type not allowed. Use JPEG, PNG, WebP, or PDF.' },
     errUpload:         { es: 'Error al enviar documentos.',  en: 'Error uploading documents.'               },
   },
-}
+};
 
 interface I18nContextValue {
   locale: Locale;

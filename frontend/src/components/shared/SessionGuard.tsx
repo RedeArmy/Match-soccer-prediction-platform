@@ -12,7 +12,10 @@ export function SessionGuard() {
     }
     globalThis.addEventListener("wcq:session-expired", handleSessionExpired);
     return () => {
-      globalThis.removeEventListener("wcq:session-expired", handleSessionExpired);
+      globalThis.removeEventListener(
+        "wcq:session-expired",
+        handleSessionExpired,
+      );
     };
   }, [signOut]);
 

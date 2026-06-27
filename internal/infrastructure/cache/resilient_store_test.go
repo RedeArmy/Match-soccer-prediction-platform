@@ -26,11 +26,11 @@ type stubStore struct {
 	flushCallCount int
 }
 
-func (s *stubStore) Get(_ context.Context, _ string, dest interface{}) error {
+func (s *stubStore) Get(_ context.Context, _ string, dest any) error {
 	s.getCallCount++
 	return s.getErr
 }
-func (s *stubStore) Set(_ context.Context, _ string, _ interface{}, _ time.Duration) error {
+func (s *stubStore) Set(_ context.Context, _ string, _ any, _ time.Duration) error {
 	s.setCallCount++
 	return s.setErr
 }

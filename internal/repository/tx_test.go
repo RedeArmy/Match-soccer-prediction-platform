@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -50,5 +51,52 @@ func TestWithTx_FnSucceeds_CommitsAndReturnsNil(t *testing.T) {
 	err := repository.WithTx(context.Background(), testDB, "test.FnOK", func(pgx.Tx) error { return nil })
 	if err != nil {
 		t.Errorf("expected nil on success, got %v", err)
+	}
+}
+
+// ── SetDBTimeouts ─────────────────────────────────────────────────────────────
+
+func TestSetDBTimeouts_PositiveValues_BothUpdated(t *testing.T) {
+	origWrite, origRead := repository.DBTimeoutsSnapshot()
+	t.Cleanup(func() { repository.SetDBTimeouts(origWrite, origRead) })
+
+	repository.SetDBTimeouts(30*time.Second, 15*time.Second)
+
+	gotWrite, gotRead := repository.DBTimeoutsSnapshot()
+	if gotWrite != 30*time.Second {
+		t.Errorf("dbWriteTimeout = %v; want 30s", gotWrite)
+	}
+	if gotRead != 15*time.Second {
+		t.Errorf("dbReadTimeout = %v; want 15s", gotRead)
+	}
+}
+
+func TestSetDBTimeouts_ZeroValues_NeitherUpdated(t *testing.T) {
+	origWrite, origRead := repository.DBTimeoutsSnapshot()
+	t.Cleanup(func() { repository.SetDBTimeouts(origWrite, origRead) })
+
+	repository.SetDBTimeouts(0, 0)
+
+	gotWrite, gotRead := repository.DBTimeoutsSnapshot()
+	if gotWrite != origWrite {
+		t.Errorf("dbWriteTimeout changed to %v; want %v (unchanged)", gotWrite, origWrite)
+	}
+	if gotRead != origRead {
+		t.Errorf("dbReadTimeout changed to %v; want %v (unchanged)", gotRead, origRead)
+	}
+}
+
+func TestSetDBTimeouts_OnlyWrite_ReadUnchanged(t *testing.T) {
+	origWrite, origRead := repository.DBTimeoutsSnapshot()
+	t.Cleanup(func() { repository.SetDBTimeouts(origWrite, origRead) })
+
+	repository.SetDBTimeouts(20*time.Second, 0)
+
+	gotWrite, gotRead := repository.DBTimeoutsSnapshot()
+	if gotWrite != 20*time.Second {
+		t.Errorf("dbWriteTimeout = %v; want 20s", gotWrite)
+	}
+	if gotRead != origRead {
+		t.Errorf("dbReadTimeout changed to %v; want %v (unchanged)", gotRead, origRead)
 	}
 }

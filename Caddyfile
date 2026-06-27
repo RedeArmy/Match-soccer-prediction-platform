@@ -44,12 +44,25 @@
     }
 }
 
-# ── Grafana (restrict to VPN/office IP in production if needed) ───────────────
+# ── Grafana ───────────────────────────────────────────────────────────────────
+# Caddy basic-auth acts as a first layer in front of Grafana's own login.
+# GRAFANA_CADDY_HASH must be a bcrypt hash generated with:
+#   caddy hash-password   (then set the output as the env var value)
 {$GRAFANA_DOMAIN} {
+    basic_auth {
+        admin {$GRAFANA_CADDY_HASH}
+    }
     reverse_proxy 127.0.0.1:3001
 }
 
-# ── n8n automation (restrict access in production if needed) ──────────────────
+# ── n8n automation ────────────────────────────────────────────────────────────
+# Caddy basic-auth is a second layer on top of n8n's own auth.
+# n8n has direct DB access, so this is the highest-risk service to expose.
+# N8N_CADDY_HASH must be a bcrypt hash generated with:
+#   caddy hash-password
 {$N8N_DOMAIN} {
+    basic_auth {
+        admin {$N8N_CADDY_HASH}
+    }
     reverse_proxy 127.0.0.1:5678
 }

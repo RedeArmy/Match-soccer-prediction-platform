@@ -11,6 +11,8 @@ package notification
 import (
 	"sort"
 	"time"
+
+	"github.com/rede/world-cup-quiniela/internal/domain"
 )
 
 // EventType identifies the kind of notification event written to the outbox.
@@ -186,12 +188,9 @@ type PredictionDailyReminderPayload struct {
 }
 
 // DailyReminderMatch carries the minimal details about one unpredicted match.
-type DailyReminderMatch struct {
-	MatchID   int       `json:"match_id"`
-	HomeTeam  string    `json:"home_team"`
-	AwayTeam  string    `json:"away_team"`
-	KickoffAt time.Time `json:"kickoff_at"`
-}
+// Type alias for domain.DailyReminderMatch; defined here for backward
+// compatibility so callers using the notification package are unaffected.
+type DailyReminderMatch = domain.DailyReminderMatch
 
 // PredictionLockedPayload is the payload for EventPredictionLocked.
 type PredictionLockedPayload struct {
@@ -216,28 +215,14 @@ type PredictionScoredPayload struct {
 // DailySummaryMatchRow is one row in the per-day results table included in
 // EventDailySummary emails. PredHome/PredAway are nil when the user did not
 // submit a prediction for this match.
-type DailySummaryMatchRow struct {
-	MatchID      int       `json:"match_id"`
-	HomeTeam     string    `json:"home_team"`
-	AwayTeam     string    `json:"away_team"`
-	KickoffAt    time.Time `json:"kickoff_at"`
-	HomeScore    int       `json:"home_score"`
-	AwayScore    int       `json:"away_score"`
-	PredHome     *int      `json:"pred_home"`
-	PredAway     *int      `json:"pred_away"`
-	PointsEarned int       `json:"points_earned"`
-}
+// Type alias for domain.DailySummaryMatchRow.
+type DailySummaryMatchRow = domain.DailySummaryMatchRow
 
 // DailySummaryPayload is the payload for EventDailySummary.
 // It carries all data needed to render the email without additional DB queries.
 // One payload per user per day — independent of quiniela membership.
-type DailySummaryPayload struct {
-	UserID      int                    `json:"user_id"`
-	MatchDate   string                 `json:"match_date"` // "2026-06-22" in the user's local timezone
-	Timezone    string                 `json:"timezone"`   // IANA timezone used to compute MatchDate
-	Matches     []DailySummaryMatchRow `json:"matches"`
-	PointsToday int                    `json:"points_today"`
-}
+// Type alias for domain.DailySummaryPayload.
+type DailySummaryPayload = domain.DailySummaryPayload
 
 // MatchEventPayload is shared by EventMatchResultEntered, EventMatchPostponed,
 // and EventMatchCancelled.

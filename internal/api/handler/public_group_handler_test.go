@@ -115,10 +115,7 @@ func TestGetPublicLeaderboard_Success_Returns200WithEntries(t *testing.T) {
 	if resp.Entries[0].TotalPoints != 30 {
 		t.Errorf("entry[0].total_points: want 30, got %d", resp.Entries[0].TotalPoints)
 	}
-	// PrizeWinner must always be false — public endpoint strips it.
-	if resp.Entries[0].PrizeWinner {
-		t.Error("prize_winner must be false on the public endpoint")
-	}
+	// prize_winner and user_id are not included in the public response struct.
 }
 
 func TestGetPublicLeaderboard_NilResult_Returns200WithEmptyEntries(t *testing.T) {

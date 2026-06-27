@@ -27,8 +27,8 @@ func (e errCacheMiss) Error() string { return string(e) }
 // by the application today (e.g. atomic increments, list pushes) are omitted
 // to keep the interface stable and implementors minimal.
 type Store interface {
-	Get(ctx context.Context, key string, dest interface{}) error
-	Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error
+	Get(ctx context.Context, key string, dest any) error
+	Set(ctx context.Context, key string, value any, ttl time.Duration) error
 	Delete(ctx context.Context, keys ...string) error
 }
 

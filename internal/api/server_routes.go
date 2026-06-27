@@ -20,6 +20,7 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/api/handler"
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/domain/events"
+	"github.com/rede/world-cup-quiniela/internal/infrastructure/cache"
 	"github.com/rede/world-cup-quiniela/internal/infrastructure/messaging"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/internal/notification/hub"
@@ -278,7 +279,10 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	//
 	//  If middleware is added to the root router in the future, audit this route
 	//  to confirm the new middleware is compatible with unauthenticated access.
-	r.Get("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
+	// GET validates the token only (no side-effect) so email-client prefetch
+	// crawlers cannot trigger an opt-out. POST is the actual action.
+	r.Get("/api/v1/notifications/unsubscribe", h.notification.ConfirmUnsubscribe)
+	r.Post("/api/v1/notifications/unsubscribe", h.notification.Unsubscribe)
 
 	// Idempotency store for payment write endpoints.
 	// SetIdempotencyStore (called from cmd/api/main.go before Routes()) wires the
@@ -308,7 +312,29 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	//   2. Local revocation blocklist (POST /api/v1/auth/logout writes here).
 	// This gives the system session-lifetime control and logout independent of
 	// Clerk's plan-gated session management features.
-	clerkProvider := auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, authWarmup, s.log)
+	var jwksDegradedCtr metric.Int64Counter
+	if c, err := meter.Int64Counter("wcq_jwks_degraded_validations_total",
+		metric.WithDescription("JWT validations served from the stale in-memory JWKS fallback (Clerk endpoint unreachable)"),
+	); err == nil {
+		jwksDegradedCtr = c
+	}
+	// JWKS persister: Redis-backed cross-restart fallback (TTL 15 min).
+	// When Redis is not configured the persister is omitted — the provider falls
+	// back to in-memory only, which already covers transient Clerk outages that
+	// do not require a process restart.
+	jwksOpts := []auth.Option{
+		auth.WithOnDegraded(func(reqCtx context.Context) {
+			if jwksDegradedCtr != nil {
+				jwksDegradedCtr.Add(reqCtx, 1)
+			}
+		}),
+	}
+	if s.redisClient != nil {
+		jwksOpts = append(jwksOpts,
+			auth.WithKeysetPersister(cache.NewJWKSKeysetCache(s.redisClient), 15*time.Minute),
+		)
+	}
+	clerkProvider := auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, authWarmup, s.log, jwksOpts...)
 	sessionProvider := middleware.NewPolicyProvider(clerkProvider, repos.session, paramSvc, s.log)
 
 	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))

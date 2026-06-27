@@ -27,9 +27,13 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	infraemail "github.com/rede/world-cup-quiniela/internal/infrastructure/email"
 	"github.com/rede/world-cup-quiniela/internal/notification"
-	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
+
+// adminLogAppender is the write-side of admin_notification_log.
+type adminLogAppender interface {
+	Create(ctx context.Context, entry *domain.AdminNotificationLog) error
+}
 
 // ParamReader is the subset of SystemParamService consumed by AdminDispatcher.
 // Defined as a narrow interface so the dispatcher does not import the full
@@ -53,8 +57,8 @@ type ParamReader interface {
 //     signed with HMAC-SHA256 when n8nSecret is configured.
 type AdminDispatcher struct {
 	params      ParamReader
-	logRepo     repository.AdminNotificationLogCreator
-	dlqRepo     repository.NotificationDLQEntryCreator
+	logRepo     adminLogAppender
+	dlqRepo     dlqAppender
 	mailer      infraemail.Sender
 	fromAddr    string
 	n8nURL      string // empty disables webhook
@@ -68,8 +72,8 @@ type AdminDispatcher struct {
 // Config bundles the constructor arguments for AdminDispatcher.
 type Config struct {
 	Params    ParamReader
-	LogRepo   repository.AdminNotificationLogCreator
-	DLQRepo   repository.NotificationDLQEntryCreator
+	LogRepo   adminLogAppender
+	DLQRepo   dlqAppender
 	Mailer    infraemail.Sender
 	FromAddr  string // e.g. "Quiniela <noreply@example.com>"
 	N8nURL    string // optional; empty disables the n8n webhook

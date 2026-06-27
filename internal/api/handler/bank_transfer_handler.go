@@ -452,8 +452,12 @@ func (h *BankTransferHandler) serveProofFile(w http.ResponseWriter, r *http.Requ
 	if ct == "" {
 		ct = proof.ContentType
 	}
+	ext := extensionForContentType(ct)
+	if ext == "" {
+		ext = ".bin"
+	}
 	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Content-Disposition", "inline")
+	w.Header().Set("Content-Disposition", `attachment; filename="proof`+ext+`"`)
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.WriteHeader(http.StatusOK)
 	if _, err := io.Copy(w, rc); err != nil {

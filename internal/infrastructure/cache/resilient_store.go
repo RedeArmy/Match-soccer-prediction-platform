@@ -41,7 +41,7 @@ func NewResilientStore(inner Store, b *breaker.Breaker, log *zap.Logger) *Resili
 // Get retrieves a cached value. When the circuit is open, returns ErrCacheMiss
 // immediately without calling the inner store. ErrCacheMiss from the inner
 // store is passed through normally and does not count as a breaker failure.
-func (s *ResilientStore) Get(ctx context.Context, key string, dest interface{}) error {
+func (s *ResilientStore) Get(ctx context.Context, key string, dest any) error {
 	var innerErr error
 	breakerErr := s.breaker.Call(func() error {
 		innerErr = s.inner.Get(ctx, key, dest)
@@ -64,7 +64,7 @@ func (s *ResilientStore) Get(ctx context.Context, key string, dest interface{}) 
 
 // Set stores a value. Silently drops the write when the circuit is open to
 // avoid hammering a degraded Redis instance with writes that will fail anyway.
-func (s *ResilientStore) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (s *ResilientStore) Set(ctx context.Context, key string, value any, ttl time.Duration) error {
 	err := s.breaker.Call(func() error {
 		return s.inner.Set(ctx, key, value, ttl)
 	})

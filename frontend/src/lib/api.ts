@@ -79,9 +79,25 @@ class APIClient {
       if (res.status === 401 && !!token && globalThis.window !== undefined) {
         globalThis.dispatchEvent(new CustomEvent("wcq:session-expired"));
       }
-      const body = await res.json().catch(() => ({}));
-      const msg = body?.error?.message ?? `HTTP ${res.status}`;
-      const code = body?.error?.code ?? "ERR_UNKNOWN";
+      // Read the body as text first so we can attempt JSON parsing without
+      // consuming the stream twice. If the upstream returns an HTML error page
+      // (reverse proxy, CDN) json() would throw and silently produce {}, masking
+      // the actual response content.
+      const text = await res.text().catch(() => "");
+      let body: Record<string, unknown> = {};
+      try {
+        body = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        // Non-JSON body (HTML error page, plain text, etc.). The status code is
+        // used as the fallback message; raw text is available in debug tooling.
+      }
+      const errorBody = body?.error as Record<string, unknown> | undefined;
+      const rawMsg = errorBody?.message;
+      const rawCode = errorBody?.code;
+      const msg =
+        typeof rawMsg === "string" ? rawMsg : `HTTP ${res.status}`;
+      const code =
+        typeof rawCode === "string" ? rawCode : "ERR_UNKNOWN";
       throw Object.assign(new Error(msg), { code, status: res.status });
     }
 

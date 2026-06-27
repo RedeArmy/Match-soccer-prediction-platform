@@ -1,0 +1,16 @@
+# CVE-2026-34040 — Moby daemon authorisation bypass
+#
+# github.com/docker/docker v28.5.2 is a transitive dependency pulled in by
+# dhui/dktest (via golang-migrate test helpers). It is used exclusively as a
+# client SDK to communicate with a local Docker daemon during integration tests
+# (testcontainers); the application never runs a Docker daemon itself.
+#
+# The vulnerability is in the daemon's authorisation layer, not in client-side
+# code. Docker / Moby split the module path at v25: the fix ships as
+# github.com/moby/moby/api v1.54.2+ (already our transitive dep via
+# testcontainers-go v0.43.0), but dhui/dktest has not yet migrated and pins
+# github.com/docker/docker v28.x, making an in-place upgrade impossible.
+#
+# Risk: none — the vulnerable code path is not reachable from a client-only
+# consumer. Suppress until dhui/dktest drops the docker/docker dependency.
+CVE-2026-34040
