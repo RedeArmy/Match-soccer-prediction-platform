@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, ChevronDown, ChevronUp, Clock } from "lucide-react";
+import { Activity, ChevronDown, ChevronUp, Clock, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -117,6 +117,8 @@ function EventIcon({
   type,
   detail,
 }: Readonly<{ type: string; detail: string }>) {
+  if (type === "Goal" && detail === "Missed Penalty")
+    return <XCircle className="h-4 w-4 shrink-0 text-red-400" />;
   if (type === "Goal") return <span className="text-sm">⚽</span>;
   if (type === "Card" && detail.toLowerCase().includes("yellow"))
     return <span className="text-sm">🟨</span>;
@@ -216,8 +218,22 @@ function EventsList({ events }: Readonly<{ events: FixtureEvent[] }>) {
           </span>
           <EventIcon type={ev.type} detail={ev.detail} />
           <div className="min-w-0 flex-1">
-            <span className="font-medium text-text-primary">{ev.player}</span>
-            {ev.assist && ev.type !== "subst" && (
+            <span
+              className={cn(
+                "font-medium",
+                ev.type === "Goal" && ev.detail === "Missed Penalty"
+                  ? "text-red-300"
+                  : "text-text-primary",
+              )}
+            >
+              {ev.player}
+            </span>
+            {ev.type === "Goal" && ev.detail === "Missed Penalty" && (
+              <span className="ml-1 text-[10px] text-red-400/80">
+                — {t("tournaments.missedPenalty")}
+              </span>
+            )}
+            {ev.assist && ev.type !== "subst" && ev.detail !== "Missed Penalty" && (
               <span className="text-text-muted"> ({ev.assist})</span>
             )}
             {ev.type === "subst" && ev.assist && (

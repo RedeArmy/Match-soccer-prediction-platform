@@ -562,7 +562,7 @@ describe("PredictionPanel", () => {
     }
   });
 
-  it("shows knockout phase tab when matches with that phase are present", async () => {
+  it("auto-selects the active knockout phase on first load", async () => {
     const koMatch = {
       ...scheduledMatch,
       id: 20,
@@ -580,11 +580,15 @@ describe("PredictionPanel", () => {
 
     renderPanel();
 
-    await screen.findByText("Canadá");
-    // The round_of_16 tab renders as "Octavos" in Spanish
+    // The round_of_16 tab renders as "Octavos" and is auto-selected on load
     expect(
-      screen.getByRole("button", { name: /Octavos/i }),
+      await screen.findByRole("button", { name: /Octavos/i }),
     ).toBeInTheDocument();
+    // Knockout match teams are visible (panel defaulted to round_of_16)
+    // Team name may appear in both the label <p> and the penalty-winner <button>
+    expect((await screen.findAllByText("Argentina"))[0]).toBeInTheDocument();
+    // Group stage match is not shown in the knockout view
+    expect(screen.queryByText("Canadá")).toBeNull();
   });
 
   it("filters matches by knockout phase when tab is clicked", async () => {
@@ -605,13 +609,15 @@ describe("PredictionPanel", () => {
 
     renderPanel();
 
-    await screen.findByText("Canadá");
-    fireEvent.click(screen.getByRole("button", { name: /Octavos/i }));
-
-    // After switching to round_of_16 tab, the knockout match teams are shown
-    expect(await screen.findByText("Argentina")).toBeInTheDocument();
-    // Group stage match is no longer visible in the phase filter view
+    // Auto-switched to round_of_16: Argentina visible, group stage match hidden
+    // Team name may appear in both the label <p> and the penalty-winner <button>
+    expect((await screen.findAllByText("Argentina"))[0]).toBeInTheDocument();
     expect(screen.queryByText("Canadá")).toBeNull();
+
+    // Switching to the Grupos tab shows group stage matches and hides knockout ones
+    fireEvent.click(screen.getByRole("button", { name: "Grupos" }));
+    expect(await screen.findByText("Canadá")).toBeInTheDocument();
+    expect(screen.queryByText("Argentina")).toBeNull();
   });
 
   it("hides unconfirmed knockout matches (empty teams) within an active phase tab", async () => {
@@ -649,7 +655,8 @@ describe("PredictionPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /Octavos/i }));
 
     // Only the confirmed match renders — the empty-team one is suppressed
-    expect(await screen.findByText("Francia")).toBeInTheDocument();
+    // Team name may appear in both the label <p> and the penalty-winner <button>
+    expect((await screen.findAllByText("Francia"))[0]).toBeInTheDocument();
     // One article only (not two)
     expect(document.querySelectorAll("article")).toHaveLength(1);
   });
@@ -722,7 +729,8 @@ describe("PredictionPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /Dieciseisavos/i }));
 
     // Only the confirmed match renders
-    expect(await screen.findByText("Brasil")).toBeInTheDocument();
+    // Team name may appear in both the label <p> and the penalty-winner <button>
+    expect((await screen.findAllByText("Brasil"))[0]).toBeInTheDocument();
     expect(document.querySelectorAll("article")).toHaveLength(1);
   });
 
@@ -761,7 +769,8 @@ describe("PredictionPanel", () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Dieciseisavos/i }));
 
-    expect(await screen.findByText("México")).toBeInTheDocument();
+    // Team name may appear in both the label <p> and the penalty-winner <button>
+    expect((await screen.findAllByText("México"))[0]).toBeInTheDocument();
     expect(screen.queryByText("1A")).toBeNull();
   });
 
@@ -796,7 +805,8 @@ describe("PredictionPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Partidos" }));
 
     // Confirmed teams appear; placeholder match is suppressed
-    expect(await screen.findByText("Brasil")).toBeInTheDocument();
+    // Team name may appear in both the label <p> and the penalty-winner <button>
+    expect((await screen.findAllByText("Brasil"))[0]).toBeInTheDocument();
     expect(screen.queryByText("W73")).toBeNull();
     expect(screen.queryByText("1A")).toBeNull();
   });

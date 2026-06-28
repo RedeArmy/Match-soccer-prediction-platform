@@ -152,6 +152,9 @@ func (r *stubWorkerMatchRepo) ListByGroupLabel(_ context.Context, _ string) ([]*
 func (r *stubWorkerMatchRepo) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
 	return nil, nil
 }
+func (r *stubWorkerMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *string, _, _ *int) error {
+	return nil
+}
 
 var _ repository.MatchRepository = (*stubWorkerMatchRepo)(nil)
 

@@ -24,11 +24,11 @@ func NewPostgresPredictionRepository(db *pgxpool.Pool) *PostgresPredictionReposi
 	return &PostgresPredictionRepository{db: db}
 }
 
-const predictionColumns = "id, user_id, match_id, home_score, away_score, predicted_win_method, points, scored_at, created_at, updated_at"
+const predictionColumns = "id, user_id, match_id, home_score, away_score, predicted_win_method, predicted_penalty_winner, points, scored_at, created_at, updated_at"
 
 func scanPrediction(row pgx.Row) (*domain.Prediction, error) {
 	p := &domain.Prediction{}
-	if err := row.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.Points, &p.ScoredAt, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.PredictedPenaltyWinner, &p.Points, &p.ScoredAt, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, singleScanErr(err)
 	}
 	return p, nil
@@ -42,17 +42,17 @@ func scanPrediction(row pgx.Row) (*domain.Prediction, error) {
 func (r *PostgresPredictionRepository) Upsert(ctx context.Context, p *domain.Prediction) (created bool, err error) {
 	var wasInserted bool
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO predictions (user_id, match_id, home_score, away_score, predicted_win_method)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO predictions (user_id, match_id, home_score, away_score, predicted_win_method, predicted_penalty_winner)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 ON CONFLICT (user_id, match_id) DO UPDATE
 		     SET updated_at = predictions.updated_at
 		 RETURNING `+predictionColumns+`, (xmax = 0) AS was_inserted`,
-		p.UserID, p.MatchID, p.HomeScore, p.AwayScore, p.PredictedWinMethod,
+		p.UserID, p.MatchID, p.HomeScore, p.AwayScore, p.PredictedWinMethod, p.PredictedPenaltyWinner,
 	)
 	result := &domain.Prediction{}
 	if scanErr := row.Scan(
 		&result.ID, &result.UserID, &result.MatchID,
-		&result.HomeScore, &result.AwayScore, &result.PredictedWinMethod, &result.Points,
+		&result.HomeScore, &result.AwayScore, &result.PredictedWinMethod, &result.PredictedPenaltyWinner, &result.Points,
 		&result.ScoredAt, &result.CreatedAt, &result.UpdatedAt,
 		&wasInserted,
 	); scanErr != nil {
@@ -64,10 +64,10 @@ func (r *PostgresPredictionRepository) Upsert(ctx context.Context, p *domain.Pre
 
 func (r *PostgresPredictionRepository) Create(ctx context.Context, p *domain.Prediction) error {
 	row := r.db.QueryRow(ctx,
-		`INSERT INTO predictions (user_id, match_id, home_score, away_score, predicted_win_method)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO predictions (user_id, match_id, home_score, away_score, predicted_win_method, predicted_penalty_winner)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING `+predictionColumns,
-		p.UserID, p.MatchID, p.HomeScore, p.AwayScore, p.PredictedWinMethod,
+		p.UserID, p.MatchID, p.HomeScore, p.AwayScore, p.PredictedWinMethod, p.PredictedPenaltyWinner,
 	)
 	result, err := scanPrediction(row)
 	if err != nil {
@@ -89,9 +89,9 @@ func (r *PostgresPredictionRepository) GetByID(ctx context.Context, id int) (*do
 
 func (r *PostgresPredictionRepository) Update(ctx context.Context, p *domain.Prediction) error {
 	row := r.db.QueryRow(ctx,
-		`UPDATE predictions SET home_score=$1, away_score=$2, predicted_win_method=$3, points=$4, updated_at=NOW()
-		 WHERE id=$5 RETURNING `+predictionColumns,
-		p.HomeScore, p.AwayScore, p.PredictedWinMethod, p.Points, p.ID,
+		`UPDATE predictions SET home_score=$1, away_score=$2, predicted_win_method=$3, predicted_penalty_winner=$4, points=$5, updated_at=NOW()
+		 WHERE id=$6 RETURNING `+predictionColumns,
+		p.HomeScore, p.AwayScore, p.PredictedWinMethod, p.PredictedPenaltyWinner, p.Points, p.ID,
 	)
 	result, err := scanPrediction(row)
 	if err != nil {
@@ -107,15 +107,16 @@ func (r *PostgresPredictionRepository) Update(ctx context.Context, p *domain.Pre
 func (r *PostgresPredictionRepository) UpdateIfUnchanged(ctx context.Context, p *domain.Prediction, expectedUpdatedAt time.Time) error {
 	row := r.db.QueryRow(ctx,
 		`UPDATE predictions
-		    SET home_score          = $1,
-		        away_score          = $2,
-		        predicted_win_method = $3,
-		        points              = $4,
-		        updated_at          = NOW()
-		  WHERE id         = $5
-		    AND updated_at = $6
+		    SET home_score               = $1,
+		        away_score               = $2,
+		        predicted_win_method     = $3,
+		        predicted_penalty_winner = $4,
+		        points                   = $5,
+		        updated_at               = NOW()
+		  WHERE id         = $6
+		    AND updated_at = $7
 		  RETURNING `+predictionColumns,
-		p.HomeScore, p.AwayScore, p.PredictedWinMethod, p.Points, p.ID, expectedUpdatedAt,
+		p.HomeScore, p.AwayScore, p.PredictedWinMethod, p.PredictedPenaltyWinner, p.Points, p.ID, expectedUpdatedAt,
 	)
 	result, err := scanPrediction(row)
 	if err != nil {
@@ -678,7 +679,7 @@ func applyChunkedPointsUpdate(ctx context.Context, tx pgx.Tx, points map[int]int
 func collectPredictions(rows pgx.Rows) ([]*domain.Prediction, error) {
 	return collectRows(rows, func(r pgx.Rows) (*domain.Prediction, error) {
 		p := &domain.Prediction{}
-		return p, r.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.Points, &p.ScoredAt, &p.CreatedAt, &p.UpdatedAt)
+		return p, r.Scan(&p.ID, &p.UserID, &p.MatchID, &p.HomeScore, &p.AwayScore, &p.PredictedWinMethod, &p.PredictedPenaltyWinner, &p.Points, &p.ScoredAt, &p.CreatedAt, &p.UpdatedAt)
 	})
 }
 
@@ -862,7 +863,7 @@ func (r *PostgresPredictionRepository) ListByGroupAndMatches(
 	}
 	rows, err := r.db.Query(ctx,
 		`SELECT p.id, p.user_id, p.match_id, p.home_score, p.away_score,
-		        p.predicted_win_method, p.points, p.scored_at, p.created_at, p.updated_at
+		        p.predicted_win_method, p.predicted_penalty_winner, p.points, p.scored_at, p.created_at, p.updated_at
 		   FROM predictions p
 		  INNER JOIN group_memberships gm
 		          ON gm.user_id     = p.user_id

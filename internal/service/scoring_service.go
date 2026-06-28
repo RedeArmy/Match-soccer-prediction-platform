@@ -233,7 +233,7 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 		capturedNew = make(map[int]int, len(preds))
 		for _, pred := range preds {
 			capturedOld[pred.ID] = pred.Points
-			capturedNew[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore, match.WinMethod, cfg)
+			capturedNew[pred.ID] = calculatePoints(pred, *match.HomeScore, *match.AwayScore, match.WinMethod, match.PenaltyWinner, cfg)
 		}
 		return capturedNew, nil
 	}, chunkSize); err != nil {
@@ -315,10 +315,10 @@ func (s *scoringService) writeScoringLog(
 // extra_time or penalties. The bonus is NOT awarded for the margin-only tier
 // (rule 4): the user did not identify the correct winner. The bonus is
 // exclusive: at most one of extraTimeBonus or penaltiesBonus per prediction.
-func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, actualWinMethod *domain.WinMethod, cfg scoringConfig) int {
+func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, actualWinMethod *domain.WinMethod, actualPenaltyWinner *string, cfg scoringConfig) int {
 	base, bonusEligible := basePoints(pred, actualHome, actualAway, cfg)
 	if bonusEligible && base > 0 {
-		base += winMethodBonus(pred.PredictedWinMethod, actualWinMethod, cfg)
+		base += winMethodBonus(pred.PredictedWinMethod, pred.PredictedPenaltyWinner, actualWinMethod, actualPenaltyWinner, cfg)
 	}
 	return base
 }
@@ -351,7 +351,11 @@ func basePoints(pred *domain.Prediction, actualHome, actualAway int, cfg scoring
 
 // winMethodBonus returns the bonus when the predicted win method matches the actual one.
 // Returns 0 when either side did not declare a win method.
-func winMethodBonus(predicted, actual *domain.WinMethod, cfg scoringConfig) int {
+// For penalties, if the match records which team won (actualPenaltyWinner non-nil),
+// the user's predicted penalty winner must also match to earn the bonus.
+// When actualPenaltyWinner is nil (older matches or sync-driven finalisations),
+// only the win-method match is required, preserving backward compatibility.
+func winMethodBonus(predicted *domain.WinMethod, predPenaltyWinner *string, actual *domain.WinMethod, actualPenaltyWinner *string, cfg scoringConfig) int {
 	if predicted == nil || actual == nil {
 		return 0
 	}
@@ -361,11 +365,15 @@ func winMethodBonus(predicted, actual *domain.WinMethod, cfg scoringConfig) int 
 			return cfg.extraTimeBonus
 		}
 	case domain.WinMethodPenalties:
-		if *predicted == domain.WinMethodPenalties {
-			return cfg.penaltiesBonus
+		if *predicted != domain.WinMethodPenalties {
+			return 0
 		}
-	default: // WinMethodNormal: no bonus for normal-time victories
-		return 0
+		if actualPenaltyWinner != nil {
+			if predPenaltyWinner == nil || *predPenaltyWinner != *actualPenaltyWinner {
+				return 0
+			}
+		}
+		return cfg.penaltiesBonus
 	}
 	return 0
 }

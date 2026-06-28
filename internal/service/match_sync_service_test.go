@@ -94,6 +94,9 @@ func (r *stubSyncMatchRepo) UpdateSlots(_ context.Context, _ int, _, _ *int) (*d
 func (r *stubSyncMatchRepo) ListByGroupLabel(_ context.Context, _ string) ([]*domain.Match, error) {
 	return nil, nil
 }
+func (r *stubSyncMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *string, _, _ *int) error {
+	return nil
+}
 
 type stubSyncMatchSvc struct {
 	started   int
@@ -117,11 +120,11 @@ func (s *stubSyncMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, 
 	s.started++
 	return &domain.Match{Status: domain.MatchStatusLive}, s.startErr
 }
-func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod) (*domain.Match, error) {
+func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, _ *string) (*domain.Match, error) {
 	s.finished++
 	return &domain.Match{Status: domain.MatchStatusFinished}, s.finishErr
 }
-func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod) (*domain.Match, error) {
+func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, _ *string) (*domain.Match, error) {
 	return &domain.Match{Status: domain.MatchStatusFinished}, nil
 }
 func (s *stubSyncMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {

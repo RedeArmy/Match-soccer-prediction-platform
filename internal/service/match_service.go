@@ -27,12 +27,12 @@ type MatchService interface {
 	ListMatches(ctx context.Context) ([]*domain.Match, error)
 	ListMatchesByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error)
 	ListMatchesByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
-	UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error)
+	UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string) (*domain.Match, error)
 	StartMatch(ctx context.Context, id int) (*domain.Match, error)
 	// CorrectResult overwrites the score on a finished match and re-emits
 	// MatchFinished so the scoring engine re-scores all predictions. Use this
 	// when the API-Football feed provided a wrong score that was already confirmed.
-	CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error)
+	CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string) (*domain.Match, error)
 	// CancelMatch marks a scheduled or live match as cancelled. Cancelled matches
 	// are excluded from prediction scoring and cannot transition to any other status.
 	CancelMatch(ctx context.Context, id int) (*domain.Match, error)
@@ -150,7 +150,7 @@ func (s *matchService) StartMatch(ctx context.Context, id int) (*domain.Match, e
 //
 // winMethod is optional for group-stage matches (pass nil). For knockout phases
 // it should be provided so the scoring engine can apply win-method bonuses.
-func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error) {
+func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string) (*domain.Match, error) {
 	if err := domain.ValidateMatchResult(&homeScore, &awayScore); err != nil {
 		return nil, err
 	}
@@ -161,14 +161,14 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 	if m.Status != domain.MatchStatusLive {
 		return nil, apperrors.Validation("match result can only be confirmed while the match is live")
 	}
-	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, domain.AuditActionMatchResultSet, false)
+	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, penaltyWinner, domain.AuditActionMatchResultSet, false)
 }
 
 // CorrectResult overwrites the score on a match that is already finished (or
 // still live if the API confirmed the score early) and re-emits MatchFinished
 // so the scoring engine recomputes predictions. It is the admin escape-hatch
 // for when API-Football delivered a wrong final score.
-func (s *matchService) CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error) {
+func (s *matchService) CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string) (*domain.Match, error) {
 	if err := domain.ValidateMatchResult(&homeScore, &awayScore); err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func (s *matchService) CorrectResult(ctx context.Context, id int, homeScore, awa
 	if m.Status != domain.MatchStatusFinished && m.Status != domain.MatchStatusLive {
 		return nil, apperrors.Validation("result can only be corrected on a live or finished match")
 	}
-	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, domain.AuditActionMatchResultCorrected, true)
+	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, penaltyWinner, domain.AuditActionMatchResultCorrected, true)
 }
 
 // applyScoreAndPublish writes the final score to the repository, logs the audit
@@ -192,12 +192,14 @@ func (s *matchService) applyScoreAndPublish(
 	m *domain.Match,
 	homeScore, awayScore int,
 	winMethod *domain.WinMethod,
+	penaltyWinner *string,
 	auditAction string,
 	correction bool,
 ) (*domain.Match, error) {
 	m.HomeScore = &homeScore
 	m.AwayScore = &awayScore
 	m.WinMethod = winMethod
+	m.PenaltyWinner = penaltyWinner
 	m.Status = domain.MatchStatusFinished
 	if err := s.repo.Update(ctx, m); err != nil {
 		return nil, err

@@ -29,7 +29,15 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { type Locale, useI18n } from "@/lib/i18n";
 
-type DraftScores = Record<number, { home: number; away: number }>;
+type DraftScores = Record<
+  number,
+  {
+    home: number;
+    away: number;
+    winMethod?: string | null; // "extra_time" | "penalties" | null
+    penaltyWinner?: string | null; // "home" | "away" | null
+  }
+>;
 type Filter = "all" | "pending" | "saved" | "past";
 const PAGE_SIZE = 6;
 type GroupLabel =
@@ -124,6 +132,29 @@ function phaseShortLabel(phase: string, t: (key: string) => string): string {
   return key ? t(key) : phase;
 }
 
+// Returns the earliest knockout phase that still has non-finished matches, so
+// the panel defaults to the currently active round instead of always showing
+// group stage. Falls back to the most recent completed phase when all rounds
+// are finished (knockoutPhases is ordered latest-first per KNOCKOUT_TAB_ORDER).
+function activeKnockoutPhase(
+  matches: { phase: string | null; status: string }[],
+  knockoutPhases: string[],
+): string | null {
+  if (knockoutPhases.length === 0) return null;
+  for (const phase of [...knockoutPhases].reverse()) {
+    if (
+      matches.some(
+        (m) =>
+          m.phase === phase &&
+          m.status !== "finished" &&
+          m.status !== "cancelled",
+      )
+    )
+      return phase;
+  }
+  return knockoutPhases[0];
+}
+
 export function PredictionPanel() {
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
@@ -132,6 +163,7 @@ export function PredictionPanel() {
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedGroup, setSelectedGroup] = useState<GroupLabel>("A");
   const [viewMode, setViewMode] = useState<string>("by-group");
+  const hasAutoSwitched = useRef(false);
   const [drafts, setDrafts] = useState<DraftScores>({});
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -255,6 +287,8 @@ export function PredictionPanel() {
           next[prediction.match_id] = {
             home: prediction.home_score,
             away: prediction.away_score,
+            winMethod: prediction.predicted_win_method ?? null,
+            penaltyWinner: prediction.predicted_penalty_winner ?? null,
           };
         }
       }
@@ -268,20 +302,26 @@ export function PredictionPanel() {
       draft,
     }: {
       match: MatchResponse;
-      draft: { home: number; away: number };
+      draft: DraftScores[number];
     }) => {
       const token = await getToken();
       const existing = predictionByMatch.get(match.id);
+      const winMethodPayload = draft.winMethod ?? undefined;
+      const penaltyWinnerPayload = draft.penaltyWinner ?? undefined;
       if (existing) {
         return api.updatePrediction(token!, existing.id, {
           home_score: draft.home,
           away_score: draft.away,
+          predicted_win_method: winMethodPayload,
+          predicted_penalty_winner: penaltyWinnerPayload,
         });
       }
       return api.submitPrediction(token!, {
         match_id: match.id,
         home_score: draft.home,
         away_score: draft.away,
+        predicted_win_method: winMethodPayload,
+        predicted_penalty_winner: penaltyWinnerPayload,
       });
     },
     onSuccess: async () => {
@@ -329,6 +369,18 @@ export function PredictionPanel() {
     () => visibleKnockoutPhases(enrichedMatches),
     [enrichedMatches],
   );
+
+  // Auto-select the active knockout phase on first data load so users land on
+  // the currently relevant round (e.g. round_of_16) instead of group stage
+  // once the group phase is over. Runs only once per mount.
+  useEffect(() => {
+    if (hasAutoSwitched.current || knockoutPhases.length === 0) return;
+    const active = activeKnockoutPhase(enrichedMatches, knockoutPhases);
+    if (active) {
+      setViewMode(active);
+      hasAutoSwitched.current = true;
+    }
+  }, [knockoutPhases, enrichedMatches]);
 
   // Dates (YYYY-MM-DD) that have at least one match with both teams confirmed —
   // used for calendar dot indicators.
@@ -410,7 +462,7 @@ export function PredictionPanel() {
     t,
   });
 
-  function updateDraft(matchId: number, value: { home: number; away: number }) {
+  function updateDraft(matchId: number, value: DraftScores[number]) {
     setDrafts((current) => ({ ...current, [matchId]: value }));
   }
 
@@ -451,6 +503,8 @@ export function PredictionPanel() {
             const draft = drafts[match.id] ?? {
               home: prediction?.home_score ?? 0,
               away: prediction?.away_score ?? 0,
+              winMethod: prediction?.predicted_win_method ?? null,
+              penaltyWinner: prediction?.predicted_penalty_winner ?? null,
             };
             return (
               <PredictionMatchCard
@@ -667,10 +721,10 @@ function getButtonLabel(
 interface PredictionMatchCardProps {
   readonly match: MatchResponse;
   readonly prediction: PredictionResponse | undefined;
-  readonly draft: { home: number; away: number };
+  readonly draft: DraftScores[number];
   readonly isPending: boolean;
   readonly serverOffsetMs: number;
-  readonly onDraftChange: (value: { home: number; away: number }) => void;
+  readonly onDraftChange: (value: DraftScores[number]) => void;
   readonly onSave: () => void;
 }
 
@@ -684,6 +738,7 @@ function PredictionMatchCard({
   onSave,
 }: PredictionMatchCardProps) {
   const { t, teamName, formatKickoff, phaseName } = useI18n();
+  const [localError, setLocalError] = useState<string | null>(null);
 
   // Virtual clock — single interval drives background colour, lock state, and countdown.
   const [virtualNow, setVirtualNow] = useState(
@@ -701,6 +756,11 @@ function PredictionMatchCard({
   const isLive = match.status === "in_progress";
   const isFinished =
     match.status === "finished" || match.status === "cancelled";
+
+  const isExtraTime = isLive && match.period === "ET";
+  const isPenaltiesLive = isLive && match.period === "PEN_LIVE";
+  const hasPenaltyScore =
+    match.penalty_home_score != null && match.penalty_away_score != null;
 
   // Client-side kickoff guard: lock predictions the moment the countdown
   // reaches zero, before the sync worker updates the DB status. This closes
@@ -757,6 +817,16 @@ function PredictionMatchCard({
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             {statusBadge}
+            {isExtraTime && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+                {t("predictions.liveExtraTime")}
+              </span>
+            )}
+            {isPenaltiesLive && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-orange-300">
+                {t("predictions.livePenalties")}
+              </span>
+            )}
             {!isFinished && (
               <span
                 className={cn(
@@ -779,9 +849,17 @@ function PredictionMatchCard({
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
             <TeamLabel label={teamName(match.home_team)} align="right" />
             {isLive || isFinished ? (
-              <span className="font-score text-lg font-bold tabular-nums text-white">
-                {match.home_score ?? 0}&nbsp;–&nbsp;{match.away_score ?? 0}
-              </span>
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="font-score text-lg font-bold tabular-nums text-white">
+                  {match.home_score ?? 0}&nbsp;–&nbsp;{match.away_score ?? 0}
+                </span>
+                {hasPenaltyScore && (
+                  <span className="font-score text-[11px] tabular-nums text-orange-300/80">
+                    {t("predictions.penaltiesScoreLabel")}&nbsp;
+                    {match.penalty_home_score}&nbsp;–&nbsp;{match.penalty_away_score}
+                  </span>
+                )}
+              </div>
             ) : (
               <span className="font-score text-xs text-text-muted">vs</span>
             )}
@@ -815,6 +893,72 @@ function PredictionMatchCard({
               />
             )}
           </div>
+
+          {/* Win-method bonus UI — knockout phases only, unlocked matches */}
+          {match.phase !== "group_stage" && match.phase !== null && !locked &&
+            (draft.home === draft.away ? (
+              <div className="mt-3 flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-text-secondary">
+                  {t("predictions.penaltyWinner")}
+                </span>
+                <div className="flex gap-2">
+                  {(["home", "away"] as const).map((side) => {
+                    const label =
+                      side === "home"
+                        ? teamName(match.home_team)
+                        : teamName(match.away_team);
+                    const selected = draft.penaltyWinner === side;
+                    return (
+                      <button
+                        key={side}
+                        type="button"
+                        onClick={() => {
+                          setLocalError(null);
+                          onDraftChange({
+                            ...draft,
+                            penaltyWinner: side,
+                            winMethod: "penalties",
+                          });
+                        }}
+                        className={cn(
+                          "flex-1 rounded border px-2 py-1.5 text-xs font-medium transition-colors",
+                          selected
+                            ? "border-gold-400 bg-gold-400/20 text-gold-200"
+                            : "border-white/15 text-text-secondary hover:border-white/30 hover:text-white",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {localError && (
+                  <p className="text-xs text-red-300">{localError}</p>
+                )}
+              </div>
+            ) : (
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  id={`et-${match.id}`}
+                  type="checkbox"
+                  checked={draft.winMethod === "extra_time"}
+                  onChange={(e) =>
+                    onDraftChange({
+                      ...draft,
+                      winMethod: e.target.checked ? "extra_time" : null,
+                      penaltyWinner: null,
+                    })
+                  }
+                  className="h-3.5 w-3.5 rounded accent-gold-400"
+                />
+                <label
+                  htmlFor={`et-${match.id}`}
+                  className="cursor-pointer text-xs text-text-secondary"
+                >
+                  {t("predictions.extraTime")}
+                </label>
+              </div>
+            ))}
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -822,13 +966,27 @@ function PredictionMatchCard({
             label={t("predictions.home")}
             value={draft.home}
             disabled={locked}
-            onChange={(value) => onDraftChange({ ...draft, home: value })}
+            onChange={(value) =>
+              onDraftChange({
+                ...draft,
+                home: value,
+                winMethod: null,
+                penaltyWinner: null,
+              })
+            }
           />
           <ScoreInput
             label={t("predictions.away")}
             value={draft.away}
             disabled={locked}
-            onChange={(value) => onDraftChange({ ...draft, away: value })}
+            onChange={(value) =>
+              onDraftChange({
+                ...draft,
+                away: value,
+                winMethod: null,
+                penaltyWinner: null,
+              })
+            }
           />
           {isFinished ? (
             <div className="flex w-full flex-col items-center justify-center gap-0.5 rounded-lg border border-gold-400/20 bg-gold-400/10 px-4 py-2 sm:w-auto sm:min-w-[4.5rem]">
@@ -843,7 +1001,19 @@ function PredictionMatchCard({
             <button
               type="button"
               disabled={locked || isPending}
-              onClick={onSave}
+              onClick={() => {
+                if (
+                  match.phase !== "group_stage" &&
+                  match.phase !== null &&
+                  draft.home === draft.away &&
+                  !draft.penaltyWinner
+                ) {
+                  setLocalError(t("predictions.selectPenaltyWinner"));
+                  return;
+                }
+                setLocalError(null);
+                onSave();
+              }}
               className="btn-gold w-full px-3 py-2 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Save className="h-4 w-4 shrink-0" />

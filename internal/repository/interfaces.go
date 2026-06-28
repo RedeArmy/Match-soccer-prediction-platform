@@ -144,6 +144,12 @@ type MatchRepository interface {
 	// the daily fixture sync to correct kickoff times sourced from API-Football.
 	UpdateKickoff(ctx context.Context, matchID int, kickoffAt time.Time) error
 
+	// UpdateLiveProgress persists the current period code and penalty shootout
+	// tally without touching the match result or status. Called by the sync
+	// worker on every live poll to expose real-time state to the frontend.
+	// Pass nil for period to clear it (e.g. when the match finishes).
+	UpdateLiveProgress(ctx context.Context, matchID int, period *string, penaltyHome, penaltyAway *int) error
+
 	// UpdateSlots links a knockout match to its two bracket slots and, if either
 	// slot already has a confirmed team, propagates those names to HomeTeam/AwayTeam.
 	// Pass nil to clear a slot link.
