@@ -161,7 +161,7 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 	if m.Status != domain.MatchStatusLive {
 		return nil, apperrors.Validation("match result can only be confirmed while the match is live")
 	}
-	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, penaltyWinner, domain.AuditActionMatchResultSet, false)
+	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, penaltyWinner, applyScoreOpts{auditAction: domain.AuditActionMatchResultSet})
 }
 
 // CorrectResult overwrites the score on a match that is already finished (or
@@ -179,22 +179,27 @@ func (s *matchService) CorrectResult(ctx context.Context, id int, homeScore, awa
 	if m.Status != domain.MatchStatusFinished && m.Status != domain.MatchStatusLive {
 		return nil, apperrors.Validation("result can only be corrected on a live or finished match")
 	}
-	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, penaltyWinner, domain.AuditActionMatchResultCorrected, true)
+	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, penaltyWinner, applyScoreOpts{auditAction: domain.AuditActionMatchResultCorrected, correction: true})
+}
+
+// applyScoreOpts carries the audit and correction flags for applyScoreAndPublish.
+type applyScoreOpts struct {
+	auditAction string
+	correction  bool
 }
 
 // applyScoreAndPublish writes the final score to the repository, logs the audit
 // entry, and publishes MatchFinished. If publishing fails, it falls back to
 // synchronous scoring via the scorer. Both UpdateResult and CorrectResult share
 // this path; they differ only in their pre-conditions, audit action, and whether
-// the call is a score correction (correction=true) or an initial result set.
+// the call is a score correction (opts.correction=true) or an initial result set.
 func (s *matchService) applyScoreAndPublish(
 	ctx context.Context,
 	m *domain.Match,
 	homeScore, awayScore int,
 	winMethod *domain.WinMethod,
 	penaltyWinner *string,
-	auditAction string,
-	correction bool,
+	opts applyScoreOpts,
 ) (*domain.Match, error) {
 	m.HomeScore = &homeScore
 	m.AwayScore = &awayScore
@@ -210,10 +215,10 @@ func (s *matchService) applyScoreAndPublish(
 		auditMeta["win_method"] = string(*winMethod)
 	}
 	resType := "match"
-	s.audit.Log(ctx, nil, nil, auditAction, &resType, &m.ID, auditMeta)
+	s.audit.Log(ctx, nil, nil, opts.auditAction, &resType, &m.ID, auditMeta)
 
 	suffix := ""
-	if correction {
+	if opts.correction {
 		suffix = " (correction)"
 	}
 	if err := s.pub.Publish(ctx, events.Envelope{
