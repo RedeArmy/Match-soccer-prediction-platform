@@ -172,7 +172,7 @@ func TestPolicyProvider_InnerProviderError_Propagated(t *testing.T) {
 func TestPolicyProvider_OldSession_FreshJWT_RejectsWithInvalidToken(t *testing.T) {
 	claims := auth.Claims{
 		Subject:          "user_abc",
-		IssuedAt:         time.Now(),                   // JWT just refreshed — very recent
+		IssuedAt:         time.Now(),                     // JWT just refreshed — very recent
 		SessionStartedAt: time.Now().Add(-6 * time.Hour), // but session started 6 h ago
 		SessionID:        "sid_old_session",
 	}
