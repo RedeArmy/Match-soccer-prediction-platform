@@ -140,6 +140,7 @@ func (s *Server) registerTournamentRoutes(r chi.Router, d apiV1Deps) {
 		// Admin-only mutations.
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/slots", d.h.tournament.CreateSlot)
 		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Patch("/slots/{id}", d.h.tournament.ConfirmSlot)
+		r.With(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin)).Post("/slots/confirm-best-thirds", d.h.tournament.ConfirmBestThirds)
 	})
 }
 

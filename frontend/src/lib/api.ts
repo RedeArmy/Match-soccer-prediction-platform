@@ -47,6 +47,7 @@ import type {
   AdminUserProfileResponse,
   LivePredictionsResponse,
   TournamentSlotResponse,
+  BestThirdAssignment,
 } from "./api-types";
 
 // ── Base fetch ────────────────────────────────────────────────────────────────
@@ -333,6 +334,14 @@ class APIClient {
     return this.request(
       `/api/v1/tournament/slots/${slotId}`,
       { method: "PATCH", body: JSON.stringify({ team }) },
+      token,
+    );
+  }
+
+  adminConfirmBestThirds(token: string): Promise<BestThirdAssignment[]> {
+    return this.request(
+      "/api/v1/tournament/slots/confirm-best-thirds",
+      { method: "POST" },
       token,
     );
   }

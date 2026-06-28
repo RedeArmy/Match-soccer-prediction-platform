@@ -668,6 +668,7 @@ const translations: TranslationNode = {
     pts:              { es: 'Pts',                                                             en: 'Pts'                                                           },
     legendAdvanced:   { es: 'Clasificado',                                                     en: 'Advancing'                                                     },
     legendMaybe:      { es: 'Puede clasificar',                                                en: 'May advance'                                                   },
+    legendBestThird:  { es: 'Mejor 3.°',                                                      en: 'Best 3rd'                                                      },
     legendEliminated: { es: 'Eliminado',                                                       en: 'Eliminated'                                                    },
     error:            { es: 'No se pudieron cargar las posiciones.',                           en: 'Could not load standings.'                                     },
     empty:            { es: 'Los partidos de grupos aún no han comenzado.',                    en: 'Group stage matches have not started yet.'                     },

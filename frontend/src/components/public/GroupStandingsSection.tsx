@@ -237,33 +237,88 @@ export function buildGroupStandings(
   );
 }
 
+// ── Best-third helpers ────────────────────────────────────────────────────────
+
+// getBestEightThirds returns the set of team names that are among the top-8
+// third-placed teams when ranked by FIFA criteria (pts → GD → GF → name).
+export function getBestEightThirds(
+  groups: Record<string, TeamRow[]>,
+): Set<string> {
+  const thirds: TeamRow[] = [];
+  for (const rows of Object.values(groups)) {
+    if (rows.length >= 3) thirds.push(rows[2]);
+  }
+  thirds.sort((a, b) => {
+    if (b.pts !== a.pts) return b.pts - a.pts;
+    if (b.gd !== a.gd) return b.gd - a.gd;
+    if (b.gf !== a.gf) return b.gf - a.gf;
+    return a.team.localeCompare(b.team);
+  });
+  return new Set(thirds.slice(0, 8).map((t) => t.team));
+}
+
+// isGroupStageComplete returns true when all 12 groups are present and every
+// team in every group has played 3 matches (= all group-stage matches finished).
+export function isGroupStageComplete(
+  groups: Record<string, TeamRow[]>,
+): boolean {
+  const keys = Object.keys(groups);
+  if (keys.length < 12) return false;
+  return keys.every((g) => groups[g].every((t) => t.played >= 3));
+}
+
 // ── Position badge ─────────────────────────────────────────────────────────────
-// Top 2 advance for sure, 3rd place might advance (8 best 3rd-place teams).
+// Top 2 advance for sure. 3rd place: if group stage is complete, only the
+// top-8 thirds advance (amber); the rest are treated as eliminated (dim).
 
 // Per-cell helpers — the flat grid has no row wrapper to style, so each helper
 // is applied to every cell in the row individually.
-function rowBg(pos: number): string {
+function rowBg(
+  pos: number,
+  team: string,
+  bestThirds: Set<string>,
+  complete: boolean,
+): string {
   if (pos <= 2) return "bg-emerald-500/[0.06]";
-  if (pos === 3) return "bg-amber-500/[0.04]";
+  if (pos === 3 && (!complete || bestThirds.has(team)))
+    return "bg-amber-500/[0.04]";
   return "";
 }
-function rowAccent(pos: number): string {
+function rowAccent(
+  pos: number,
+  team: string,
+  bestThirds: Set<string>,
+  complete: boolean,
+): string {
   if (pos <= 2) return "border-l-2 border-l-emerald-400";
-  if (pos === 3) return "border-l-2 border-l-amber-400";
+  if (pos === 3 && (!complete || bestThirds.has(team)))
+    return "border-l-2 border-l-amber-400";
   return "";
 }
-function rowDim(pos: number): string {
-  return pos > 3 ? "opacity-50" : "";
+function rowDim(
+  pos: number,
+  team: string,
+  bestThirds: Set<string>,
+  complete: boolean,
+): string {
+  if (pos > 3) return "opacity-50";
+  if (pos === 3 && complete && !bestThirds.has(team)) return "opacity-50";
+  return "";
 }
 
-function posBadge(pos: number) {
+function posBadge(
+  pos: number,
+  team: string,
+  bestThirds: Set<string>,
+  complete: boolean,
+) {
   if (pos <= 2)
     return (
       <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[10px] font-bold text-emerald-300">
         {pos}
       </span>
     );
-  if (pos === 3)
+  if (pos === 3 && (!complete || bestThirds.has(team)))
     return (
       <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 text-[10px] font-bold text-amber-300">
         {pos}
@@ -293,11 +348,15 @@ function GroupTable({
   rows,
   t,
   locale,
+  bestThirds,
+  groupStageComplete,
 }: Readonly<{
   group: string;
   rows: TeamRow[];
   t: (k: string) => string;
   locale: string;
+  bestThirds: Set<string>;
+  groupStageComplete: boolean;
 }>) {
   const COL = "grid-cols-[20px_1fr_28px_28px_28px_28px_28px_28px_32px]";
   const HDR =
@@ -336,16 +395,16 @@ function GroupTable({
           const pos = idx + 1;
           const sep =
             idx < rows.length - 1 ? "border-b border-white/[0.04]" : "";
-          const bg = rowBg(pos);
-          const dim = rowDim(pos);
-          const accent = rowAccent(pos);
+          const bg = rowBg(pos, row.team, bestThirds, groupStageComplete);
+          const dim = rowDim(pos, row.team, bestThirds, groupStageComplete);
+          const accent = rowAccent(pos, row.team, bestThirds, groupStageComplete);
 
           return (
             <Fragment key={row.team}>
               <div
                 className={`flex items-center py-2 ${sep} ${bg} ${accent} ${dim}`}
               >
-                {posBadge(pos)}
+                {posBadge(pos, row.team, bestThirds, groupStageComplete)}
               </div>
               <div
                 className={`flex min-w-0 items-center gap-2 overflow-hidden py-2 ${sep} ${bg} ${dim}`}
@@ -402,7 +461,10 @@ function GroupTable({
 
 // ── Legend ────────────────────────────────────────────────────────────────────
 
-function StandingsLegend({ t }: Readonly<{ t: (k: string) => string }>) {
+function StandingsLegend({
+  t,
+  groupStageComplete,
+}: Readonly<{ t: (k: string) => string; groupStageComplete: boolean }>) {
   return (
     <div className="flex flex-wrap items-center gap-4 text-xs text-text-muted">
       <span className="flex items-center gap-1.5">
@@ -411,7 +473,9 @@ function StandingsLegend({ t }: Readonly<{ t: (k: string) => string }>) {
       </span>
       <span className="flex items-center gap-1.5">
         <span className="h-2.5 w-2.5 rounded-sm bg-amber-500/40 ring-1 ring-amber-500/50" />
-        {t("standings.legendMaybe")}
+        {groupStageComplete
+          ? t("standings.legendBestThird")
+          : t("standings.legendMaybe")}
       </span>
       <span className="flex items-center gap-1.5">
         <span className="h-2.5 w-2.5 rounded-sm bg-white/10 ring-1 ring-white/15" />
@@ -436,6 +500,8 @@ export function GroupStandingsSection() {
   const groups = data?.matches ? buildGroupStandings(data.matches) : null;
 
   const groupKeys = groups ? Object.keys(groups) : [];
+  const groupStageComplete = groups ? isGroupStageComplete(groups) : false;
+  const bestThirds = groups ? getBestEightThirds(groups) : new Set<string>();
 
   return (
     <section className="px-4 py-16 bg-white/[0.012]">
@@ -467,7 +533,7 @@ export function GroupStandingsSection() {
 
         {groups && groupKeys.length > 0 && (
           <>
-            <StandingsLegend t={t} />
+            <StandingsLegend t={t} groupStageComplete={groupStageComplete} />
             <HorizontalCarousel
               itemWidth="w-[520px]"
               gap="gap-4"
@@ -482,6 +548,8 @@ export function GroupStandingsSection() {
                   rows={groups[g]}
                   t={t}
                   locale={locale}
+                  bestThirds={bestThirds}
+                  groupStageComplete={groupStageComplete}
                 />
               ))}
             </HorizontalCarousel>

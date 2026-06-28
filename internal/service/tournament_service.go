@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -11,6 +12,14 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
+
+// BestThirdAssignment records one of the 8 best-third-place bracket slot
+// confirmations produced by AutoConfirmBestThirdSlots.
+type BestThirdAssignment struct {
+	SlotLabel string
+	Group     string
+	Team      string
+}
 
 // TournamentService manages real-time group standings and bracket slot
 // administration for the FIFA World Cup.
@@ -57,6 +66,14 @@ type TournamentService interface {
 	// AutoConfirmMatchResultSlots. Per-slot errors are logged and skipped; the
 	// method always returns nil so startup is not blocked.
 	BackfillSlots(ctx context.Context) error
+	// AutoConfirmBestThirdSlots ranks all 12 group-stage third-placed teams by
+	// FIFA criteria (points → GD → GF → team name), picks the 8 that advance,
+	// resolves the correct r32 "Mejor 3.°" slot for each via bipartite matching on
+	// the eligible-group sets encoded in each slot description, and confirms them.
+	// Returns Validation when the group stage is not yet fully complete.
+	// Returns the 8 assignments for audit display.
+	// Already-confirmed slots are skipped (idempotent for each slot).
+	AutoConfirmBestThirdSlots(ctx context.Context, adminID int) ([]BestThirdAssignment, error)
 	// ListTeamNames returns all registered team names sorted A → Z.
 	// Used to populate selection dropdowns in admin and prediction UIs.
 	ListTeamNames(ctx context.Context) ([]string, error)
@@ -384,6 +401,210 @@ func lessStanding(a, b *domain.GroupStanding) bool {
 // ListTeamNames returns all team names from the teams table sorted A → Z.
 func (s *tournamentService) ListTeamNames(ctx context.Context) ([]string, error) {
 	return s.teamRepo.ListTeamNames(ctx)
+}
+
+// AutoConfirmBestThirdSlots implements TournamentService.
+func (s *tournamentService) AutoConfirmBestThirdSlots(ctx context.Context, adminID int) ([]BestThirdAssignment, error) {
+	groupMatches, err := s.matchRepo.ListByPhase(ctx, domain.PhaseGroupStage)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkGroupStageComplete(groupMatches); err != nil {
+		return nil, err
+	}
+
+	winPoints := s.params.GetInt(ctx, domain.ParamKeyTournamentWinPoints, domain.StandingsWinPoints)
+	thirds := extractTopEightThirds(buildStandings(groupMatches, winPoints))
+
+	allSlots, err := s.tournamentRepo.ListSlots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	thirdSlots := filterBestThirdSlots(allSlots)
+
+	assignment, ok := matchBestThirdsToSlots(thirdSlots, thirds)
+	if !ok {
+		return nil, apperrors.Internal(fmt.Errorf("could not resolve best-third slot assignment; slot eligible-group data may be inconsistent"))
+	}
+
+	var results []BestThirdAssignment
+	for _, ts := range thirdSlots {
+		team, mapped := assignment[ts.id]
+		if !mapped {
+			continue
+		}
+		if !ts.alreadyDone {
+			if _, err := s.tournamentRepo.ConfirmSlot(ctx, ts.id, adminID, team); err != nil {
+				s.log.Warn("best-third auto-confirm: slot confirmation failed",
+					zap.String("label", ts.label),
+					zap.String("team", team),
+					zap.Error(err),
+				)
+				continue
+			}
+		}
+		results = append(results, BestThirdAssignment{SlotLabel: ts.label, Group: groupForTeam(thirds, team), Team: team})
+	}
+	return results, nil
+}
+
+// checkGroupStageComplete returns a validation error if any group-stage match is
+// still pending. Called by AutoConfirmBestThirdSlots before building standings.
+func checkGroupStageComplete(matches []*domain.Match) error {
+	for _, m := range matches {
+		if m.Status != domain.MatchStatusFinished && m.Status != domain.MatchStatusCancelled {
+			return apperrors.Validation("group stage is not yet complete; all group-stage matches must be finished before confirming best third-place slots")
+		}
+	}
+	return nil
+}
+
+// extractTopEightThirds collects the 3rd-placed team from each group in allStandings,
+// sorts them by FIFA criteria (pts → GD → GF → name), and returns the top 8.
+func extractTopEightThirds(allStandings map[string][]*domain.GroupStanding) []*domain.GroupStanding {
+	var thirds []*domain.GroupStanding
+	for _, rows := range allStandings {
+		if len(rows) >= 3 {
+			thirds = append(thirds, rows[2])
+		}
+	}
+	sort.Slice(thirds, func(i, j int) bool { return lessStanding(thirds[i], thirds[j]) })
+	if len(thirds) > 8 {
+		thirds = thirds[:8]
+	}
+	return thirds
+}
+
+// filterBestThirdSlots returns the subset of allSlots whose description starts
+// with "Mejor 3.°" and whose eligible-group set is non-empty. Slots that were
+// already auto-confirmed (AutoSource != nil) are skipped.
+func filterBestThirdSlots(allSlots []*domain.TournamentSlot) []thirdSlotEntry {
+	var result []thirdSlotEntry
+	for _, slot := range allSlots {
+		if slot.AutoSource != nil || !strings.HasPrefix(slot.Description, "Mejor 3.°") {
+			continue
+		}
+		eligible := parseBestThirdEligibleGroups(slot.Description)
+		if len(eligible) == 0 {
+			continue
+		}
+		result = append(result, thirdSlotEntry{
+			id:             slot.ID,
+			label:          slot.Label,
+			eligibleGroups: eligible,
+			alreadyDone:    slot.Team != nil,
+		})
+	}
+	return result
+}
+
+// groupForTeam returns the group letter of team within thirds, or "" if not found.
+func groupForTeam(thirds []*domain.GroupStanding, team string) string {
+	for _, t := range thirds {
+		if t.Team == team {
+			return t.Group
+		}
+	}
+	return ""
+}
+
+// parseBestThirdEligibleGroups extracts eligible group letters from a slot
+// description of the form "Mejor 3.° (A/B/C/D/F)" → {"A":true, "B":true, …}.
+func parseBestThirdEligibleGroups(desc string) map[string]bool {
+	open := strings.Index(desc, "(")
+	close := strings.LastIndex(desc, ")")
+	if open < 0 || close <= open {
+		return nil
+	}
+	inner := desc[open+1 : close]
+	parts := strings.Split(inner, "/")
+	groups := make(map[string]bool, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			groups[p] = true
+		}
+	}
+	return groups
+}
+
+// thirdSlotEntry is a local type used in bipartite matching.
+type thirdSlotEntry struct {
+	id             int
+	label          string
+	eligibleGroups map[string]bool
+	alreadyDone    bool
+}
+
+// bipartiteMatcher holds the state for a DFS augmenting-path matching.
+// Using a struct (rather than a closure) keeps the augment method at
+// package level, which reduces the cognitive complexity of the calling function.
+type bipartiteMatcher struct {
+	adj        [][]int // adj[slotIdx] = eligible team indices
+	teamToSlot []int   // teamToSlot[teamIdx] = assigned slot index, -1 if free
+}
+
+// augment attempts to find an augmenting path for slotIdx via DFS.
+func (bm *bipartiteMatcher) augment(slotIdx int, visited []bool) bool {
+	for _, teamIdx := range bm.adj[slotIdx] {
+		if visited[teamIdx] {
+			continue
+		}
+		visited[teamIdx] = true
+		if bm.teamToSlot[teamIdx] == -1 || bm.augment(bm.teamToSlot[teamIdx], visited) {
+			bm.teamToSlot[teamIdx] = slotIdx
+			return true
+		}
+	}
+	return false
+}
+
+// buildBestThirdAdjacency returns an adjacency list: for each slot index i,
+// the list of team indices j whose group is in the slot's eligible-group set.
+func buildBestThirdAdjacency(slots []thirdSlotEntry, teams []*domain.GroupStanding) [][]int {
+	adj := make([][]int, len(slots))
+	for i, s := range slots {
+		for j, t := range teams {
+			if s.eligibleGroups[t.Group] {
+				adj[i] = append(adj[i], j)
+			}
+		}
+	}
+	return adj
+}
+
+// matchBestThirdsToSlots runs a DFS augmenting-path bipartite matching to
+// assign each of the 8 advancing third-place teams to exactly one r32 slot.
+// Returns map[slotID]teamName, or (nil, false) when no perfect matching exists.
+func matchBestThirdsToSlots(slots []thirdSlotEntry, teams []*domain.GroupStanding) (map[int]string, bool) {
+	n := len(slots)
+	m := len(teams)
+	if n == 0 || m == 0 {
+		return map[int]string{}, true
+	}
+	bm := &bipartiteMatcher{
+		adj:        buildBestThirdAdjacency(slots, teams),
+		teamToSlot: make([]int, m),
+	}
+	for i := range bm.teamToSlot {
+		bm.teamToSlot[i] = -1
+	}
+	matched := 0
+	for i := 0; i < n; i++ {
+		if bm.augment(i, make([]bool, m)) {
+			matched++
+		}
+	}
+	if matched != n {
+		return nil, false
+	}
+	result := make(map[int]string, n)
+	for teamIdx, slotIdx := range bm.teamToSlot {
+		if slotIdx >= 0 && teamIdx < len(teams) {
+			result[slots[slotIdx].id] = teams[teamIdx].Team
+		}
+	}
+	return result, true
 }
 
 var _ TournamentService = (*tournamentService)(nil)

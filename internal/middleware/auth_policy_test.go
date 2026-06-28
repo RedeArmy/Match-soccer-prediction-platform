@@ -160,3 +160,73 @@ func TestPolicyProvider_InnerProviderError_Propagated(t *testing.T) {
 		t.Fatalf("expected inner ErrProviderUnavailable to propagate, got %v", err)
 	}
 }
+
+// ── SessionStartedAt (fva-derived) max-age tests ─────────────────────────────
+
+// TestPolicyProvider_OldSession_FreshJWT_RejectsWithInvalidToken is the
+// regression test for the bug where sessions older than max-age were NOT
+// rejected because IssuedAt was used instead of SessionStartedAt.
+// In production, Clerk refreshes JWTs every ~60 s: IssuedAt is always recent
+// even for a 24-hour-old session. SessionStartedAt (derived from fva[0]) is
+// stable across refreshes and correctly reflects the session origin.
+func TestPolicyProvider_OldSession_FreshJWT_RejectsWithInvalidToken(t *testing.T) {
+	claims := auth.Claims{
+		Subject:          "user_abc",
+		IssuedAt:         time.Now(),                     // JWT just refreshed — very recent
+		SessionStartedAt: time.Now().Add(-6 * time.Hour), // but session started 6 h ago
+		SessionID:        "sid_old_session",
+	}
+	p := makePolicyProvider(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		18000, // max_age = 5 hours; session is 6 h old → must reject
+	)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken for session older than max-age, got %v", err)
+	}
+}
+
+// TestPolicyProvider_FreshSession_FreshJWT_Passes verifies that a session
+// within the max-age window is not rejected, even with SessionStartedAt set.
+func TestPolicyProvider_FreshSession_FreshJWT_Passes(t *testing.T) {
+	claims := auth.Claims{
+		Subject:          "user_abc",
+		IssuedAt:         time.Now(),
+		SessionStartedAt: time.Now().Add(-1 * time.Hour), // 1 h old, within 5 h max-age
+		SessionID:        "sid_active",
+	}
+	p := makePolicyProvider(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		18000, // max_age = 5 hours
+	)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if err != nil {
+		t.Fatalf("expected no error for active session within max-age, got %v", err)
+	}
+}
+
+// TestPolicyProvider_ZeroSessionStartedAt_FallsBackToIssuedAt verifies that
+// tokens without fva (e.g. test tokens, non-Clerk providers) fall back to
+// IssuedAt for max-age enforcement so existing behaviour is preserved.
+func TestPolicyProvider_ZeroSessionStartedAt_FallsBackToIssuedAt(t *testing.T) {
+	claims := auth.Claims{
+		Subject:          "user_abc",
+		IssuedAt:         time.Now().Add(-2 * time.Hour), // old JWT, no fva
+		SessionStartedAt: time.Time{},                    // zero → fallback
+		SessionID:        "sid_no_fva",
+	}
+	p := makePolicyProvider(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		3600, // max_age = 1 h; IssuedAt is 2 h ago → must reject
+	)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken when falling back to IssuedAt, got %v", err)
+	}
+}
