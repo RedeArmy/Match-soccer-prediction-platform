@@ -186,16 +186,17 @@ type QuinielaRoundEntry struct {
 // predictions are included. Collapsing both cases into the integer 0 would
 // introduce a subtle ranking bug that only manifests after kick-off.
 type Prediction struct {
-	ID                 int
-	UserID             int
-	MatchID            int
-	HomeScore          int
-	AwayScore          int
-	PredictedWinMethod *WinMethod // optional; nil means no win-method prediction was submitted
-	Points             *int
-	ScoredAt           *time.Time // nil until ScoreMatch sets points for the first time
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	ID                     int
+	UserID                 int
+	MatchID                int
+	HomeScore              int
+	AwayScore              int
+	PredictedWinMethod     *WinMethod // optional; nil means no win-method prediction was submitted
+	PredictedPenaltyWinner *string    // "home" or "away"; set only when PredictedWinMethod is penalties
+	Points                 *int
+	ScoredAt               *time.Time // nil until ScoreMatch sets points for the first time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 // PredictionScoreLog is an immutable audit record written each time ScoreMatch

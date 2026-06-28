@@ -377,7 +377,13 @@ class APIClient {
 
   submitPrediction(
     token: string,
-    data: { match_id: number; home_score: number; away_score: number },
+    data: {
+      match_id: number;
+      home_score: number;
+      away_score: number;
+      predicted_win_method?: string;
+      predicted_penalty_winner?: string;
+    },
   ): Promise<PredictionResponse> {
     return this.request(
       "/api/v1/predictions",
@@ -389,7 +395,12 @@ class APIClient {
   updatePrediction(
     token: string,
     id: number,
-    data: { home_score: number; away_score: number },
+    data: {
+      home_score: number;
+      away_score: number;
+      predicted_win_method?: string;
+      predicted_penalty_winner?: string;
+    },
   ): Promise<PredictionResponse> {
     return this.request(
       `/api/v1/predictions/${id}`,

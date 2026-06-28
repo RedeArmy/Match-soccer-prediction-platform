@@ -7334,6 +7334,15 @@ const docTemplate = `{
                 "kickoff_at": {
                     "type": "string"
                 },
+                "penalty_away_score": {
+                    "type": "integer"
+                },
+                "penalty_home_score": {
+                    "type": "integer"
+                },
+                "period": {
+                    "type": "string"
+                },
                 "phase": {
                     "type": "string"
                 },
@@ -7646,6 +7655,9 @@ const docTemplate = `{
                 },
                 "points": {
                     "type": "integer"
+                },
+                "predicted_penalty_winner": {
+                    "type": "string"
                 },
                 "predicted_win_method": {
                     "type": "string"
@@ -8511,6 +8523,9 @@ const docTemplate = `{
                 "match_id": {
                     "type": "integer"
                 },
+                "predicted_penalty_winner": {
+                    "type": "string"
+                },
                 "predicted_win_method": {
                     "type": "string"
                 }
@@ -8636,6 +8651,9 @@ const docTemplate = `{
                 "home_score": {
                     "type": "integer"
                 },
+                "predicted_penalty_winner": {
+                    "type": "string"
+                },
                 "predicted_win_method": {
                     "type": "string"
                 }
@@ -8649,6 +8667,9 @@ const docTemplate = `{
                 },
                 "home_score": {
                     "type": "integer"
+                },
+                "penalty_winner": {
+                    "type": "string"
                 },
                 "win_method": {
                     "type": "string"

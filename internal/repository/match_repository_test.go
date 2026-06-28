@@ -705,3 +705,57 @@ func TestMatchRepository_ListByGroupLabel_ExcludesOtherGroups(t *testing.T) {
 		t.Errorf("group B should return 0 matches when only group A seeded, got %d", len(got))
 	}
 }
+
+func TestMatchRepository_UpdateLiveProgress_PersistsFields(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	period := "PEN_LIVE"
+	penHome, penAway := 4, 3
+	if err := repo.UpdateLiveProgress(context.Background(), m.ID, &period, &penHome, &penAway); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Period == nil || *got.Period != period {
+		t.Errorf("Period: want %q, got %v", period, got.Period)
+	}
+	if got.PenaltyHomeScore == nil || *got.PenaltyHomeScore != penHome {
+		t.Errorf("PenaltyHomeScore: want %d, got %v", penHome, got.PenaltyHomeScore)
+	}
+	if got.PenaltyAwayScore == nil || *got.PenaltyAwayScore != penAway {
+		t.Errorf("PenaltyAwayScore: want %d, got %v", penAway, got.PenaltyAwayScore)
+	}
+}
+
+func TestMatchRepository_UpdateLiveProgress_ClearsFields(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	// Set values first.
+	period := "ET"
+	penHome, penAway := 2, 1
+	if err := repo.UpdateLiveProgress(context.Background(), m.ID, &period, &penHome, &penAway); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	// Clear period (match finished) but retain penalty tally.
+	if err := repo.UpdateLiveProgress(context.Background(), m.ID, nil, &penHome, &penAway); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+
+	got, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Period != nil {
+		t.Errorf("Period: want nil after clear, got %v", got.Period)
+	}
+	if got.PenaltyHomeScore == nil || *got.PenaltyHomeScore != penHome {
+		t.Errorf("PenaltyHomeScore: want %d, got %v", penHome, got.PenaltyHomeScore)
+	}
+}

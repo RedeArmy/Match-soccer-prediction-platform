@@ -26,7 +26,7 @@ import (
 // silent last-write-wins overwrites.
 type PredictionService interface {
 	Submit(ctx context.Context, prediction *domain.Prediction) (created bool, err error)
-	Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int, predictedWinMethod *domain.WinMethod) (*domain.Prediction, error)
+	Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int, predictedWinMethod *domain.WinMethod, predictedPenaltyWinner *string) (*domain.Prediction, error)
 	GetByUser(ctx context.Context, userID int) ([]*domain.Prediction, error)
 	// GetByUserAndQuiniela returns all predictions for userID scoped to the
 	// given quiniela. It delegates the membership gate to the repository layer
@@ -102,7 +102,7 @@ func (s *predictionService) Submit(ctx context.Context, prediction *domain.Predi
 // Update modifies the scores and optional win-method prediction on an existing
 // prediction subject to the same deadline rules as Submit. The caller must own
 // the prediction.
-func (s *predictionService) Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int, predictedWinMethod *domain.WinMethod) (*domain.Prediction, error) {
+func (s *predictionService) Update(ctx context.Context, callerUserID, id int, homeScore, awayScore int, predictedWinMethod *domain.WinMethod, predictedPenaltyWinner *string) (*domain.Prediction, error) {
 	pred, err := s.predRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -128,16 +128,19 @@ func (s *predictionService) Update(ctx context.Context, callerUserID, id int, ho
 	// the optimistic lock.
 	winMethodEqual := pred.PredictedWinMethod == predictedWinMethod ||
 		(pred.PredictedWinMethod != nil && predictedWinMethod != nil && *pred.PredictedWinMethod == *predictedWinMethod)
-	if pred.HomeScore == homeScore && pred.AwayScore == awayScore && winMethodEqual {
+	penaltyWinnerEqual := pred.PredictedPenaltyWinner == predictedPenaltyWinner ||
+		(pred.PredictedPenaltyWinner != nil && predictedPenaltyWinner != nil && *pred.PredictedPenaltyWinner == *predictedPenaltyWinner)
+	if pred.HomeScore == homeScore && pred.AwayScore == awayScore && winMethodEqual && penaltyWinnerEqual {
 		return pred, nil
 	}
 	updated := &domain.Prediction{
-		ID:                 pred.ID,
-		UserID:             pred.UserID,
-		MatchID:            pred.MatchID,
-		HomeScore:          homeScore,
-		AwayScore:          awayScore,
-		PredictedWinMethod: predictedWinMethod,
+		ID:                     pred.ID,
+		UserID:                 pred.UserID,
+		MatchID:                pred.MatchID,
+		HomeScore:              homeScore,
+		AwayScore:              awayScore,
+		PredictedWinMethod:     predictedWinMethod,
+		PredictedPenaltyWinner: predictedPenaltyWinner,
 	}
 	if err := domain.ValidatePrediction(updated, match.KickoffAt, s.clock.Now(), s.deadlineOffset(ctx)); err != nil {
 		return nil, err
@@ -146,6 +149,7 @@ func (s *predictionService) Update(ctx context.Context, callerUserID, id int, ho
 	pred.HomeScore = homeScore
 	pred.AwayScore = awayScore
 	pred.PredictedWinMethod = predictedWinMethod
+	pred.PredictedPenaltyWinner = predictedPenaltyWinner
 	if err := s.predRepo.UpdateIfUnchanged(ctx, pred, expectedUpdatedAt); err != nil {
 		return nil, err
 	}

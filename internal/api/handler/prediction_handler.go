@@ -26,17 +26,19 @@ func NewPredictionHandler(svc service.PredictionService, log *zap.Logger) *Predi
 // PredictedWinMethod is optional; when provided for a knockout match it must be
 // one of: "normal", "extra_time", "penalties".
 type submitPredictionRequest struct {
-	MatchID            int     `json:"match_id"`
-	HomeScore          int     `json:"home_score"`
-	AwayScore          int     `json:"away_score"`
-	PredictedWinMethod *string `json:"predicted_win_method"`
+	MatchID                int     `json:"match_id"`
+	HomeScore              int     `json:"home_score"`
+	AwayScore              int     `json:"away_score"`
+	PredictedWinMethod     *string `json:"predicted_win_method"`
+	PredictedPenaltyWinner *string `json:"predicted_penalty_winner"`
 }
 
 // updatePredictionRequest is the JSON body accepted by PATCH /api/v1/predictions/{id}.
 type updatePredictionRequest struct {
-	HomeScore          int     `json:"home_score"`
-	AwayScore          int     `json:"away_score"`
-	PredictedWinMethod *string `json:"predicted_win_method"`
+	HomeScore              int     `json:"home_score"`
+	AwayScore              int     `json:"away_score"`
+	PredictedWinMethod     *string `json:"predicted_win_method"`
+	PredictedPenaltyWinner *string `json:"predicted_penalty_winner"`
 }
 
 // Submit handles POST /api/v1/predictions.
@@ -81,11 +83,12 @@ func (h *PredictionHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		predictedWM = &wm
 	}
 	prediction := &domain.Prediction{
-		UserID:             caller.ID,
-		MatchID:            req.MatchID,
-		HomeScore:          req.HomeScore,
-		AwayScore:          req.AwayScore,
-		PredictedWinMethod: predictedWM,
+		UserID:                 caller.ID,
+		MatchID:                req.MatchID,
+		HomeScore:              req.HomeScore,
+		AwayScore:              req.AwayScore,
+		PredictedWinMethod:     predictedWM,
+		PredictedPenaltyWinner: req.PredictedPenaltyWinner,
 	}
 	created, err := h.svc.Submit(r.Context(), prediction)
 	if err != nil {
@@ -142,7 +145,7 @@ func (h *PredictionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		predictedWM = &wm
 	}
-	prediction, err := h.svc.Update(r.Context(), caller.ID, id, req.HomeScore, req.AwayScore, predictedWM)
+	prediction, err := h.svc.Update(r.Context(), caller.ID, id, req.HomeScore, req.AwayScore, predictedWM, req.PredictedPenaltyWinner)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return

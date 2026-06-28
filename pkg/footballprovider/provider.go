@@ -70,13 +70,15 @@ func (s FixtureStatus) IsCancelled() bool {
 // by the external API. Only the fields consumed by the sync worker are present;
 // additional raw data is discarded at the decode layer.
 type Fixture struct {
-	ExternalID int64
-	HomeTeam   string
-	AwayTeam   string
-	Status     FixtureStatus
-	HomeScore  int
-	AwayScore  int
-	KickoffUTC time.Time
+	ExternalID       int64
+	HomeTeam         string
+	AwayTeam         string
+	Status           FixtureStatus
+	HomeScore        int
+	AwayScore        int
+	KickoffUTC       time.Time
+	PenaltyHomeScore *int // non-nil during/after a penalty shootout
+	PenaltyAwayScore *int // non-nil during/after a penalty shootout
 }
 
 // Client is the interface every football data provider must satisfy.

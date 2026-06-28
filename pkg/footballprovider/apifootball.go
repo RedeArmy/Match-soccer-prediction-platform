@@ -59,6 +59,11 @@ type apiFixtureItem struct {
 	Fixture apiFixtureDetail `json:"fixture"`
 	Teams   apiTeams         `json:"teams"`
 	Goals   apiGoals         `json:"goals"`
+	Score   apiScore         `json:"score"`
+}
+
+type apiScore struct {
+	Penalty apiGoals `json:"penalty"`
 }
 
 type apiTeams struct {
@@ -204,13 +209,15 @@ func itemToFixture(item apiFixtureItem) *Fixture {
 		away = *item.Goals.Away
 	}
 	return &Fixture{
-		ExternalID: item.Fixture.ID,
-		HomeTeam:   item.Teams.Home.Name,
-		AwayTeam:   item.Teams.Away.Name,
-		Status:     status,
-		HomeScore:  home,
-		AwayScore:  away,
-		KickoffUTC: item.Fixture.Date.UTC(),
+		ExternalID:       item.Fixture.ID,
+		HomeTeam:         item.Teams.Home.Name,
+		AwayTeam:         item.Teams.Away.Name,
+		Status:           status,
+		HomeScore:        home,
+		AwayScore:        away,
+		KickoffUTC:       item.Fixture.Date.UTC(),
+		PenaltyHomeScore: item.Score.Penalty.Home,
+		PenaltyAwayScore: item.Score.Penalty.Away,
 	}
 }
 
