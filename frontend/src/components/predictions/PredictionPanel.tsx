@@ -778,36 +778,10 @@ function PredictionMatchCard({
 
   const buttonLabel = getButtonLabel(isPending, prediction !== undefined, t);
 
-  let articleClass = "border-white/10 bg-white/[0.025]";
-  if (isFinished) articleClass = "border-red-500/30 bg-red-500/[0.04]";
-  else if (isLive) articleClass = "border-green-500/30 bg-green-500/[0.04]";
-  else if (isPendingSync)
-    articleClass = "border-amber-500/30 bg-amber-500/[0.04]";
-
-  let statusBadge: ReactNode;
-  if (isLive) {
-    statusBadge = (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-300">
-        <span className="relative flex h-1.5 w-1.5 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
-        </span>
-        {t("predictions.liveLabel")}
-      </span>
-    );
-  } else if (isPendingSync) {
-    statusBadge = (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
-        <span className="relative flex h-1.5 w-1.5 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" />
-        </span>
-        {t("predictions.pendingSync")}
-      </span>
-    );
-  } else {
-    statusBadge = <StatusBadge status={match.status} size="sm" />;
-  }
+  const articleClass = matchCardClass(isFinished, isLive, isPendingSync);
+  const isKnockoutUnlocked =
+    match.phase !== null && match.phase !== "group_stage" && !locked;
+  const statusBadge = matchCardStatusBadge(isLive, isPendingSync, match.status, t);
 
   return (
     <article
@@ -895,70 +869,15 @@ function PredictionMatchCard({
           </div>
 
           {/* Win-method bonus UI — knockout phases only, unlocked matches */}
-          {match.phase !== "group_stage" && match.phase !== null && !locked &&
-            (draft.home === draft.away ? (
-              <div className="mt-3 flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-text-secondary">
-                  {t("predictions.penaltyWinner")}
-                </span>
-                <div className="flex gap-2">
-                  {(["home", "away"] as const).map((side) => {
-                    const label =
-                      side === "home"
-                        ? teamName(match.home_team)
-                        : teamName(match.away_team);
-                    const selected = draft.penaltyWinner === side;
-                    return (
-                      <button
-                        key={side}
-                        type="button"
-                        onClick={() => {
-                          setLocalError(null);
-                          onDraftChange({
-                            ...draft,
-                            penaltyWinner: side,
-                            winMethod: "penalties",
-                          });
-                        }}
-                        className={cn(
-                          "flex-1 rounded border px-2 py-1.5 text-xs font-medium transition-colors",
-                          selected
-                            ? "border-gold-400 bg-gold-400/20 text-gold-200"
-                            : "border-white/15 text-text-secondary hover:border-white/30 hover:text-white",
-                        )}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                {localError && (
-                  <p className="text-xs text-red-300">{localError}</p>
-                )}
-              </div>
-            ) : (
-              <div className="mt-3 flex items-center gap-2">
-                <input
-                  id={`et-${match.id}`}
-                  type="checkbox"
-                  checked={draft.winMethod === "extra_time"}
-                  onChange={(e) =>
-                    onDraftChange({
-                      ...draft,
-                      winMethod: e.target.checked ? "extra_time" : null,
-                      penaltyWinner: null,
-                    })
-                  }
-                  className="h-3.5 w-3.5 rounded accent-gold-400"
-                />
-                <label
-                  htmlFor={`et-${match.id}`}
-                  className="cursor-pointer text-xs text-text-secondary"
-                >
-                  {t("predictions.extraTime")}
-                </label>
-              </div>
-            ))}
+          {isKnockoutUnlocked && (
+            <WinMethodSelector
+              match={match}
+              draft={draft}
+              localError={localError}
+              onDraftChange={onDraftChange}
+              onClearError={() => setLocalError(null)}
+            />
+          )}
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -1002,12 +921,7 @@ function PredictionMatchCard({
               type="button"
               disabled={locked || isPending}
               onClick={() => {
-                if (
-                  match.phase !== "group_stage" &&
-                  match.phase !== null &&
-                  draft.home === draft.away &&
-                  !draft.penaltyWinner
-                ) {
+                if (isKnockoutUnlocked && draft.home === draft.away && !draft.penaltyWinner) {
                   setLocalError(t("predictions.selectPenaltyWinner"));
                   return;
                 }
@@ -1034,6 +948,122 @@ function PredictionMatchCard({
 }
 
 // ── Shared sub-components ──────────────────────────────────────────────────────
+
+function matchCardClass(isFinished: boolean, isLive: boolean, isPendingSync: boolean): string {
+  if (isFinished) return "border-red-500/30 bg-red-500/[0.04]";
+  if (isLive) return "border-green-500/30 bg-green-500/[0.04]";
+  if (isPendingSync) return "border-amber-500/30 bg-amber-500/[0.04]";
+  return "border-white/10 bg-white/[0.025]";
+}
+
+function matchCardStatusBadge(
+  isLive: boolean,
+  isPendingSync: boolean,
+  status: string,
+  t: (key: string) => string,
+): ReactNode {
+  if (isLive) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-green-300">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+        </span>
+        {t("predictions.liveLabel")}
+      </span>
+    );
+  }
+  if (isPendingSync) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-400" />
+        </span>
+        {t("predictions.pendingSync")}
+      </span>
+    );
+  }
+  return <StatusBadge status={status} size="sm" />;
+}
+
+interface WinMethodSelectorProps {
+  readonly match: MatchResponse;
+  readonly draft: DraftScores[number];
+  readonly localError: string | null;
+  readonly onDraftChange: (value: DraftScores[number]) => void;
+  readonly onClearError: () => void;
+}
+
+function WinMethodSelector({
+  match,
+  draft,
+  localError,
+  onDraftChange,
+  onClearError,
+}: WinMethodSelectorProps) {
+  const { t, teamName } = useI18n();
+
+  if (draft.home === draft.away) {
+    return (
+      <div className="mt-3 flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-text-secondary">
+          {t("predictions.penaltyWinner")}
+        </span>
+        <div className="flex gap-2">
+          {(["home", "away"] as const).map((side) => {
+            const label =
+              side === "home" ? teamName(match.home_team) : teamName(match.away_team);
+            const selected = draft.penaltyWinner === side;
+            return (
+              <button
+                key={side}
+                type="button"
+                onClick={() => {
+                  onClearError();
+                  onDraftChange({ ...draft, penaltyWinner: side, winMethod: "penalties" });
+                }}
+                className={cn(
+                  "flex-1 rounded border px-2 py-1.5 text-xs font-medium transition-colors",
+                  selected
+                    ? "border-gold-400 bg-gold-400/20 text-gold-200"
+                    : "border-white/15 text-text-secondary hover:border-white/30 hover:text-white",
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {localError && <p className="text-xs text-red-300">{localError}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <input
+        id={`et-${match.id}`}
+        type="checkbox"
+        checked={draft.winMethod === "extra_time"}
+        onChange={(e) =>
+          onDraftChange({
+            ...draft,
+            winMethod: e.target.checked ? "extra_time" : null,
+            penaltyWinner: null,
+          })
+        }
+        className="h-3.5 w-3.5 rounded accent-gold-400"
+      />
+      <label
+        htmlFor={`et-${match.id}`}
+        className="cursor-pointer text-xs text-text-secondary"
+      >
+        {t("predictions.extraTime")}
+      </label>
+    </div>
+  );
+}
 
 function normalizeGroup(group: string | null | undefined): GroupLabel | null {
   const value = group
