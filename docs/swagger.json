@@ -7331,6 +7331,15 @@
                 "kickoff_at": {
                     "type": "string"
                 },
+                "penalty_away_score": {
+                    "type": "integer"
+                },
+                "penalty_home_score": {
+                    "type": "integer"
+                },
+                "period": {
+                    "type": "string"
+                },
                 "phase": {
                     "type": "string"
                 },
@@ -7643,6 +7652,9 @@
                 },
                 "points": {
                     "type": "integer"
+                },
+                "predicted_penalty_winner": {
+                    "type": "string"
                 },
                 "predicted_win_method": {
                     "type": "string"
@@ -8508,6 +8520,9 @@
                 "match_id": {
                     "type": "integer"
                 },
+                "predicted_penalty_winner": {
+                    "type": "string"
+                },
                 "predicted_win_method": {
                     "type": "string"
                 }
@@ -8633,6 +8648,9 @@
                 "home_score": {
                     "type": "integer"
                 },
+                "predicted_penalty_winner": {
+                    "type": "string"
+                },
                 "predicted_win_method": {
                     "type": "string"
                 }
@@ -8646,6 +8664,9 @@
                 },
                 "home_score": {
                     "type": "integer"
+                },
+                "penalty_winner": {
+                    "type": "string"
                 },
                 "win_method": {
                     "type": "string"
