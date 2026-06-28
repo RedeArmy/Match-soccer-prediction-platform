@@ -833,3 +833,57 @@ func TestGoalDiff(t *testing.T) {
 		}
 	}
 }
+
+// ── winMethodBonus: penalty winner checks ─────────────────────────────────────
+
+func TestWinMethodBonus_WinMethodNormal_ReturnsZero(t *testing.T) {
+	normal := domain.WinMethodNormal
+	pred := &domain.Prediction{HomeScore: 1, AwayScore: 0, PredictedWinMethod: &normal}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 1, 0, &normal, nil, cfg)
+	// Exact score always awarded; win-method bonus for Normal is always 0.
+	want := cfg.exactScore
+	if got != want {
+		t.Errorf("WinMethodNormal: want %d, got %d", want, got)
+	}
+}
+
+func TestWinMethodBonus_Penalties_MatchingWinner_AwardsBonus(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	winner := "home"
+	pred := &domain.Prediction{HomeScore: 1, AwayScore: 1, PredictedWinMethod: &pen, PredictedPenaltyWinner: &winner}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	// Draw score (1-1 after 90 min) decided on penalties — home wins shootout.
+	got := calculatePoints(pred, 1, 1, &pen, &winner, cfg)
+	want := cfg.exactScore + cfg.penaltiesBonus
+	if got != want {
+		t.Errorf("matching penalty winner: want %d, got %d", want, got)
+	}
+}
+
+func TestWinMethodBonus_Penalties_WrongWinner_NoBonus(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	predWinner := "away"
+	actualWinner := "home"
+	pred := &domain.Prediction{HomeScore: 1, AwayScore: 1, PredictedWinMethod: &pen, PredictedPenaltyWinner: &predWinner}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 1, 1, &pen, &actualWinner, cfg)
+	// Exact score matches, win method matches, but winner predicted wrong → no bonus.
+	want := cfg.exactScore
+	if got != want {
+		t.Errorf("wrong penalty winner: want %d, got %d", want, got)
+	}
+}
+
+func TestWinMethodBonus_Penalties_NilPredWinner_HasActualWinner_NoBonus(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	actualWinner := "home"
+	pred := &domain.Prediction{HomeScore: 1, AwayScore: 1, PredictedWinMethod: &pen, PredictedPenaltyWinner: nil}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 1, 1, &pen, &actualWinner, cfg)
+	// Match recorded which team won but user did not predict a winner → no bonus.
+	want := cfg.exactScore
+	if got != want {
+		t.Errorf("nil pred winner with actual winner: want %d, got %d", want, got)
+	}
+}

@@ -875,4 +875,156 @@ describe("PredictionPanel", () => {
       screen.getByRole("button", { name: /Guardar prediccion/ }),
     ).toBeDisabled();
   });
-});
+
+  // ── Penalty shootout and extra-time bonus UI ──────────────────────────────
+
+  it("shows penalty winner selector for knockout draw prediction", async () => {
+    const koMatch = {
+      ...scheduledMatch,
+      id: 200,
+      home_team: "Germany",
+      away_team: "France",
+      phase: "round_of_16",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([koMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    // Default draft is 0-0 (draw) — penalty winner selector must appear.
+    expect(
+      await screen.findByText("Ganador en penales"),
+    ).toBeInTheDocument();
+    // Both team buttons are rendered inside the selector.
+    const buttons = await screen.findAllByText("Alemania");
+    expect(buttons.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("requires penalty winner before saving a knockout draw prediction", async () => {
+    const koMatch = {
+      ...scheduledMatch,
+      id: 201,
+      home_team: "Germany",
+      away_team: "France",
+      phase: "quarter_final",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([koMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    await screen.findAllByText("Alemania");
+
+    // Try to save without selecting a penalty winner.
+    fireEvent.click(screen.getByRole("button", { name: /Guardar prediccion/ }));
+
+    expect(
+      await screen.findByText("Selecciona el ganador en penales antes de guardar."),
+    ).toBeInTheDocument();
+    expect(api.submitPrediction).not.toHaveBeenCalled();
+  });
+
+  it("shows extra-time checkbox for knockout non-draw prediction", async () => {
+    const koMatch = {
+      ...scheduledMatch,
+      id: 202,
+      home_team: "Brazil",
+      away_team: "Argentina",
+      phase: "semi_final",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([koMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    // Wait for match to appear.
+    await screen.findAllByText("Brasil");
+
+    // Change home score to 2 (non-draw 2-0) — extra time checkbox must appear.
+    const inputs = screen.getAllByRole("spinbutton");
+    fireEvent.change(inputs[0], { target: { value: "2" } });
+
+    expect(
+      await screen.findByText("Prórroga (tiempo extra)"),
+    ).toBeInTheDocument();
+    // Penalty winner selector must no longer be shown.
+    expect(
+      screen.queryByText("Ganador en penales"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows TIEMPO EXTRA badge during extra time (period=ET)", async () => {
+    const liveEtMatch = {
+      ...scheduledMatch,
+      id: 203,
+      home_team: "Spain",
+      away_team: "Portugal",
+      status: "in_progress",
+      kickoff_at: pastKickoff,
+      phase: "quarter_final",
+      group_label: null,
+      period: "ET",
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([liveEtMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    expect(
+      await screen.findByText("TIEMPO EXTRA"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows PENALES badge during penalty shootout (period=PEN_LIVE)", async () => {
+    const livePenMatch = {
+      ...scheduledMatch,
+      id: 204,
+      home_team: "Italy",
+      away_team: "Netherlands",
+      status: "in_progress",
+      kickoff_at: pastKickoff,
+      phase: "semi_final",
+      group_label: null,
+      period: "PEN_LIVE",
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([livePenMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    expect(
+      await screen.findByText("PENALES"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows shootout tally when penalty_home_score is set", async () => {
+    const finishedPenMatch = {
+      ...scheduledMatch,
+      id: 205,
+      home_team: "Croatia",
+      away_team: "Morocco",
+      status: "finished",
+      home_score: 1,
+      away_score: 1,
+      penalty_home_score: 4,
+      penalty_away_score: 2,
+      phase: "quarter_final",
+      group_label: null,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([finishedPenMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    // Switch to past filter to see the finished match.
+    fireEvent.click(screen.getByRole("button", { name: "Pasados" }));
+
+    // "Pen 4 – 2" tally rendered as one span with nbsp separators.
+    expect(await screen.findByText(/^Pen\s/)).toBeInTheDocument();
+  });
+}); // end describe(PredictionPanel)

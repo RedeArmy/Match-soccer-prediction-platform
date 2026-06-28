@@ -17,19 +17,21 @@ import (
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type stubSyncMatchRepo struct {
-	candidates       []*domain.Match
-	linkCalled       bool
-	unlinkCalled     bool
-	updateSyncAt     int
-	linkErr          error
-	candidatesErr    error
-	kickoffErr       error
-	updateErr        error
-	updateCount      int
-	updatedMatch     *domain.Match
-	findByTeamsMatch *domain.Match
-	findByTeamsErr   error
-	linkCalledCount  int
+	candidates             []*domain.Match
+	linkCalled             bool
+	unlinkCalled           bool
+	updateSyncAt           int
+	linkErr                error
+	candidatesErr          error
+	kickoffErr             error
+	updateErr              error
+	updateCount            int
+	updatedMatch           *domain.Match
+	findByTeamsMatch       *domain.Match
+	findByTeamsErr         error
+	linkCalledCount        int
+	updateLiveProgressErr  error
+	updateLiveProgressHits int
 	// findByTeamsResponses, when non-nil, is consumed sequentially: the first
 	// call returns index 0, the second returns index 1, and so on.  When the
 	// slice is exhausted the last entry is repeated.  This lets tests exercise
@@ -95,7 +97,8 @@ func (r *stubSyncMatchRepo) ListByGroupLabel(_ context.Context, _ string) ([]*do
 	return nil, nil
 }
 func (r *stubSyncMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *string, _, _ *int) error {
-	return nil
+	r.updateLiveProgressHits++
+	return r.updateLiveProgressErr
 }
 
 type stubSyncMatchSvc struct {
@@ -1408,5 +1411,116 @@ func TestMatchSync_DailyFixtureSync_NilDateRange_DeduplicatesAutoLink(t *testing
 
 	if repo.linkCalledCount != 1 {
 		t.Errorf("LinkExternal calls: want 1 (dedup), got %d", repo.linkCalledCount)
+	}
+}
+
+// ── UpdateLiveProgress error paths ────────────────────────────────────────────
+
+func TestMatchSync_PollAndApply_LiveMatchWritesPeriodAndPenaltyScore(t *testing.T) {
+	// applyLiveScore stores the raw period code and penalty shootout tally in
+	// the repository so the API can surface them to the frontend.
+	id := int64(800)
+	candidate := &domain.Match{
+		ID: 80, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-1 * time.Hour),
+	}
+	penHome, penAway := 3, 2
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID:       id,
+		Status:           footballprovider.StatusPenLive,
+		HomeScore:        1,
+		AwayScore:        1,
+		PenaltyHomeScore: &penHome,
+		PenaltyAwayScore: &penAway,
+	}}
+	svc := buildSyncSvc(repo, &stubSyncMatchSvc{}, provider)
+
+	_, err := svc.PollAndApply(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.updatedMatch == nil {
+		t.Fatal("updatedMatch is nil")
+	}
+	if repo.updatedMatch.Period == nil || *repo.updatedMatch.Period != string(footballprovider.StatusPenLive) {
+		t.Errorf("Period: want %q, got %v", string(footballprovider.StatusPenLive), repo.updatedMatch.Period)
+	}
+	if repo.updatedMatch.PenaltyHomeScore == nil || *repo.updatedMatch.PenaltyHomeScore != penHome {
+		t.Errorf("PenaltyHomeScore: want %d, got %v", penHome, repo.updatedMatch.PenaltyHomeScore)
+	}
+	if repo.updatedMatch.PenaltyAwayScore == nil || *repo.updatedMatch.PenaltyAwayScore != penAway {
+		t.Errorf("PenaltyAwayScore: want %d, got %v", penAway, repo.updatedMatch.PenaltyAwayScore)
+	}
+}
+
+func TestMatchSync_PollAndApply_FinishedMatch_UpdateLiveProgressError_ContinuesWithoutFailing(t *testing.T) {
+	// applyResult calls UpdateLiveProgress to clear the period after a result is
+	// recorded. An error from that call must be logged and swallowed — the
+	// overall PollAndApply must still succeed.
+	id := int64(810)
+	candidate := &domain.Match{
+		ID: 81, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-2 * time.Hour),
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{
+		candidates:            []*domain.Match{candidate},
+		updateLiveProgressErr: errors.New("db timeout"),
+	}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusFullTime,
+		HomeScore:  2, AwayScore: 1,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.PollAndApply(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("PollAndApply must not propagate UpdateLiveProgress error: %v", err)
+	}
+	if matchSvc.finished != 1 {
+		t.Errorf("UpdateResult calls: want 1, got %d", matchSvc.finished)
+	}
+	if repo.updateLiveProgressHits != 1 {
+		t.Errorf("UpdateLiveProgress calls: want 1, got %d", repo.updateLiveProgressHits)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_FinishedMatch_UpdateLiveProgressError_ContinuesWithoutFailing(t *testing.T) {
+	// applyFinishedTransition calls UpdateLiveProgress after recording the
+	// result. An error must be logged and swallowed without aborting the sync.
+	id := int64(820)
+	candidate := &domain.Match{
+		ID: 82, Status: domain.MatchStatusScheduled,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-3 * time.Hour),
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{
+		candidates:            []*domain.Match{candidate},
+		updateLiveProgressErr: errors.New("network error"),
+	}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusFullTime,
+		HomeScore:  1, AwayScore: 0,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("DailyFixtureSync must not propagate UpdateLiveProgress error: %v", err)
+	}
+	if matchSvc.finished != 1 {
+		t.Errorf("UpdateResult calls: want 1, got %d", matchSvc.finished)
+	}
+	if repo.updateLiveProgressHits != 1 {
+		t.Errorf("UpdateLiveProgress calls: want 1, got %d", repo.updateLiveProgressHits)
 	}
 }

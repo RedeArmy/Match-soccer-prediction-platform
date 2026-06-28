@@ -13,10 +13,11 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 // Shallow-mock LoadingState so we don't need to resolve its full dep tree.
+// Use React.createElement instead of JSX — vi.mock factories are hoisted before
+// the JSX transform runs, so JSX syntax causes a parse error in that context.
 vi.mock("@/components/shared/LoadingState", () => ({
-  LoadingState: ({ rows }: { rows?: number }) => (
-    <div data-testid="loading-state" data-rows={rows} />
-  ),
+  LoadingState: ({ rows }: { rows?: number }) =>
+    React.createElement("div", { "data-testid": "loading-state", "data-rows": rows }),
 }));
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
@@ -1095,5 +1096,53 @@ describe("computeFeedInterval – idle (kickoff > 10 min away)", () => {
     expect(
       computeFeedInterval([fixture("NS", later), fixture("NS", soon)], NOW),
     ).toBe(2 * 60 * 1_000);
+  });
+});
+
+describe("LiveMatchFeed – EventIcon Missed Penalty", () => {
+  beforeEach(() =>
+    mockQueryWithDetail(70, [
+      {
+        elapsed: 75,
+        type: "Goal",
+        detail: "Missed Penalty",
+        player: "Suárez",
+        assist: "Cavani",
+        team: "Uruguay",
+      },
+    ]),
+  );
+
+  it("renders XCircle icon (not ⚽) for missed penalty events", async () => {
+    renderFeed();
+    fireEvent.click(screen.getByRole("button"));
+    // The ⚽ emoji must NOT appear — only an svg icon is rendered.
+    await waitFor(() =>
+      expect(screen.queryByText("⚽")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("shows player name styled in red for a missed penalty", async () => {
+    renderFeed();
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(screen.getByText("Suárez")).toBeInTheDocument());
+    const playerEl = screen.getByText("Suárez");
+    expect(playerEl.className).toMatch(/text-red/);
+  });
+
+  it("shows 'Penal fallado' label for missed penalty events", async () => {
+    renderFeed();
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() =>
+      expect(screen.getByText(/Penal fallado/)).toBeInTheDocument(),
+    );
+  });
+
+  it("suppresses the assist field for missed penalty events", async () => {
+    renderFeed();
+    fireEvent.click(screen.getByRole("button"));
+    await waitFor(() => expect(screen.getByText("Suárez")).toBeInTheDocument());
+    // Assist text must not appear — missed penalties don't show assistants.
+    expect(screen.queryByText("(Cavani)")).not.toBeInTheDocument();
   });
 });
