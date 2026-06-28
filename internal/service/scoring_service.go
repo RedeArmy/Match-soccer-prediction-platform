@@ -360,6 +360,8 @@ func winMethodBonus(predicted *domain.WinMethod, predPenaltyWinner *string, actu
 		return 0
 	}
 	switch *actual {
+	case domain.WinMethodNormal:
+		return 0
 	case domain.WinMethodExtraTime:
 		if *predicted == domain.WinMethodExtraTime {
 			return cfg.extraTimeBonus
