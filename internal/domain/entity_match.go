@@ -75,20 +75,24 @@ const (
 // ("A"-"L") for group-stage fixtures. It drives real-time standings
 // calculation without a separate teams table.
 type Match struct {
-	ID         int
-	HomeTeam   string
-	AwayTeam   string
-	HomeScore  *int
-	AwayScore  *int
-	Status     MatchStatus
-	Phase      MatchPhase
-	GroupLabel *string    // nil for knockout; "A"-"L" for group stage
-	WinMethod  *WinMethod // nil until match is finished; always nil for group-stage matches
-	StadiumID  *int
-	Stadium    *Stadium
-	KickoffAt  time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID               int
+	HomeTeam         string
+	AwayTeam         string
+	HomeScore        *int
+	AwayScore        *int
+	Status           MatchStatus
+	Phase            MatchPhase
+	GroupLabel       *string    // nil for knockout; "A"-"L" for group stage
+	WinMethod        *WinMethod // nil until match is finished; always nil for group-stage matches
+	PenaltyWinner    *string    // "home" or "away"; non-nil only when WinMethod is penalties
+	Period           *string    // raw API status short code while live ("ET", "PEN_LIVE", etc.); nil when not live
+	PenaltyHomeScore *int       // penalty-shootout tally; non-nil during/after PEN_LIVE
+	PenaltyAwayScore *int       // penalty-shootout tally; non-nil during/after PEN_LIVE
+	StadiumID        *int
+	Stadium          *Stadium
+	KickoffAt        time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 
 	// External sync fields — populated when the match has been linked to a
 	// provider fixture (e.g. API-Football). Both are nil for matches that are

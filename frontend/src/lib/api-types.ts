@@ -137,6 +137,9 @@ export interface MatchResponse {
   home_score: number | null;
   away_score: number | null;
   win_method: string | null;
+  period?: string | null;           // "ET" | "PEN_LIVE" | "1H" | "HT" | "2H" — null when not live
+  penalty_home_score?: number | null; // shootout tally; non-null during/after PEN_LIVE
+  penalty_away_score?: number | null; // shootout tally; non-null during/after PEN_LIVE
   status: MatchStatus;
   kickoff_at: string | null;
   stadium: StadiumInfo | null;
@@ -173,6 +176,8 @@ export interface PredictionResponse {
   match_id: number;
   home_score: number;
   away_score: number;
+  predicted_win_method?: string | null;
+  predicted_penalty_winner?: string | null;
   points: number | null;
   scored_at: string | null;
   created_at: string;

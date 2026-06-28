@@ -6,23 +6,26 @@ import "github.com/rede/world-cup-quiniela/internal/domain"
 // Domain entities are intentionally free of json tags, so this struct acts
 // as an explicit HTTP contract with snake_case field names.
 type MatchResponse struct {
-	ID              int              `json:"id"`
-	HomeTeam        string           `json:"home_team"`
-	AwayTeam        string           `json:"away_team"`
-	HomeScore       *int             `json:"home_score"`
-	AwayScore       *int             `json:"away_score"`
-	Status          string           `json:"status"`
-	Phase           string           `json:"phase"`
-	GroupLabel      *string          `json:"group_label,omitempty"`
-	WinMethod       *string          `json:"win_method,omitempty"`
-	StadiumID       *int             `json:"stadium_id"`
-	Stadium         *StadiumResponse `json:"stadium,omitempty"`
-	KickoffAt       string           `json:"kickoff_at"`
-	ExternalMatchID *int64           `json:"external_match_id,omitempty"`
-	CreatedAt       string           `json:"created_at"`
-	UpdatedAt       string           `json:"updated_at"`
-	HomeSlotID      *int             `json:"home_slot_id,omitempty"`
-	AwaySlotID      *int             `json:"away_slot_id,omitempty"`
+	ID               int              `json:"id"`
+	HomeTeam         string           `json:"home_team"`
+	AwayTeam         string           `json:"away_team"`
+	HomeScore        *int             `json:"home_score"`
+	AwayScore        *int             `json:"away_score"`
+	Status           string           `json:"status"`
+	Phase            string           `json:"phase"`
+	GroupLabel       *string          `json:"group_label,omitempty"`
+	WinMethod        *string          `json:"win_method,omitempty"`
+	Period           *string          `json:"period,omitempty"`
+	PenaltyHomeScore *int             `json:"penalty_home_score,omitempty"`
+	PenaltyAwayScore *int             `json:"penalty_away_score,omitempty"`
+	StadiumID        *int             `json:"stadium_id"`
+	Stadium          *StadiumResponse `json:"stadium,omitempty"`
+	KickoffAt        string           `json:"kickoff_at"`
+	ExternalMatchID  *int64           `json:"external_match_id,omitempty"`
+	CreatedAt        string           `json:"created_at"`
+	UpdatedAt        string           `json:"updated_at"`
+	HomeSlotID       *int             `json:"home_slot_id,omitempty"`
+	AwaySlotID       *int             `json:"away_slot_id,omitempty"`
 }
 
 // matchStatusToAPI maps domain status values to the API contract string.
@@ -37,19 +40,22 @@ func matchStatusToAPI(s domain.MatchStatus) string {
 
 func matchToResponse(m *domain.Match) MatchResponse {
 	resp := MatchResponse{
-		ID:              m.ID,
-		HomeTeam:        m.HomeTeam,
-		AwayTeam:        m.AwayTeam,
-		HomeScore:       m.HomeScore,
-		AwayScore:       m.AwayScore,
-		Status:          matchStatusToAPI(m.Status),
-		Phase:           string(m.Phase),
-		GroupLabel:      m.GroupLabel,
-		StadiumID:       m.StadiumID,
-		KickoffAt:       m.KickoffAt.Format(timeFormat),
-		ExternalMatchID: m.ExternalMatchID,
-		CreatedAt:       m.CreatedAt.Format(timeFormat),
-		UpdatedAt:       m.UpdatedAt.Format(timeFormat),
+		ID:               m.ID,
+		HomeTeam:         m.HomeTeam,
+		AwayTeam:         m.AwayTeam,
+		HomeScore:        m.HomeScore,
+		AwayScore:        m.AwayScore,
+		Status:           matchStatusToAPI(m.Status),
+		Phase:            string(m.Phase),
+		GroupLabel:       m.GroupLabel,
+		Period:           m.Period,
+		PenaltyHomeScore: m.PenaltyHomeScore,
+		PenaltyAwayScore: m.PenaltyAwayScore,
+		StadiumID:        m.StadiumID,
+		KickoffAt:        m.KickoffAt.Format(timeFormat),
+		ExternalMatchID:  m.ExternalMatchID,
+		CreatedAt:        m.CreatedAt.Format(timeFormat),
+		UpdatedAt:        m.UpdatedAt.Format(timeFormat),
 	}
 	resp.HomeSlotID = m.HomeSlotID
 	resp.AwaySlotID = m.AwaySlotID

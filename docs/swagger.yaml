@@ -532,6 +532,12 @@ definitions:
         type: integer
       kickoff_at:
         type: string
+      penalty_away_score:
+        type: integer
+      penalty_home_score:
+        type: integer
+      period:
+        type: string
       phase:
         type: string
       stadium:
@@ -736,6 +742,8 @@ definitions:
         type: integer
       points:
         type: integer
+      predicted_penalty_winner:
+        type: string
       predicted_win_method:
         type: string
       updated_at:
@@ -1308,6 +1316,8 @@ definitions:
         type: integer
       match_id:
         type: integer
+      predicted_penalty_winner:
+        type: string
       predicted_win_method:
         type: string
     type: object
@@ -1388,6 +1398,8 @@ definitions:
         type: integer
       home_score:
         type: integer
+      predicted_penalty_winner:
+        type: string
       predicted_win_method:
         type: string
     type: object
@@ -1397,6 +1409,8 @@ definitions:
         type: integer
       home_score:
         type: integer
+      penalty_winner:
+        type: string
       win_method:
         type: string
     type: object

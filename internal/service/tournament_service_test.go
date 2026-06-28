@@ -60,6 +60,9 @@ func (r *stubMatchRepoTournament) UpdateKickoff(_ context.Context, _ int, _ time
 func (r *stubMatchRepoTournament) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domain.Match, error) {
 	return nil, r.err
 }
+func (r *stubMatchRepoTournament) UpdateLiveProgress(_ context.Context, _ int, _ *string, _, _ *int) error {
+	return nil
+}
 func (r *stubMatchRepoTournament) ListByGroupLabel(_ context.Context, _ string) ([]*domain.Match, error) {
 	return r.matches, r.err
 }

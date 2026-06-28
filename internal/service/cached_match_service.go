@@ -89,8 +89,8 @@ func (s *cachedMatchService) CreateMatch(ctx context.Context, match *domain.Matc
 // UpdateResult delegates to the inner service and invalidates relevant caches.
 // The phase list and all status lists are invalidated because the match has
 // transitioned from Live -> Finished; any cached Live or Finished list is stale.
-func (s *cachedMatchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error) {
-	m, err := s.inner.UpdateResult(ctx, id, homeScore, awayScore, winMethod)
+func (s *cachedMatchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string) (*domain.Match, error) {
+	m, err := s.inner.UpdateResult(ctx, id, homeScore, awayScore, winMethod, penaltyWinner)
 	if err != nil {
 		return nil, err
 	}
@@ -121,8 +121,8 @@ func (s *cachedMatchService) CancelMatch(ctx context.Context, id int) (*domain.M
 
 // CorrectResult delegates to the inner service and invalidates the same caches
 // as UpdateResult — the match stays Finished but its score changed.
-func (s *cachedMatchService) CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod) (*domain.Match, error) {
-	m, err := s.inner.CorrectResult(ctx, id, homeScore, awayScore, winMethod)
+func (s *cachedMatchService) CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string) (*domain.Match, error) {
+	m, err := s.inner.CorrectResult(ctx, id, homeScore, awayScore, winMethod, penaltyWinner)
 	if err != nil {
 		return nil, err
 	}

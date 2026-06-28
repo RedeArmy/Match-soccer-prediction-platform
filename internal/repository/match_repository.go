@@ -26,11 +26,11 @@ func NewPostgresMatchRepository(db *pgxpool.Pool) *PostgresMatchRepository {
 const errMatchNotFound = "match not found"
 
 // matchColumns is used in RETURNING clauses for INSERT/UPDATE (no table alias).
-const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, group_label, win_method, stadium_id, kickoff_at, created_at, updated_at, external_provider, external_match_id, last_synced_at, home_slot_id, away_slot_id, match_code"
+const matchColumns = "id, home_team, away_team, home_score, away_score, status, phase, group_label, win_method, penalty_winner, period, penalty_home_score, penalty_away_score, stadium_id, kickoff_at, created_at, updated_at, external_provider, external_match_id, last_synced_at, home_slot_id, away_slot_id, match_code"
 
 // matchReadColumns selects match + full stadium location hierarchy for read
 // queries that LEFT JOIN stadiums, cities, states, and countries.
-const matchReadColumns = "m.id, m.home_team, m.away_team, m.home_score, m.away_score, m.status, m.phase, m.group_label, m.win_method, m.stadium_id, m.kickoff_at, m.created_at, m.updated_at, m.external_provider, m.external_match_id, m.last_synced_at, m.home_slot_id, m.away_slot_id, m.match_code," +
+const matchReadColumns = "m.id, m.home_team, m.away_team, m.home_score, m.away_score, m.status, m.phase, m.group_label, m.win_method, m.penalty_winner, m.period, m.penalty_home_score, m.penalty_away_score, m.stadium_id, m.kickoff_at, m.created_at, m.updated_at, m.external_provider, m.external_match_id, m.last_synced_at, m.home_slot_id, m.away_slot_id, m.match_code," +
 	" s.id, s.name, s.capacity, ci.id, ci.name, st.id, st.name, st.code, co.id, co.name, co.code"
 
 const matchFromStadium = " FROM matches m" +
@@ -47,7 +47,9 @@ func matchScanDests(m *domain.Match) []any {
 	return []any{
 		&m.ID, &m.HomeTeam, &m.AwayTeam,
 		&m.HomeScore, &m.AwayScore,
-		&m.Status, &m.Phase, &m.GroupLabel, &m.WinMethod, &m.StadiumID, &m.KickoffAt,
+		&m.Status, &m.Phase, &m.GroupLabel, &m.WinMethod, &m.PenaltyWinner,
+		&m.Period, &m.PenaltyHomeScore, &m.PenaltyAwayScore,
+		&m.StadiumID, &m.KickoffAt,
 		&m.CreatedAt, &m.UpdatedAt,
 		&m.ExternalProvider, &m.ExternalMatchID, &m.LastSyncedAt,
 		&m.HomeSlotID, &m.AwaySlotID, &m.MatchCode,
@@ -277,15 +279,19 @@ func (r *PostgresMatchRepository) Update(ctx context.Context, m *domain.Match) e
 	row := r.db.QueryRow(ctx,
 		`UPDATE matches
 		 SET home_team=$1, away_team=$2, home_score=$3, away_score=$4,
-		     status=$5, phase=$6, group_label=$7, win_method=$8, stadium_id=$9, kickoff_at=$10, updated_at=NOW()
-		 WHERE id=$11
+		     status=$5, phase=$6, group_label=$7, win_method=$8, penalty_winner=$9,
+		     period=$10, penalty_home_score=$11, penalty_away_score=$12,
+		     stadium_id=$13, kickoff_at=$14, updated_at=NOW()
+		 WHERE id=$15
 		 RETURNING `+matchColumns,
 		// external_provider / external_match_id / last_synced_at are NOT updated
 		// here; they are managed exclusively via LinkExternal, UnlinkExternal,
 		// and UpdateSyncState to prevent the match-update path from accidentally
 		// clearing the provider link.
 		m.HomeTeam, m.AwayTeam, m.HomeScore, m.AwayScore,
-		m.Status, m.Phase, m.GroupLabel, m.WinMethod, m.StadiumID, m.KickoffAt, m.ID,
+		m.Status, m.Phase, m.GroupLabel, m.WinMethod, m.PenaltyWinner,
+		m.Period, m.PenaltyHomeScore, m.PenaltyAwayScore,
+		m.StadiumID, m.KickoffAt, m.ID,
 	)
 	result, err := scanMatch(row)
 	if err != nil {
@@ -295,6 +301,17 @@ func (r *PostgresMatchRepository) Update(ctx context.Context, m *domain.Match) e
 		return apperrors.NotFound(errMatchNotFound)
 	}
 	*m = *result
+	return nil
+}
+
+func (r *PostgresMatchRepository) UpdateLiveProgress(ctx context.Context, matchID int, period *string, penaltyHome, penaltyAway *int) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE matches SET period=$1, penalty_home_score=$2, penalty_away_score=$3, updated_at=NOW() WHERE id=$4`,
+		period, penaltyHome, penaltyAway, matchID,
+	)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
 	return nil
 }
 

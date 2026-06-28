@@ -96,8 +96,8 @@ func TestScoringRuleRepository_GetByPhase_FinalSeedValues(t *testing.T) {
 	if rule == nil {
 		t.Fatal("expected rule for final, got nil")
 	}
-	if rule.ExactScore != 15 || rule.CorrectOutcome != 8 || rule.GoalDifference != 3 {
-		t.Errorf("final seed: got %d/%d/%d, want 15/8/3",
+	if rule.ExactScore != 14 || rule.CorrectOutcome != 2 || rule.GoalDifference != 1 {
+		t.Errorf("final seed: got %d/%d/%d, want 14/2/1",
 			rule.ExactScore, rule.CorrectOutcome, rule.GoalDifference)
 	}
 	if rule.ExtraTimeBonus != 1 || rule.PenaltiesBonus != 2 {
