@@ -296,6 +296,12 @@ export interface TournamentSlotResponse {
   match_kickoff_at?: string | null;
 }
 
+export interface BestThirdAssignment {
+  slot_label: string;
+  group: string;
+  team: string;
+}
+
 // ── KYC ───────────────────────────────────────────────────────────────────────
 export type KYCStatus =
   | "unverified"

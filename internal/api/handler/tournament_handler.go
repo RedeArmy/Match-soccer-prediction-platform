@@ -108,6 +108,36 @@ func (h *TournamentHandler) CreateSlot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, slotToResponse(slot))
 }
 
+// BestThirdAssignmentResponse is the JSON shape for one best-3rd slot assignment.
+type BestThirdAssignmentResponse struct {
+	SlotLabel string `json:"slot_label"`
+	Group     string `json:"group"`
+	Team      string `json:"team"`
+}
+
+// ConfirmBestThirds handles POST /api/v1/tournament/slots/confirm-best-thirds.
+// Ranks the 12 group-stage third-placed teams, picks the best 8, resolves the
+// correct r32 slot for each via bipartite matching, and confirms them in bulk.
+// Returns Validation (400) when the group stage is not yet fully complete.
+// Only the system administrator may call this.
+func (h *TournamentHandler) ConfirmBestThirds(w http.ResponseWriter, r *http.Request) {
+	caller, ok := middleware.UserFromContext(r.Context())
+	if !ok {
+		writeError(w, r, h.log, apperrors.Unauthorised(msgAuthRequired))
+		return
+	}
+	assignments, err := h.svc.AutoConfirmBestThirdSlots(r.Context(), caller.ID)
+	if err != nil {
+		writeError(w, r, h.log, err)
+		return
+	}
+	resp := make([]BestThirdAssignmentResponse, len(assignments))
+	for i, a := range assignments {
+		resp[i] = BestThirdAssignmentResponse{SlotLabel: a.SlotLabel, Group: a.Group, Team: a.Team}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // ConfirmSlot handles PATCH /api/v1/tournament/slots/{id}.
 // Only the system administrator may call this (enforced by RequireRole middleware).
 func (h *TournamentHandler) ConfirmSlot(w http.ResponseWriter, r *http.Request) {

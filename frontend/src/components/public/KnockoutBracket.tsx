@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Trophy } from "lucide-react";
 import { useSlots } from "@/hooks/useSlots";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -83,23 +83,41 @@ function SlotRow({ slot }: SlotRowProps) {
 interface MatchPairProps {
   readonly home: TournamentSlotResponse | undefined;
   readonly away: TournamentSlotResponse | undefined;
+  readonly isFinal?: boolean;
 }
 
-function MatchPair({ home, away }: MatchPairProps) {
+function MatchPair({ home, away, isFinal }: MatchPairProps) {
   const kickoff = formatKickoff(
     home?.match_kickoff_at ?? away?.match_kickoff_at,
   );
   return (
-    <div className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
+    <div
+      className={cn(
+        "overflow-hidden rounded-lg border",
+        isFinal
+          ? "border-gold-600/30 bg-gold-600/[0.05]"
+          : "border-white/10 bg-white/[0.03]",
+      )}
+    >
       {kickoff && (
-        <div className="border-b border-white/5 px-3 pt-1.5 pb-0.5">
-          <span className="text-[10px] font-medium uppercase tracking-wide text-text-muted/60">
+        <div
+          className={cn(
+            "border-b px-3 pt-1.5 pb-0.5",
+            isFinal ? "border-gold-600/20" : "border-white/5",
+          )}
+        >
+          <span
+            className={cn(
+              "text-[10px] font-medium uppercase tracking-wide",
+              isFinal ? "text-gold-300/60" : "text-text-muted/60",
+            )}
+          >
             {kickoff}
           </span>
         </div>
       )}
       <SlotRow slot={home} />
-      <div className="h-px bg-white/10" />
+      <div className={cn("h-px", isFinal ? "bg-gold-600/20" : "bg-white/10")} />
       <SlotRow slot={away} />
     </div>
   );
@@ -108,6 +126,7 @@ function MatchPair({ home, away }: MatchPairProps) {
 interface PhaseAccordionProps {
   readonly labelKey: string;
   readonly slots: TournamentSlotResponse[];
+  readonly prefix: string;
   readonly t: (key: string) => string;
   readonly defaultOpen: boolean;
 }
@@ -115,11 +134,13 @@ interface PhaseAccordionProps {
 function PhaseAccordion({
   labelKey,
   slots,
+  prefix,
   t,
   defaultOpen,
 }: PhaseAccordionProps) {
   const [open, setOpen] = useState(defaultOpen);
 
+  const isFinal = prefix === "fin";
   const confirmedCount = slots.filter((s) => s.team !== null).length;
 
   const byMatch = new Map<
@@ -139,30 +160,63 @@ function PhaseAccordion({
     .map(([num, { a, b }]) => ({ num, home: a, away: b }));
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/10">
+    <div
+      className={cn(
+        "overflow-hidden rounded-xl border",
+        isFinal ? "border-gold-600/40 bg-gold-600/[0.02]" : "border-white/10",
+      )}
+    >
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
+        className={cn(
+          "flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors",
+          isFinal
+            ? "hover:bg-gold-600/[0.05]"
+            : "hover:bg-white/[0.03]",
+        )}
       >
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-white">{t(labelKey)}</span>
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] tabular-nums text-text-muted">
+          {isFinal && (
+            <Trophy className="h-4 w-4 shrink-0 text-gold-300" />
+          )}
+          <span
+            className={cn(
+              "font-semibold",
+              isFinal ? "text-gold-200" : "text-white",
+            )}
+          >
+            {t(labelKey)}
+          </span>
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[10px] tabular-nums",
+              isFinal
+                ? "bg-gold-600/20 text-gold-300"
+                : "bg-white/10 text-text-muted",
+            )}
+          >
             {confirmedCount}/{slots.length}
           </span>
         </div>
         <ChevronDown
           className={cn(
-            "h-4 w-4 shrink-0 text-text-muted transition-transform duration-200",
+            "h-4 w-4 shrink-0 transition-transform duration-200",
+            isFinal ? "text-gold-300/70" : "text-text-muted",
             open && "rotate-180",
           )}
         />
       </button>
 
       {open && (
-        <div className="grid grid-cols-1 gap-3 border-t border-white/10 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-3 border-t p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+            isFinal ? "border-gold-600/25" : "border-white/10",
+          )}
+        >
           {pairs.map(({ num, home, away }) => (
-            <MatchPair key={num} home={home} away={away} />
+            <MatchPair key={num} home={home} away={away} isFinal={isFinal} />
           ))}
         </div>
       )}
@@ -210,6 +264,7 @@ export function KnockoutBracket() {
               key={phase.prefix}
               labelKey={phase.labelKey}
               slots={byPhase.get(phase.prefix) ?? []}
+              prefix={phase.prefix}
               t={t}
               defaultOpen={idx === 0}
             />

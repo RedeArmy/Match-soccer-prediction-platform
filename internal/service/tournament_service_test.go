@@ -624,3 +624,219 @@ func TestTournamentService_ListTeamNames_PropagatesRepoError(t *testing.T) {
 		t.Fatal("expected error from team repo, got nil")
 	}
 }
+
+// ── parseBestThirdEligibleGroups ──────────────────────────────────────────────
+
+func TestParseBestThirdEligibleGroups_ValidDescription_ReturnsGroups(t *testing.T) {
+	got := parseBestThirdEligibleGroups("Mejor 3.° (A/B/C/D/F)")
+	want := map[string]bool{"A": true, "B": true, "C": true, "D": true, "F": true}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d groups, got %d: %v", len(want), len(got), got)
+	}
+	for k := range want {
+		if !got[k] {
+			t.Errorf("expected group %s to be eligible", k)
+		}
+	}
+}
+
+func TestParseBestThirdEligibleGroups_MissingParentheses_ReturnsNil(t *testing.T) {
+	if got := parseBestThirdEligibleGroups("Mejor 3.° without parens"); got != nil {
+		t.Errorf("expected nil, got %v", got)
+	}
+}
+
+func TestParseBestThirdEligibleGroups_EmptyString_ReturnsNil(t *testing.T) {
+	if got := parseBestThirdEligibleGroups(""); got != nil {
+		t.Errorf("expected nil for empty string, got %v", got)
+	}
+}
+
+// ── matchBestThirdsToSlots ────────────────────────────────────────────────────
+
+func TestMatchBestThirdsToSlots_PerfectBipartiteMatch(t *testing.T) {
+	// Slot 1 accepts A or C; slot 2 accepts A or B.
+	// Teams: A, B. Augmenting path: slot 2 initially wants A (taken by slot 1),
+	// then slot 1 re-routes to C — but C is not in teams, so slot 1 keeps A
+	// and slot 2 instead takes B.
+	slots := []thirdSlotEntry{
+		{id: 1, eligibleGroups: map[string]bool{"A": true, "C": true}},
+		{id: 2, eligibleGroups: map[string]bool{"A": true, "B": true}},
+	}
+	teams := []*domain.GroupStanding{
+		{Group: "A", Team: "TeamA"},
+		{Group: "B", Team: "TeamB"},
+	}
+	got, ok := matchBestThirdsToSlots(slots, teams)
+	if !ok {
+		t.Fatal("expected matching to succeed")
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 assignments, got %d", len(got))
+	}
+	if got[1] != "TeamA" {
+		t.Errorf("slot 1: want TeamA, got %s", got[1])
+	}
+	if got[2] != "TeamB" {
+		t.Errorf("slot 2: want TeamB, got %s", got[2])
+	}
+}
+
+func TestMatchBestThirdsToSlots_NoEligibleTeam_ReturnsFalse(t *testing.T) {
+	slots := []thirdSlotEntry{
+		{id: 1, eligibleGroups: map[string]bool{"X": true}},
+	}
+	teams := []*domain.GroupStanding{{Group: "A", Team: "TeamA"}}
+	_, ok := matchBestThirdsToSlots(slots, teams)
+	if ok {
+		t.Fatal("expected matching to fail when no eligible team exists")
+	}
+}
+
+func TestMatchBestThirdsToSlots_EmptyInputs_ReturnsEmptyMapOK(t *testing.T) {
+	got, ok := matchBestThirdsToSlots(nil, nil)
+	if !ok {
+		t.Fatal("expected ok=true for empty inputs")
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty map, got %v", got)
+	}
+}
+
+// ── AutoConfirmBestThirdSlots helpers ─────────────────────────────────────────
+
+// buildCompleteGroupStage creates finished group-stage matches for all 12 groups.
+// Groups A–H: 4-team round robin where T3 beats T4 → T3 gets 3 pts as 3rd place.
+// Groups I–L: 3 teams where T3 loses all matches → T3 gets 0 pts as 3rd place.
+// This guarantees the top-8 thirds are always from groups A–H.
+func buildCompleteGroupStage() []*domain.Match {
+	var matches []*domain.Match
+	for _, grp := range []string{"A", "B", "C", "D", "E", "F", "G", "H"} {
+		t1, t2, t3, t4 := grp+"1", grp+"2", grp+"3", grp+"4"
+		matches = append(matches,
+			finishedMatch(grp, t1, t2, 1, 0),
+			finishedMatch(grp, t1, t3, 1, 0),
+			finishedMatch(grp, t1, t4, 1, 0),
+			finishedMatch(grp, t2, t3, 1, 0),
+			finishedMatch(grp, t2, t4, 1, 0),
+			finishedMatch(grp, t3, t4, 1, 0), // T3 beats T4: 3 pts
+		)
+	}
+	for _, grp := range []string{"I", "J", "K", "L"} {
+		t1, t2, t3 := grp+"1", grp+"2", grp+"3"
+		matches = append(matches,
+			finishedMatch(grp, t1, t2, 1, 0),
+			finishedMatch(grp, t1, t3, 1, 0),
+			finishedMatch(grp, t2, t3, 1, 0), // T3 loses all: 0 pts
+		)
+	}
+	return matches
+}
+
+// bestThirdSlots returns the 8 r32 "Mejor 3.°" slots for the WC2026 bracket.
+func bestThirdSlots() []*domain.TournamentSlot {
+	return []*domain.TournamentSlot{
+		{ID: 1, Label: "r32_02_b", Description: "Mejor 3.° (A/B/C/D/F)"},
+		{ID: 2, Label: "r32_05_b", Description: "Mejor 3.° (C/D/F/G/H)"},
+		{ID: 3, Label: "r32_07_b", Description: "Mejor 3.° (C/E/F/H/I)"},
+		{ID: 4, Label: "r32_08_b", Description: "Mejor 3.° (E/H/I/J/K)"},
+		{ID: 5, Label: "r32_09_b", Description: "Mejor 3.° (B/E/F/I/J)"},
+		{ID: 6, Label: "r32_10_b", Description: "Mejor 3.° (A/E/H/I/J)"},
+		{ID: 7, Label: "r32_13_b", Description: "Mejor 3.° (E/F/G/I/J)"},
+		{ID: 8, Label: "r32_15_b", Description: "Mejor 3.° (D/E/I/J/L)"},
+	}
+}
+
+// ── AutoConfirmBestThirdSlots ─────────────────────────────────────────────────
+
+func TestAutoConfirmBestThirdSlots_GroupStageNotComplete_ReturnsValidation(t *testing.T) {
+	matches := []*domain.Match{
+		finishedMatch("A", "T1", "T2", 1, 0),
+		scheduledMatch("A", "T3", "T4"),
+	}
+	svc := newTournamentSvc(matches, &stubTournamentRepo{})
+	_, err := svc.AutoConfirmBestThirdSlots(context.Background(), 1)
+	if !errors.Is(err, apperrors.ErrValidation) {
+		t.Errorf("expected ErrValidation, got %v", err)
+	}
+}
+
+func TestAutoConfirmBestThirdSlots_MatchRepoError_Propagates(t *testing.T) {
+	svc := NewTournamentService(
+		&stubMatchRepoTournament{err: errors.New("db down")},
+		&stubTournamentRepo{},
+		&stubTeamRepo{},
+		&noopSystemParamService{},
+		&noopAuditLogger{},
+		zap.NewNop(),
+	)
+	_, err := svc.AutoConfirmBestThirdSlots(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error from match repo, got nil")
+	}
+}
+
+func TestAutoConfirmBestThirdSlots_SlotRepoError_Propagates(t *testing.T) {
+	matches := buildCompleteGroupStage()
+	repo := &stubTournamentRepo{err: errors.New("slot db down")}
+	svc := newTournamentSvc(matches, repo)
+	_, err := svc.AutoConfirmBestThirdSlots(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected error from slot repo, got nil")
+	}
+}
+
+func TestAutoConfirmBestThirdSlots_HappyPath_Returns8Assignments(t *testing.T) {
+	matches := buildCompleteGroupStage()
+	repo := &stubTournamentRepo{slots: bestThirdSlots()}
+	svc := newTournamentSvc(matches, repo)
+
+	results, err := svc.AutoConfirmBestThirdSlots(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 8 {
+		t.Fatalf("expected 8 assignments, got %d", len(results))
+	}
+	advancingGroups := map[string]bool{
+		"A": true, "B": true, "C": true, "D": true,
+		"E": true, "F": true, "G": true, "H": true,
+	}
+	for _, a := range results {
+		if !advancingGroups[a.Group] {
+			t.Errorf("slot %s: group %q should not advance", a.SlotLabel, a.Group)
+		}
+	}
+}
+
+func TestAutoConfirmBestThirdSlots_AlreadyConfirmedSlot_StillInResults(t *testing.T) {
+	matches := buildCompleteGroupStage()
+	slots := bestThirdSlots()
+	confirmed := "AlreadyConfirmed"
+	slots[0].Team = &confirmed // first slot already done — skips ConfirmSlot call
+	repo := &stubTournamentRepo{slots: slots}
+	svc := newTournamentSvc(matches, repo)
+
+	results, err := svc.AutoConfirmBestThirdSlots(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 8 {
+		t.Fatalf("expected 8 results (already-done slot still included), got %d", len(results))
+	}
+}
+
+func TestAutoConfirmBestThirdSlots_NoMatchingPossible_ReturnsInternal(t *testing.T) {
+	matches := buildCompleteGroupStage()
+	// Only slot eligible for groups I/J/K/L/M — top-8 thirds are from A–H, so matching fails.
+	slots := []*domain.TournamentSlot{
+		{ID: 1, Label: "r32_xx_b", Description: "Mejor 3.° (I/J/K/L/M)"},
+	}
+	repo := &stubTournamentRepo{slots: slots}
+	svc := newTournamentSvc(matches, repo)
+
+	_, err := svc.AutoConfirmBestThirdSlots(context.Background(), 1)
+	if !errors.Is(err, apperrors.ErrInternal) {
+		t.Errorf("expected ErrInternal, got %v", err)
+	}
+}

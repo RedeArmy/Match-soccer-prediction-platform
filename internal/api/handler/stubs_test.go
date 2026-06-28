@@ -306,6 +306,9 @@ func (s *stubTournamentSvc) BackfillSlots(_ context.Context) error { return s.er
 func (s *stubTournamentSvc) ListTeamNames(_ context.Context) ([]string, error) {
 	return s.teamNames, s.err
 }
+func (s *stubTournamentSvc) AutoConfirmBestThirdSlots(_ context.Context, _ int) ([]service.BestThirdAssignment, error) {
+	return nil, s.err
+}
 
 // stubMemberSvc implements service.GroupMembershipService with configurable returns.
 type stubMemberSvc struct {

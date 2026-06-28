@@ -42,9 +42,17 @@ type Claims struct {
 	// Subject is the identity-provider's opaque principal identifier (JWT "sub").
 	// For Clerk tokens this is the Clerk user_id (e.g. "user_2abc…").
 	Subject string
-	// IssuedAt is when the token was minted (JWT "iat"). Used by PolicyProvider
-	// to enforce a system-controlled maximum session age independently of Clerk.
+	// IssuedAt is when this specific JWT was minted (JWT "iat"). Clerk refreshes
+	// short-lived tokens (~60 s) automatically, so IssuedAt is always recent and
+	// must NOT be used alone for session-age enforcement.
 	IssuedAt time.Time
+	// SessionStartedAt is when the user's session was first authenticated.
+	// Derived from Clerk's "fva" (factors_verified_at) claim in v2 JWTs:
+	//   fva[0] = seconds-since-first-factor-verified relative to iat
+	//   SessionStartedAt = iat − fva[0]
+	// This value persists across JWT refreshes and correctly represents the
+	// session origin for max-age enforcement. Zero when fva is absent.
+	SessionStartedAt time.Time
 	// SessionID is the provider's session identifier (JWT "sid"). Used by
 	// PolicyProvider to check the local revocation blocklist on logout.
 	// Empty when the JWT does not carry a "sid" claim (e.g. test tokens).

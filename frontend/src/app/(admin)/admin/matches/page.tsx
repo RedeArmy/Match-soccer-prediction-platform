@@ -14,12 +14,14 @@ import {
   RefreshCw,
   ChevronDown,
   Search,
+  Sparkles,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
   MatchResponse,
   MatchStatus,
   TournamentSlotResponse,
+  BestThirdAssignment,
 } from "@/lib/api-types";
 import { cn, formatDateTime, formatRelative } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -572,6 +574,53 @@ function ConfirmSlotModal({
   );
 }
 
+// ── Confirm-best-thirds modal ─────────────────────────────────────────────────
+
+interface ConfirmBestThirdsModalProps {
+  readonly isBusy: boolean;
+  readonly error: string;
+  readonly onConfirm: () => void;
+  readonly onClose: () => void;
+}
+
+function ConfirmBestThirdsModal({
+  isBusy,
+  error,
+  onConfirm,
+  onClose,
+}: ConfirmBestThirdsModalProps) {
+  return (
+    <>
+      <ModalHeader title="Auto-Confirmar Mejores 3.° Lugar" onClose={onClose} />
+
+      <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+        <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+        <p className="text-amber-300 text-xs">
+          Esto clasificará automáticamente los <strong>8 mejores terceros</strong>{" "}
+          de la fase de grupos usando los criterios FIFA (Pts → DG → GF → nombre)
+          y los asignará a los slots r32 correspondientes. Requiere que{" "}
+          <strong>todos los 48 partidos de grupos estén terminados</strong>.
+          Los slots ya confirmados no serán sobreescritos.
+        </p>
+      </div>
+
+      <ModalErrorLine error={error} />
+
+      <div className="flex justify-end gap-3">
+        <ModalCancelButton onClose={onClose} disabled={isBusy} />
+        <button
+          onClick={onConfirm}
+          disabled={isBusy}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <Sparkles className="h-4 w-4" />
+          {isBusy ? "Procesando..." : "Confirmar automáticamente"}
+        </button>
+      </div>
+    </>
+  );
+}
+
 type SlotFilter = "all" | "pending" | "manual";
 
 const SLOT_FILTER_OPTIONS: { key: SlotFilter; label: string }[] = [
@@ -592,6 +641,11 @@ function BracketTab({ getToken }: BracketTabProps) {
   const [slotError, setSlotError] = useState("");
   const [page, setPage] = useState(1);
   const [slotFilter, setSlotFilter] = useState<SlotFilter>("all");
+  const [showBestThirdsModal, setShowBestThirdsModal] = useState(false);
+  const [bestThirdsError, setBestThirdsError] = useState("");
+  const [bestThirdsResult, setBestThirdsResult] = useState<
+    BestThirdAssignment[] | null
+  >(null);
 
   const {
     data: slots = [],
@@ -625,6 +679,25 @@ function BracketTab({ getToken }: BracketTabProps) {
     },
     onError: (e: unknown) => {
       setSlotError(e instanceof Error ? e.message : "Error al confirmar slot");
+    },
+  });
+
+  const bestThirdsMutation = useMutation({
+    mutationFn: async () => {
+      const token = await getToken();
+      return api.adminConfirmBestThirds(token!);
+    },
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ["admin", "slots"] });
+      void qc.invalidateQueries({ queryKey: ["tournament-slots"] });
+      setBestThirdsResult(data);
+      setShowBestThirdsModal(false);
+      setBestThirdsError("");
+    },
+    onError: (e: unknown) => {
+      setBestThirdsError(
+        e instanceof Error ? e.message : "Error al confirmar mejores terceros",
+      );
     },
   });
 
@@ -690,12 +763,51 @@ function BracketTab({ getToken }: BracketTabProps) {
       {manualPendingCount > 0 && (
         <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
           <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
-          <p className="text-amber-300 text-xs">
-            <strong>{manualPendingCount}</strong> slot
-            {manualPendingCount === 1 ? "" : "s"} de «Mejor 3.° lugar» sin
-            confirmar. Usa el filtro <em>Mejor 3.° manual</em> para acceder
-            directamente y confirma el equipo clasificado en cada posición.
-          </p>
+          <div className="flex-1 min-w-0">
+            <p className="text-amber-300 text-xs">
+              <strong>{manualPendingCount}</strong> slot
+              {manualPendingCount === 1 ? "" : "s"} de «Mejor 3.° lugar» sin
+              confirmar.
+            </p>
+            <button
+              onClick={() => {
+                setBestThirdsResult(null);
+                setBestThirdsError("");
+                setShowBestThirdsModal(true);
+              }}
+              className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-medium transition-colors"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Auto-Confirmar Mejores 3.°
+            </button>
+          </div>
+        </div>
+      )}
+
+      {bestThirdsResult && bestThirdsResult.length > 0 && (
+        <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 space-y-2">
+          <div className="flex items-center gap-2 text-green-300 text-xs font-medium">
+            <CheckCircle className="h-4 w-4 shrink-0" />
+            {bestThirdsResult.length} mejor
+            {bestThirdsResult.length === 1 ? "" : "es"} 3.° confirmado
+            {bestThirdsResult.length === 1 ? "" : "s"} automáticamente
+          </div>
+          <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
+            {bestThirdsResult.map((a) => (
+              <div
+                key={a.slot_label}
+                className="rounded-md bg-amber-500/10 border border-amber-500/20 px-2 py-1.5 text-xs"
+              >
+                <span className="font-mono text-[10px] text-white/40 block">
+                  {a.slot_label}
+                </span>
+                <span className="text-amber-300 font-medium">
+                  Grupo {a.group}
+                </span>
+                <span className="text-white/60 ml-1">— {a.team}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -861,6 +973,20 @@ function BracketTab({ getToken }: BracketTabProps) {
             onClose={() => {
               setConfirmSlot(null);
               setSlotError("");
+            }}
+          />
+        </AdminModalOverlay>
+      )}
+
+      {showBestThirdsModal && (
+        <AdminModalOverlay onClose={() => setShowBestThirdsModal(false)}>
+          <ConfirmBestThirdsModal
+            isBusy={bestThirdsMutation.isPending}
+            error={bestThirdsError}
+            onConfirm={() => bestThirdsMutation.mutate()}
+            onClose={() => {
+              setShowBestThirdsModal(false);
+              setBestThirdsError("");
             }}
           />
         </AdminModalOverlay>
