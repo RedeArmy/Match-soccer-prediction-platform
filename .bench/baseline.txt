@@ -1,218 +1,218 @@
 goos: linux
 goarch: amd64
 pkg: github.com/rede/world-cup-quiniela/internal/notification
-cpu: Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz
-BenchmarkPushDigestGate_BelowThreshold-2             	       1	     30623 ns/op	    1376 B/op	      12 allocs/op
-BenchmarkPushDigestGate_BelowThreshold-2             	       1	      9545 ns/op	     896 B/op	      11 allocs/op
-BenchmarkPushDigestGate_BelowThreshold-2             	       1	     22003 ns/op	     416 B/op	      10 allocs/op
-BenchmarkPushDigestGate_BelowThreshold-2             	       1	      5685 ns/op	     416 B/op	      10 allocs/op
-BenchmarkPushDigestGate_BelowThreshold-2             	       1	      6700 ns/op	     896 B/op	      11 allocs/op
-BenchmarkPushDigestGate_BelowThreshold-2             	       1	      5395 ns/op	     416 B/op	      10 allocs/op
-BenchmarkPushDigestGate_P0Bypass-2                   	       1	     13157 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_P0Bypass-2                   	       1	     15413 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_P0Bypass-2                   	       1	     11606 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_P0Bypass-2                   	       1	      5605 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_P0Bypass-2                   	       1	      5377 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_P0Bypass-2                   	       1	      5513 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_ManyUsers-2                  	       1	      6835 ns/op	     416 B/op	      10 allocs/op
-BenchmarkPushDigestGate_ManyUsers-2                  	       1	      5859 ns/op	     416 B/op	      10 allocs/op
-BenchmarkPushDigestGate_ManyUsers-2                  	       1	      6147 ns/op	     416 B/op	      10 allocs/op
-BenchmarkPushDigestGate_ManyUsers-2                  	       1	      7333 ns/op	     416 B/op	      10 allocs/op
-BenchmarkPushDigestGate_ManyUsers-2                  	       1	      6962 ns/op	     416 B/op	      10 allocs/op
-BenchmarkPushDigestGate_ManyUsers-2                  	       1	      8385 ns/op	     416 B/op	      10 allocs/op
-BenchmarkPushDigestGate_Prune-2                      	       1	   2305796 ns/op	  320000 B/op	   10000 allocs/op
-BenchmarkPushDigestGate_Prune-2                      	       1	   2063931 ns/op	  320000 B/op	   10000 allocs/op
-BenchmarkPushDigestGate_Prune-2                      	       1	   2052760 ns/op	  320000 B/op	   10000 allocs/op
-BenchmarkPushDigestGate_Prune-2                      	       1	   2329221 ns/op	  320000 B/op	   10000 allocs/op
-BenchmarkPushDigestGate_Prune-2                      	       1	   1969334 ns/op	  320000 B/op	   10000 allocs/op
-BenchmarkPushDigestGate_Prune-2                      	       1	   1995871 ns/op	  320000 B/op	   10000 allocs/op
-BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	      6757 ns/op	     256 B/op	       8 allocs/op
-BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	     12378 ns/op	     256 B/op	       8 allocs/op
-BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	     10952 ns/op	     256 B/op	       8 allocs/op
-BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	     10475 ns/op	     256 B/op	       8 allocs/op
-BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	      5520 ns/op	     256 B/op	       8 allocs/op
-BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	      5719 ns/op	     256 B/op	       8 allocs/op
-BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      5410 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	     11454 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      5263 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      5880 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      5585 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	     11729 ns/op	     240 B/op	       8 allocs/op
-BenchmarkPriorityOf-2                                	       1	     12986 ns/op	     224 B/op	       8 allocs/op
-BenchmarkPriorityOf-2                                	       1	     12561 ns/op	     224 B/op	       8 allocs/op
-BenchmarkPriorityOf-2                                	       1	      5328 ns/op	     224 B/op	       8 allocs/op
-BenchmarkPriorityOf-2                                	       1	     11497 ns/op	     224 B/op	       8 allocs/op
-BenchmarkPriorityOf-2                                	       1	      5163 ns/op	     224 B/op	       8 allocs/op
-BenchmarkPriorityOf-2                                	       1	      5063 ns/op	     224 B/op	       8 allocs/op
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkPushDigestGate_BelowThreshold-2             	       1	     20138 ns/op	    1392 B/op	      13 allocs/op
+BenchmarkPushDigestGate_BelowThreshold-2             	       1	     18906 ns/op	     896 B/op	      11 allocs/op
+BenchmarkPushDigestGate_BelowThreshold-2             	       1	     16260 ns/op	     896 B/op	      11 allocs/op
+BenchmarkPushDigestGate_BelowThreshold-2             	       1	      8566 ns/op	     416 B/op	      10 allocs/op
+BenchmarkPushDigestGate_BelowThreshold-2             	       1	      6222 ns/op	     416 B/op	      10 allocs/op
+BenchmarkPushDigestGate_BelowThreshold-2             	       1	      7904 ns/op	     416 B/op	      10 allocs/op
+BenchmarkPushDigestGate_P0Bypass-2                   	       1	      5751 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_P0Bypass-2                   	       1	     14277 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_P0Bypass-2                   	       1	     27922 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_P0Bypass-2                   	       1	     15269 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_P0Bypass-2                   	       1	      5681 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_P0Bypass-2                   	       1	      5620 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_ManyUsers-2                  	       1	      7063 ns/op	     416 B/op	      10 allocs/op
+BenchmarkPushDigestGate_ManyUsers-2                  	       1	      6372 ns/op	     416 B/op	      10 allocs/op
+BenchmarkPushDigestGate_ManyUsers-2                  	       1	      6101 ns/op	     416 B/op	      10 allocs/op
+BenchmarkPushDigestGate_ManyUsers-2                  	       1	      7223 ns/op	     416 B/op	      10 allocs/op
+BenchmarkPushDigestGate_ManyUsers-2                  	       1	     24646 ns/op	     416 B/op	      10 allocs/op
+BenchmarkPushDigestGate_ManyUsers-2                  	       1	      7204 ns/op	     416 B/op	      10 allocs/op
+BenchmarkPushDigestGate_Prune-2                      	       1	   2230169 ns/op	  320000 B/op	   10000 allocs/op
+BenchmarkPushDigestGate_Prune-2                      	       1	   1931863 ns/op	  320000 B/op	   10000 allocs/op
+BenchmarkPushDigestGate_Prune-2                      	       1	   1892090 ns/op	  320000 B/op	   10000 allocs/op
+BenchmarkPushDigestGate_Prune-2                      	       1	   2022723 ns/op	  320000 B/op	   10000 allocs/op
+BenchmarkPushDigestGate_Prune-2                      	       1	   2065232 ns/op	  320000 B/op	   10000 allocs/op
+BenchmarkPushDigestGate_Prune-2                      	       1	   1951420 ns/op	  320000 B/op	   10000 allocs/op
+BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	     21139 ns/op	     256 B/op	       8 allocs/op
+BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	      6101 ns/op	     256 B/op	       8 allocs/op
+BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	     18494 ns/op	     256 B/op	       8 allocs/op
+BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	      6152 ns/op	     256 B/op	       8 allocs/op
+BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	      5370 ns/op	     256 B/op	       8 allocs/op
+BenchmarkPushDigestGate_ConcurrentMixedPriority-2    	       1	      6381 ns/op	     256 B/op	       8 allocs/op
+BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      5961 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      6021 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      5550 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      5440 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      6663 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPushDigestGate_SingleUser_OverThreshold-2   	       1	      6172 ns/op	     240 B/op	       8 allocs/op
+BenchmarkPriorityOf-2                                	       1	      5430 ns/op	     224 B/op	       8 allocs/op
+BenchmarkPriorityOf-2                                	       1	      6062 ns/op	     224 B/op	       8 allocs/op
+BenchmarkPriorityOf-2                                	       1	      5410 ns/op	     224 B/op	       8 allocs/op
+BenchmarkPriorityOf-2                                	       1	      6462 ns/op	     224 B/op	       8 allocs/op
+BenchmarkPriorityOf-2                                	       1	      5721 ns/op	     224 B/op	       8 allocs/op
+BenchmarkPriorityOf-2                                	       1	      4869 ns/op	     224 B/op	       8 allocs/op
 PASS
-ok  	github.com/rede/world-cup-quiniela/internal/notification	0.174s
+ok  	github.com/rede/world-cup-quiniela/internal/notification	0.177s
 PASS
-ok  	github.com/rede/world-cup-quiniela/internal/notification/dispatcher	0.009s
+ok  	github.com/rede/world-cup-quiniela/internal/notification/dispatcher	0.010s
 PASS
-ok  	github.com/rede/world-cup-quiniela/internal/notification/escalation	0.013s
+ok  	github.com/rede/world-cup-quiniela/internal/notification/escalation	0.007s
 PASS
 ok  	github.com/rede/world-cup-quiniela/internal/notification/hub	0.008s
 PASS
-ok  	github.com/rede/world-cup-quiniela/internal/notification/outbox	10.820s
+ok  	github.com/rede/world-cup-quiniela/internal/notification/outbox	13.876s
 PASS
-ok  	github.com/rede/world-cup-quiniela/internal/notification/scheduler	0.009s
+ok  	github.com/rede/world-cup-quiniela/internal/notification/scheduler	0.005s
 PASS
-ok  	github.com/rede/world-cup-quiniela/internal/notification/unsubscribe	0.005s
+ok  	github.com/rede/world-cup-quiniela/internal/notification/unsubscribe	0.003s
 goos: linux
 goarch: amd64
 pkg: github.com/rede/world-cup-quiniela/internal/service
-cpu: Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz
-BenchmarkSystemParamGet_CacheHit-2          	       1	     17195 ns/op	    1312 B/op	      11 allocs/op
-BenchmarkSystemParamGet_CacheHit-2          	       1	      6042 ns/op	     240 B/op	       8 allocs/op
-BenchmarkSystemParamGet_CacheHit-2          	       1	      5217 ns/op	     240 B/op	       8 allocs/op
-BenchmarkSystemParamGet_CacheHit-2          	       1	      6721 ns/op	    1200 B/op	      10 allocs/op
-BenchmarkSystemParamGet_CacheHit-2          	       1	     40453 ns/op	     240 B/op	       8 allocs/op
-BenchmarkSystemParamGet_CacheHit-2          	       1	      5087 ns/op	     240 B/op	       8 allocs/op
-BenchmarkSystemParamGet_CacheMiss-2         	       1	     10907 ns/op	     240 B/op	       2 allocs/op
-BenchmarkSystemParamGet_CacheMiss-2         	       1	     11860 ns/op	     240 B/op	       2 allocs/op
-BenchmarkSystemParamGet_CacheMiss-2         	       1	     23411 ns/op	     240 B/op	       2 allocs/op
-BenchmarkSystemParamGet_CacheMiss-2         	       1	     17495 ns/op	     240 B/op	       2 allocs/op
-BenchmarkSystemParamGet_CacheMiss-2         	       1	     10967 ns/op	     240 B/op	       2 allocs/op
-BenchmarkSystemParamGet_CacheMiss-2         	       1	     12352 ns/op	     240 B/op	       2 allocs/op
-BenchmarkSystemParamSet-2                   	       1	      3681 ns/op	     176 B/op	       2 allocs/op
-BenchmarkSystemParamSet-2                   	       1	      2990 ns/op	     176 B/op	       2 allocs/op
-BenchmarkSystemParamSet-2                   	       1	      2536 ns/op	     176 B/op	       2 allocs/op
-BenchmarkSystemParamSet-2                   	       1	      2309 ns/op	     176 B/op	       2 allocs/op
-BenchmarkSystemParamSet-2                   	       1	      2122 ns/op	     176 B/op	       2 allocs/op
-BenchmarkSystemParamSet-2                   	       1	      2518 ns/op	     176 B/op	       2 allocs/op
-BenchmarkSystemParamGet_HighConcurrency-2   	       1	    308131 ns/op	   65520 B/op	     506 allocs/op
-BenchmarkSystemParamGet_HighConcurrency-2   	       1	    187353 ns/op	   41424 B/op	     453 allocs/op
-BenchmarkSystemParamGet_HighConcurrency-2   	       1	    166841 ns/op	   18480 B/op	     409 allocs/op
-BenchmarkSystemParamGet_HighConcurrency-2   	       1	    238126 ns/op	   64080 B/op	     504 allocs/op
-BenchmarkSystemParamGet_HighConcurrency-2   	       1	    188688 ns/op	   16080 B/op	     404 allocs/op
-BenchmarkSystemParamGet_HighConcurrency-2   	       1	    138423 ns/op	   16080 B/op	     404 allocs/op
-BenchmarkSystemParamBulkSet-2               	       1	     12592 ns/op	    1616 B/op	      18 allocs/op
-BenchmarkSystemParamBulkSet-2               	       1	     11429 ns/op	    1616 B/op	      18 allocs/op
-BenchmarkSystemParamBulkSet-2               	       1	     19194 ns/op	    1616 B/op	      18 allocs/op
-BenchmarkSystemParamBulkSet-2               	       1	     10568 ns/op	    1616 B/op	      18 allocs/op
-BenchmarkSystemParamBulkSet-2               	       1	     10369 ns/op	    1616 B/op	      18 allocs/op
-BenchmarkSystemParamBulkSet-2               	       1	      9773 ns/op	    1616 B/op	      18 allocs/op
-BenchmarkMutationHookDispatch-2             	       1	      2811 ns/op	     176 B/op	       2 allocs/op
-BenchmarkMutationHookDispatch-2             	       1	      2542 ns/op	     176 B/op	       2 allocs/op
-BenchmarkMutationHookDispatch-2             	       1	      2436 ns/op	     176 B/op	       2 allocs/op
-BenchmarkMutationHookDispatch-2             	       1	      2562 ns/op	     176 B/op	       2 allocs/op
-BenchmarkMutationHookDispatch-2             	       1	      2789 ns/op	     176 B/op	       2 allocs/op
-BenchmarkMutationHookDispatch-2             	       1	      2257 ns/op	     176 B/op	       2 allocs/op
-BenchmarkGetInt-2                           	       1	      6724 ns/op	     240 B/op	       8 allocs/op
-BenchmarkGetInt-2                           	       1	      6851 ns/op	     240 B/op	       8 allocs/op
-BenchmarkGetInt-2                           	       1	     10152 ns/op	     240 B/op	       8 allocs/op
-BenchmarkGetInt-2                           	       1	      5495 ns/op	     240 B/op	       8 allocs/op
-BenchmarkGetInt-2                           	       1	      5152 ns/op	     240 B/op	       8 allocs/op
-BenchmarkGetInt-2                           	       1	      9617 ns/op	     240 B/op	       8 allocs/op
-BenchmarkCacheTTLEviction-2                 	       1	     11483 ns/op	     240 B/op	       2 allocs/op
-BenchmarkCacheTTLEviction-2                 	       1	     10715 ns/op	     240 B/op	       2 allocs/op
-BenchmarkCacheTTLEviction-2                 	       1	     10846 ns/op	     240 B/op	       2 allocs/op
-BenchmarkCacheTTLEviction-2                 	       1	     10853 ns/op	     240 B/op	       2 allocs/op
-BenchmarkCacheTTLEviction-2                 	       1	     10673 ns/op	     240 B/op	       2 allocs/op
-BenchmarkCacheTTLEviction-2                 	       1	     10010 ns/op	     240 B/op	       2 allocs/op
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkSystemParamGet_CacheHit-2          	       1	     15489 ns/op	    1200 B/op	      10 allocs/op
+BenchmarkSystemParamGet_CacheHit-2          	       1	     22011 ns/op	    1200 B/op	      10 allocs/op
+BenchmarkSystemParamGet_CacheHit-2          	       1	     10480 ns/op	     720 B/op	       9 allocs/op
+BenchmarkSystemParamGet_CacheHit-2          	       1	      7785 ns/op	     240 B/op	       8 allocs/op
+BenchmarkSystemParamGet_CacheHit-2          	       1	      5370 ns/op	     240 B/op	       8 allocs/op
+BenchmarkSystemParamGet_CacheHit-2          	       1	     20588 ns/op	     240 B/op	       8 allocs/op
+BenchmarkSystemParamGet_CacheMiss-2         	       1	     12363 ns/op	     240 B/op	       2 allocs/op
+BenchmarkSystemParamGet_CacheMiss-2         	       1	     12092 ns/op	     240 B/op	       2 allocs/op
+BenchmarkSystemParamGet_CacheMiss-2         	       1	     11712 ns/op	     240 B/op	       2 allocs/op
+BenchmarkSystemParamGet_CacheMiss-2         	       1	     12193 ns/op	     240 B/op	       2 allocs/op
+BenchmarkSystemParamGet_CacheMiss-2         	       1	     10730 ns/op	     240 B/op	       2 allocs/op
+BenchmarkSystemParamGet_CacheMiss-2         	       1	      9758 ns/op	     240 B/op	       2 allocs/op
+BenchmarkSystemParamSet-2                   	       1	      3957 ns/op	     176 B/op	       2 allocs/op
+BenchmarkSystemParamSet-2                   	       1	      2265 ns/op	     176 B/op	       2 allocs/op
+BenchmarkSystemParamSet-2                   	       1	      1833 ns/op	     176 B/op	       2 allocs/op
+BenchmarkSystemParamSet-2                   	       1	      2384 ns/op	     176 B/op	       2 allocs/op
+BenchmarkSystemParamSet-2                   	       1	      2234 ns/op	     176 B/op	       2 allocs/op
+BenchmarkSystemParamSet-2                   	       1	      1943 ns/op	     176 B/op	       2 allocs/op
+BenchmarkSystemParamGet_HighConcurrency-2   	       1	    255458 ns/op	   82224 B/op	     537 allocs/op
+BenchmarkSystemParamGet_HighConcurrency-2   	       1	    295116 ns/op	   40376 B/op	     450 allocs/op
+BenchmarkSystemParamGet_HighConcurrency-2   	       1	     76275 ns/op	   16080 B/op	     404 allocs/op
+BenchmarkSystemParamGet_HighConcurrency-2   	       1	     92174 ns/op	   16080 B/op	     404 allocs/op
+BenchmarkSystemParamGet_HighConcurrency-2   	       1	     74549 ns/op	   16080 B/op	     404 allocs/op
+BenchmarkSystemParamGet_HighConcurrency-2   	       1	     80352 ns/op	   16080 B/op	     404 allocs/op
+BenchmarkSystemParamBulkSet-2               	       1	     11862 ns/op	    1616 B/op	      18 allocs/op
+BenchmarkSystemParamBulkSet-2               	       1	     11141 ns/op	    1616 B/op	      18 allocs/op
+BenchmarkSystemParamBulkSet-2               	       1	     12433 ns/op	    1616 B/op	      18 allocs/op
+BenchmarkSystemParamBulkSet-2               	       1	     12363 ns/op	    1616 B/op	      18 allocs/op
+BenchmarkSystemParamBulkSet-2               	       1	     12403 ns/op	    1616 B/op	      18 allocs/op
+BenchmarkSystemParamBulkSet-2               	       1	      9848 ns/op	    1616 B/op	      18 allocs/op
+BenchmarkMutationHookDispatch-2             	       1	      3045 ns/op	     176 B/op	       2 allocs/op
+BenchmarkMutationHookDispatch-2             	       1	      5270 ns/op	     176 B/op	       2 allocs/op
+BenchmarkMutationHookDispatch-2             	       1	      2865 ns/op	     176 B/op	       2 allocs/op
+BenchmarkMutationHookDispatch-2             	       1	      2885 ns/op	     176 B/op	       2 allocs/op
+BenchmarkMutationHookDispatch-2             	       1	      5269 ns/op	     176 B/op	       2 allocs/op
+BenchmarkMutationHookDispatch-2             	       1	      5059 ns/op	     176 B/op	       2 allocs/op
+BenchmarkGetInt-2                           	       1	     15088 ns/op	     240 B/op	       8 allocs/op
+BenchmarkGetInt-2                           	       1	      7684 ns/op	     240 B/op	       8 allocs/op
+BenchmarkGetInt-2                           	       1	     36057 ns/op	     240 B/op	       8 allocs/op
+BenchmarkGetInt-2                           	       1	      5911 ns/op	     240 B/op	       8 allocs/op
+BenchmarkGetInt-2                           	       1	      5089 ns/op	     240 B/op	       8 allocs/op
+BenchmarkGetInt-2                           	       1	      5400 ns/op	     240 B/op	       8 allocs/op
+BenchmarkCacheTTLEviction-2                 	       1	     12444 ns/op	     240 B/op	       2 allocs/op
+BenchmarkCacheTTLEviction-2                 	       1	      9237 ns/op	     240 B/op	       2 allocs/op
+BenchmarkCacheTTLEviction-2                 	       1	     11371 ns/op	     240 B/op	       2 allocs/op
+BenchmarkCacheTTLEviction-2                 	       1	      9527 ns/op	     240 B/op	       2 allocs/op
+BenchmarkCacheTTLEviction-2                 	       1	     10460 ns/op	     240 B/op	       2 allocs/op
+BenchmarkCacheTTLEviction-2                 	       1	     11672 ns/op	     240 B/op	       2 allocs/op
 PASS
-ok  	github.com/rede/world-cup-quiniela/internal/service	0.221s
+ok  	github.com/rede/world-cup-quiniela/internal/service	0.065s
 goos: linux
 goarch: amd64
 pkg: github.com/rede/world-cup-quiniela/internal/api
-cpu: Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz
-BenchmarkHandlerHealth-2              	       1	    144964 ns/op	   18152 B/op	     137 allocs/op
+cpu: AMD EPYC 7763 64-Core Processor                
+BenchmarkHandlerHealth-2              	       1	    143156 ns/op	   16184 B/op	     124 allocs/op
 --- BENCH: BenchmarkHandlerHealth-2
-    logger.go:146: 2026-06-27T19:50:55.995Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:55.995Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000001", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth-2              	       1	    102526 ns/op	   16512 B/op	     122 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.392Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.392Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000001", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth-2              	       1	    101228 ns/op	   15280 B/op	     118 allocs/op
 --- BENCH: BenchmarkHandlerHealth-2
-    logger.go:146: 2026-06-27T19:50:55.998Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:55.998Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000002", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth-2              	       1	     73961 ns/op	   15736 B/op	     123 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.394Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.394Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000002", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth-2              	       1	    114696 ns/op	   17480 B/op	     134 allocs/op
 --- BENCH: BenchmarkHandlerHealth-2
-    logger.go:146: 2026-06-27T19:50:56.000Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.000Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000003", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth-2              	       1	     84305 ns/op	   15144 B/op	     121 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.396Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.396Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000003", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth-2              	       1	    118367 ns/op	   16512 B/op	     122 allocs/op
 --- BENCH: BenchmarkHandlerHealth-2
-    logger.go:146: 2026-06-27T19:50:56.001Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.001Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000004", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth-2              	       1	     95816 ns/op	   14800 B/op	     117 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.397Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.397Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000004", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth-2              	       1	     90399 ns/op	   14800 B/op	     117 allocs/op
 --- BENCH: BenchmarkHandlerHealth-2
-    logger.go:146: 2026-06-27T19:50:56.002Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.002Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000005", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth-2              	       1	     96709 ns/op	   15624 B/op	     122 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.398Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.399Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000005", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth-2              	       1	     85960 ns/op	   15144 B/op	     121 allocs/op
 --- BENCH: BenchmarkHandlerHealth-2
-    logger.go:146: 2026-06-27T19:50:56.003Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.003Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000006", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth_Sequential-2   	       1	     52571 ns/op	    9512 B/op	     102 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.402Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.402Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000006", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth_Sequential-2   	       1	     86070 ns/op	    9512 B/op	     102 allocs/op
 --- BENCH: BenchmarkHandlerHealth_Sequential-2
-    logger.go:146: 2026-06-27T19:50:56.006Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.006Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000007", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth_Sequential-2   	       1	     56389 ns/op	    9512 B/op	     102 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.403Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.403Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000007", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth_Sequential-2   	       1	     78056 ns/op	    9512 B/op	     102 allocs/op
 --- BENCH: BenchmarkHandlerHealth_Sequential-2
-    logger.go:146: 2026-06-27T19:50:56.007Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.007Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000008", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth_Sequential-2   	       1	     58814 ns/op	    9216 B/op	      99 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.404Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.405Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000008", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth_Sequential-2   	       1	     71863 ns/op	    9216 B/op	      99 allocs/op
 --- BENCH: BenchmarkHandlerHealth_Sequential-2
-    logger.go:146: 2026-06-27T19:50:56.008Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.008Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000009", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth_Sequential-2   	       1	     73052 ns/op	    9512 B/op	     102 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.406Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.406Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000009", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth_Sequential-2   	       1	     77815 ns/op	    9512 B/op	     102 allocs/op
 --- BENCH: BenchmarkHandlerHealth_Sequential-2
-    logger.go:146: 2026-06-27T19:50:56.010Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.010Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000010", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth_Sequential-2   	       1	     49265 ns/op	    9512 B/op	     102 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.407Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.407Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000010", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth_Sequential-2   	       1	     80550 ns/op	    9216 B/op	      99 allocs/op
 --- BENCH: BenchmarkHandlerHealth_Sequential-2
-    logger.go:146: 2026-06-27T19:50:56.011Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.011Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000011", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerHealth_Sequential-2   	       1	     62844 ns/op	    9512 B/op	     102 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.408Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.408Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000011", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerHealth_Sequential-2   	       1	     65221 ns/op	    9216 B/op	      99 allocs/op
 --- BENCH: BenchmarkHandlerHealth_Sequential-2
-    logger.go:146: 2026-06-27T19:50:56.013Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.013Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000012", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerRouting-2             	       1	    118293 ns/op	   20728 B/op	     194 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.409Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.409Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000012", "method": "GET", "path": "/health", "status": 200, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerRouting-2             	       1	    173673 ns/op	   20408 B/op	     192 allocs/op
 --- BENCH: BenchmarkHandlerRouting-2
-    logger.go:146: 2026-06-27T19:50:56.014Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.014Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000013", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerRouting-2             	       1	     92305 ns/op	   17408 B/op	     142 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.411Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.411Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000013", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerRouting-2             	       1	    137977 ns/op	   18144 B/op	     144 allocs/op
 --- BENCH: BenchmarkHandlerRouting-2
-    logger.go:146: 2026-06-27T19:50:56.016Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.016Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000014", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerRouting-2             	       1	     93028 ns/op	   17408 B/op	     142 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.412Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.412Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000014", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerRouting-2             	       1	    104284 ns/op	   17408 B/op	     142 allocs/op
 --- BENCH: BenchmarkHandlerRouting-2
-    logger.go:146: 2026-06-27T19:50:56.017Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.017Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000015", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerRouting-2             	       1	     86631 ns/op	   17408 B/op	     142 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.415Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.415Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000015", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerRouting-2             	       1	    116887 ns/op	   17408 B/op	     142 allocs/op
 --- BENCH: BenchmarkHandlerRouting-2
-    logger.go:146: 2026-06-27T19:50:56.019Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.019Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000016", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerRouting-2             	       1	     97817 ns/op	   16872 B/op	     133 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.418Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.418Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000016", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerRouting-2             	       1	    109664 ns/op	   16616 B/op	     132 allocs/op
 --- BENCH: BenchmarkHandlerRouting-2
-    logger.go:146: 2026-06-27T19:50:56.021Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.021Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000017", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerRouting-2             	       1	     88760 ns/op	   17408 B/op	     142 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.420Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.420Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000017", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerRouting-2             	       1	     71102 ns/op	   16616 B/op	     132 allocs/op
 --- BENCH: BenchmarkHandlerRouting-2
-    logger.go:146: 2026-06-27T19:50:56.023Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.023Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000018", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerNotFound-2            	       1	     81146 ns/op	   20464 B/op	     132 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.423Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.423Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000018", "method": "GET", "path": "/api/v1/matches", "status": 401, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerNotFound-2            	       1	    125847 ns/op	   22248 B/op	     141 allocs/op
 --- BENCH: BenchmarkHandlerNotFound-2
-    logger.go:146: 2026-06-27T19:50:56.024Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.024Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000019", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerNotFound-2            	       1	    121503 ns/op	   22200 B/op	     140 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.428Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.428Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000019", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerNotFound-2            	       1	    119952 ns/op	   20072 B/op	     127 allocs/op
 --- BENCH: BenchmarkHandlerNotFound-2
-    logger.go:146: 2026-06-27T19:50:56.025Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.025Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000020", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerNotFound-2            	       1	     81087 ns/op	   20072 B/op	     127 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.432Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.432Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000020", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerNotFound-2            	       1	    111318 ns/op	   20120 B/op	     128 allocs/op
 --- BENCH: BenchmarkHandlerNotFound-2
-    logger.go:146: 2026-06-27T19:50:56.028Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.028Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000021", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerNotFound-2            	       1	     78743 ns/op	   20072 B/op	     127 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.434Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.434Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000021", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerNotFound-2            	       1	     95798 ns/op	   20072 B/op	     127 allocs/op
 --- BENCH: BenchmarkHandlerNotFound-2
-    logger.go:146: 2026-06-27T19:50:56.030Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.030Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000022", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerNotFound-2            	       1	     84188 ns/op	   20552 B/op	     128 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.437Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.437Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000022", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerNotFound-2            	       1	    109134 ns/op	   20552 B/op	     128 allocs/op
 --- BENCH: BenchmarkHandlerNotFound-2
-    logger.go:146: 2026-06-27T19:50:56.031Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.031Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000023", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
-BenchmarkHandlerNotFound-2            	       1	     78502 ns/op	   20120 B/op	     128 allocs/op
+    logger.go:146: 2026-06-28T03:32:37.440Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.440Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000023", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+BenchmarkHandlerNotFound-2            	       1	     84236 ns/op	   20464 B/op	     132 allocs/op
 --- BENCH: BenchmarkHandlerNotFound-2
-    logger.go:146: 2026-06-27T19:50:56.033Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
-    logger.go:146: 2026-06-27T19:50:56.033Z	INFO	request completed	{"request_id": "runnervmmklqx/70PynNrblY-000024", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
+    logger.go:146: 2026-06-28T03:32:37.443Z	ERROR	auth: JWKS URL is not configured — all requests will be rejected; set WCQ_CLERK_JWKSURL
+    logger.go:146: 2026-06-28T03:32:37.443Z	INFO	request completed	{"request_id": "runnervmmklqx/UBvOSLA4Ho-000024", "method": "GET", "path": "/nonexistent/deep/path/12345", "status": 404, "latency_ms": 0, "remote_ip": "192.0.2.1:1234"}
 PASS
-ok  	github.com/rede/world-cup-quiniela/internal/api	0.047s
+ok  	github.com/rede/world-cup-quiniela/internal/api	0.063s
 PASS
-ok  	github.com/rede/world-cup-quiniela/internal/api/handler	0.006s
+ok  	github.com/rede/world-cup-quiniela/internal/api/handler	0.008s
