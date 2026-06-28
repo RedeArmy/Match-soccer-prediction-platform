@@ -1,0 +1,3 @@
+-- Reverting this migration would require knowing what the placeholder codes
+-- were before the backfill, which is not stored. The down migration is a no-op;
+-- matches are re-seeded from scratch by replaying the full migration chain.

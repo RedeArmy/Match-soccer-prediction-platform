@@ -433,15 +433,17 @@ func (s *tournamentService) AutoConfirmBestThirdSlots(ctx context.Context, admin
 		if !mapped {
 			continue
 		}
-		if !ts.alreadyDone {
-			if _, err := s.tournamentRepo.ConfirmSlot(ctx, ts.id, adminID, team); err != nil {
-				s.log.Warn("best-third auto-confirm: slot confirmation failed",
-					zap.String("label", ts.label),
-					zap.String("team", team),
-					zap.Error(err),
-				)
-				continue
-			}
+		// Always call ConfirmSlot even when the slot was already confirmed so that
+		// the team name is re-propagated to any knockout match whose home_team /
+		// away_team still holds a placeholder (e.g. after a migration reset the
+		// slot FK and the prior propagation was never replayed).
+		if _, err := s.tournamentRepo.ConfirmSlot(ctx, ts.id, adminID, team); err != nil {
+			s.log.Warn("best-third auto-confirm: slot confirmation failed",
+				zap.String("label", ts.label),
+				zap.String("team", team),
+				zap.Error(err),
+			)
+			continue
 		}
 		results = append(results, BestThirdAssignment{SlotLabel: ts.label, Group: groupForTeam(thirds, team), Team: team})
 	}
@@ -492,7 +494,6 @@ func filterBestThirdSlots(allSlots []*domain.TournamentSlot) []thirdSlotEntry {
 			id:             slot.ID,
 			label:          slot.Label,
 			eligibleGroups: eligible,
-			alreadyDone:    slot.Team != nil,
 		})
 	}
 	return result
@@ -533,7 +534,6 @@ type thirdSlotEntry struct {
 	id             int
 	label          string
 	eligibleGroups map[string]bool
-	alreadyDone    bool
 }
 
 // bipartiteMatcher holds the state for a DFS augmenting-path matching.
