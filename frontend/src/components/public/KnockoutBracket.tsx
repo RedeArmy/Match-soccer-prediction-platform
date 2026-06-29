@@ -71,6 +71,8 @@ function SlotRow({ slot, score, penaltyScore, isWinner, showScore }: SlotRowProp
   const { slotDesc, teamName } = useI18n();
   const hasTeam = !!slot?.team;
   const isLoser = showScore && hasTeam && !isWinner;
+  let teamClass = "italic text-text-muted";
+  if (hasTeam) teamClass = isWinner ? "font-semibold text-green-400" : "font-semibold text-white";
   return (
     <div
       className={cn(
@@ -80,14 +82,7 @@ function SlotRow({ slot, score, penaltyScore, isWinner, showScore }: SlotRowProp
       )}
     >
       <span
-        className={cn(
-          "flex-1 truncate text-sm",
-          hasTeam
-            ? isWinner
-              ? "font-semibold text-green-400"
-              : "font-semibold text-white"
-            : "italic text-text-muted",
-        )}
+        className={cn("flex-1 truncate text-sm", teamClass)}
       >
         {hasTeam ? teamName(slot!.team) : slotDesc(slot?.description)}
       </span>
