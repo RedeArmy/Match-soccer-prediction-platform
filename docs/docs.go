@@ -7295,6 +7295,12 @@ const docTemplate = `{
                 },
                 "match_id": {
                     "type": "integer"
+                },
+                "predicted_penalty_winner": {
+                    "type": "string"
+                },
+                "predicted_win_method": {
+                    "type": "string"
                 }
             }
         },

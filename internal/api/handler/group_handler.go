@@ -547,11 +547,15 @@ type UserLivePredictionRow struct {
 // MatchPredictionSnapshot is a member's predicted score for a single live match.
 // HasPrediction is false when the member has not submitted a prediction, in which
 // case HomeScore and AwayScore are zero-valued.
+// PredictedWinMethod and PredictedPenaltyWinner mirror the prediction fields; both
+// are omitted for group-stage matches and for members with no prediction.
 type MatchPredictionSnapshot struct {
-	MatchID       int  `json:"match_id"`
-	HomeScore     int  `json:"home_score"`
-	AwayScore     int  `json:"away_score"`
-	HasPrediction bool `json:"has_prediction"`
+	MatchID                int     `json:"match_id"`
+	HomeScore              int     `json:"home_score"`
+	AwayScore              int     `json:"away_score"`
+	HasPrediction          bool    `json:"has_prediction"`
+	PredictedWinMethod     *string `json:"predicted_win_method,omitempty"`
+	PredictedPenaltyWinner *string `json:"predicted_penalty_winner,omitempty"`
 }
 
 // predKey indexes a prediction by (userID, matchID) for O(1) lookup.
@@ -567,6 +571,11 @@ func buildSnapshots(memberUserID int, matchIDs []int, predMap map[predKey]*domai
 			snap.HomeScore = p.HomeScore
 			snap.AwayScore = p.AwayScore
 			snap.HasPrediction = true
+			snap.PredictedPenaltyWinner = p.PredictedPenaltyWinner
+			if p.PredictedWinMethod != nil {
+				wm := string(*p.PredictedWinMethod)
+				snap.PredictedWinMethod = &wm
+			}
 		}
 		snaps[i] = snap
 	}

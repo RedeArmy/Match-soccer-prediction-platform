@@ -281,8 +281,10 @@ func (s *tournamentService) BackfillSlots(ctx context.Context) error {
 }
 
 // slotWinnerLoser derives the winning and losing team from a finished match.
-// Returns empty strings when the score is tied in regulation (penalty shootouts
-// are not reflected in the score; the admin must confirm those slots manually).
+// For matches decided in regulation or extra time the score is used directly.
+// For penalty shootouts the PenaltyWinner field ("home"/"away") is consulted
+// so that BackfillSlots can auto-confirm those slots without admin intervention.
+// Returns empty strings when scores are nil or no winner can be determined.
 func slotWinnerLoser(m *domain.Match) (winner, loser string) {
 	if m.HomeScore == nil || m.AwayScore == nil {
 		return "", ""
@@ -291,6 +293,13 @@ func slotWinnerLoser(m *domain.Match) (winner, loser string) {
 		return m.HomeTeam, m.AwayTeam
 	}
 	if *m.AwayScore > *m.HomeScore {
+		return m.AwayTeam, m.HomeTeam
+	}
+	// Tied after regulation/ET — use penalty winner when available.
+	if m.WinMethod != nil && *m.WinMethod == domain.WinMethodPenalties && m.PenaltyWinner != nil {
+		if *m.PenaltyWinner == "home" {
+			return m.HomeTeam, m.AwayTeam
+		}
 		return m.AwayTeam, m.HomeTeam
 	}
 	return "", ""

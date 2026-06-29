@@ -596,11 +596,12 @@ function ConfirmBestThirdsModal({
       <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
         <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
         <p className="text-amber-300 text-xs">
-          Esto clasificará automáticamente los <strong>8 mejores terceros</strong>{" "}
-          de la fase de grupos usando los criterios FIFA (Pts → DG → GF → nombre)
-          y los asignará a los slots r32 correspondientes. Requiere que{" "}
-          <strong>todos los 48 partidos de grupos estén terminados</strong>.
-          Los slots ya confirmados no serán sobreescritos.
+          Esto clasificará automáticamente los{" "}
+          <strong>8 mejores terceros</strong> de la fase de grupos usando los
+          criterios FIFA (Pts → DG → GF → nombre) y los asignará a los slots r32
+          correspondientes. Requiere que{" "}
+          <strong>todos los 48 partidos de grupos estén terminados</strong>. Los
+          slots ya confirmados no serán sobreescritos.
         </p>
       </div>
 

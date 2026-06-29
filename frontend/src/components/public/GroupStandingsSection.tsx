@@ -397,7 +397,12 @@ function GroupTable({
             idx < rows.length - 1 ? "border-b border-white/[0.04]" : "";
           const bg = rowBg(pos, row.team, bestThirds, groupStageComplete);
           const dim = rowDim(pos, row.team, bestThirds, groupStageComplete);
-          const accent = rowAccent(pos, row.team, bestThirds, groupStageComplete);
+          const accent = rowAccent(
+            pos,
+            row.team,
+            bestThirds,
+            groupStageComplete,
+          );
 
           return (
             <Fragment key={row.team}>

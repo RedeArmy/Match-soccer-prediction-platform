@@ -302,32 +302,61 @@ func (s *scoringService) writeScoringLog(
 
 // calculatePoints applies the scoring rules from scoringConfig.
 //
-// Decision table (evaluated top-to-bottom, first match wins):
+// Decision table for base points (evaluated top-to-bottom, first match wins):
 //
 //	Exact scoreline                          -> cfg.exactScore
 //	Correct outcome (non-draw) + same margin -> cfg.correctOutcome + cfg.goalDifference
 //	Correct outcome only                     -> cfg.correctOutcome
-//	Wrong outcome + same goal margin         -> cfg.goalDifference   (no win-method bonus)
+//	Wrong outcome + same goal margin         -> cfg.goalDifference
 //	Wrong outcome / no prediction            -> 0
 //
-// A win-method bonus is added on top of the base points when the prediction
-// earned a correct-outcome tier (rules 1–3) and the user correctly predicted
-// extra_time or penalties. The bonus is NOT awarded for the margin-only tier
-// (rule 4): the user did not identify the correct winner. The bonus is
-// exclusive: at most one of extraTimeBonus or penaltiesBonus per prediction.
+// Win-method bonuses are applied on top and are independent of the scoreline:
+//
+//	Extra-time: both sides predict/confirm extra_time → +cfg.extraTimeBonus
+//	Penalties:  both sides predict/confirm penalties AND user picked the winning
+//	            team → +cfg.penaltiesBonus. predPenaltyWinner must be non-nil;
+//	            when the match has no recorded winner (older data) the method
+//	            match alone is sufficient.
 func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, actualWinMethod *domain.WinMethod, actualPenaltyWinner *string, cfg scoringConfig) int {
-	base, bonusEligible := basePoints(pred, actualHome, actualAway, cfg)
-	if bonusEligible && base > 0 {
-		base += winMethodBonus(pred.PredictedWinMethod, pred.PredictedPenaltyWinner, actualWinMethod, actualPenaltyWinner, cfg)
+	base, _ := basePoints(pred, actualHome, actualAway, cfg)
+	if actualWinMethod == nil || pred.PredictedWinMethod == nil {
+		return base
+	}
+	switch *actualWinMethod {
+	case domain.WinMethodNormal:
+		// No bonus for matches decided within 90 minutes.
+	case domain.WinMethodExtraTime:
+		if *pred.PredictedWinMethod == domain.WinMethodExtraTime {
+			base += cfg.extraTimeBonus
+		}
+	case domain.WinMethodPenalties:
+		if *pred.PredictedWinMethod == domain.WinMethodPenalties {
+			base += penaltiesWinnerBonus(pred.PredictedPenaltyWinner, actualPenaltyWinner, cfg)
+		}
 	}
 	return base
 }
 
-// basePoints returns the core score and whether the win-method bonus may apply.
+// penaltiesWinnerBonus returns cfg.penaltiesBonus when the user correctly picked
+// the penalty winner, zero otherwise.
 //
-// bonusEligible is true only for correct-outcome tiers (exact, outcome+margin,
-// outcome-only). It is false for the margin-only tier and for wrong outcomes,
-// because the win-method bonus is tied to correctly identifying the winner.
+// Rules:
+//   - predWinner must be non-nil; the user must have explicitly selected a team.
+//   - When actualWinner is nil (older match data without a recorded winner),
+//     the method match alone earns the bonus (backward compatibility).
+//   - When actualWinner is non-nil, predWinner must match exactly.
+func penaltiesWinnerBonus(predWinner *string, actualWinner *string, cfg scoringConfig) int {
+	if predWinner == nil {
+		return 0
+	}
+	if actualWinner != nil && *predWinner != *actualWinner {
+		return 0
+	}
+	return cfg.penaltiesBonus
+}
+
+// basePoints returns the core score and a now-unused bonusEligible flag kept
+// for API stability. Callers should discard the second return value with _.
 func basePoints(pred *domain.Prediction, actualHome, actualAway int, cfg scoringConfig) (points int, bonusEligible bool) {
 	if pred.HomeScore == actualHome && pred.AwayScore == actualAway {
 		return cfg.exactScore, true
@@ -347,37 +376,6 @@ func basePoints(pred *domain.Prediction, actualHome, actualAway int, cfg scoring
 		pts += cfg.goalDifference
 	}
 	return pts, true
-}
-
-// winMethodBonus returns the bonus when the predicted win method matches the actual one.
-// Returns 0 when either side did not declare a win method.
-// For penalties, if the match records which team won (actualPenaltyWinner non-nil),
-// the user's predicted penalty winner must also match to earn the bonus.
-// When actualPenaltyWinner is nil (older matches or sync-driven finalisations),
-// only the win-method match is required, preserving backward compatibility.
-func winMethodBonus(predicted *domain.WinMethod, predPenaltyWinner *string, actual *domain.WinMethod, actualPenaltyWinner *string, cfg scoringConfig) int {
-	if predicted == nil || actual == nil {
-		return 0
-	}
-	switch *actual {
-	case domain.WinMethodNormal:
-		return 0
-	case domain.WinMethodExtraTime:
-		if *predicted == domain.WinMethodExtraTime {
-			return cfg.extraTimeBonus
-		}
-	case domain.WinMethodPenalties:
-		if *predicted != domain.WinMethodPenalties {
-			return 0
-		}
-		if actualPenaltyWinner != nil {
-			if predPenaltyWinner == nil || *predPenaltyWinner != *actualPenaltyWinner {
-				return 0
-			}
-		}
-		return cfg.penaltiesBonus
-	}
-	return 0
 }
 
 type matchOutcome int
