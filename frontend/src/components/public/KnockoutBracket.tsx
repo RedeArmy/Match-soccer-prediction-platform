@@ -113,10 +113,11 @@ function SlotRow({ slot, score, penaltyScore, isWinner, showScore }: SlotRowProp
 interface MatchPairProps {
   readonly home: TournamentSlotResponse | undefined;
   readonly away: TournamentSlotResponse | undefined;
+  readonly index: number;
   readonly isFinal?: boolean;
 }
 
-function MatchPair({ home, away, isFinal }: MatchPairProps) {
+function MatchPair({ home, away, index, isFinal }: MatchPairProps) {
   const ref = home ?? away;
   const isFinished = ref?.match_status === "finished";
   const byPenalties = ref?.match_win_method === "penalties";
@@ -150,23 +151,29 @@ function MatchPair({ home, away, isFinal }: MatchPairProps) {
           : "border-white/10 bg-white/[0.03]",
       )}
     >
-      {kickoff && !isFinished && (
-        <div
+      <div
+        className={cn(
+          "flex items-center justify-between border-b px-3 pt-1.5 pb-0.5",
+          isFinal ? "border-gold-600/20" : "border-white/5",
+        )}
+      >
+        <span
           className={cn(
-            "border-b px-3 pt-1.5 pb-0.5",
-            isFinal ? "border-gold-600/20" : "border-white/5",
+            "text-[10px] font-medium uppercase tracking-wide",
+            isFinal ? "text-gold-300/60" : "text-text-muted/60",
           )}
         >
-          <span
-            className={cn(
-              "text-[10px] font-medium uppercase tracking-wide",
-              isFinal ? "text-gold-300/60" : "text-text-muted/60",
-            )}
-          >
-            {kickoff}
-          </span>
-        </div>
-      )}
+          {kickoff && !isFinished ? kickoff : ""}
+        </span>
+        <span
+          className={cn(
+            "text-[10px] font-medium tabular-nums",
+            isFinal ? "text-gold-300/50" : "text-text-muted/50",
+          )}
+        >
+          M{String(index).padStart(2, "0")}
+        </span>
+      </div>
       <SlotRow
         slot={home}
         score={homeScore}
@@ -279,7 +286,7 @@ function PhaseAccordion({
           )}
         >
           {pairs.map(({ num, home, away }) => (
-            <MatchPair key={num} home={home} away={away} isFinal={isFinal} />
+            <MatchPair key={num} index={num} home={home} away={away} isFinal={isFinal} />
           ))}
         </div>
       )}
