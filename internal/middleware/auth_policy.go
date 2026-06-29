@@ -24,12 +24,21 @@ type IsRevoker interface {
 	IsRevoked(ctx context.Context, sid string) (bool, error)
 }
 
+// SessionStarter records the first-seen timestamp for a Clerk session ID.
+// PostgresSessionStartRepository satisfies this interface.
+// It is used as a fallback when the JWT lacks the fva claim (e.g. OAuth flows).
+type SessionStarter interface {
+	UpsertSessionStart(ctx context.Context, sid string) (startedAt time.Time, err error)
+}
+
 // PolicyProvider wraps an IdentityProvider with system-controlled session policies:
 //
-//  1. Maximum session age — tokens whose "iat" is older than
-//     auth.session_max_age_seconds (default 7 days) are rejected with 401.
-//     This lets the system enforce shorter lifetimes than Clerk's configured
-//     value without touching Clerk settings or paying for a plan upgrade.
+//  1. Maximum session age — tokens are rejected when the session origin exceeds
+//     auth.session_max_age_seconds (default 7 days). The origin is taken from
+//     Clerk's fva[0] claim (stable across JWT refreshes). When fva is absent
+//     (OAuth / social / automatic-login flows), the origin is fetched from the
+//     session_starts table (see SessionStarter). Falling back to IssuedAt would
+//     make the check a no-op because Clerk refreshes JWTs every ~60 s.
 //
 //  2. Local revocation blocklist — tokens whose "sid" appears in the local
 //     revoked_sessions table are rejected with 401. This implements logout:
@@ -45,27 +54,48 @@ type IsRevoker interface {
 // PolicyProvider is constructed in Routes() and replaces the raw JWKSProvider
 // in RequireAuth. It implements IdentityProvider so RequireAuth is unmodified.
 type PolicyProvider struct {
-	inner        auth.IdentityProvider
-	blocklist    IsRevoker
-	params       GetInter
-	log          *zap.Logger
-	revokedCache sync.Map // string → struct{}; SIDs confirmed revoked by the DB
+	inner         auth.IdentityProvider
+	blocklist     IsRevoker
+	sessionStarts SessionStarter // nil disables DB-backed session-start tracking
+	params        GetInter
+	log           *zap.Logger
+	revokedCache  sync.Map // string → struct{}; SIDs confirmed revoked by the DB
 }
 
 // NewPolicyProvider wraps inner with the two session-policy enforcement layers.
 // blocklist may be nil to disable revocation checks (used in tests or when the
 // revoked_sessions table is not yet migrated).
+// sessionStarts may be nil to disable DB-backed session-start tracking; when nil
+// and fva is absent, max-age falls back to IssuedAt (preserving legacy behaviour).
 func NewPolicyProvider(
 	inner auth.IdentityProvider,
 	blocklist IsRevoker,
 	params GetInter,
 	log *zap.Logger,
+	opts ...PolicyOption,
 ) auth.IdentityProvider {
-	return &PolicyProvider{
+	p := &PolicyProvider{
 		inner:     inner,
 		blocklist: blocklist,
 		params:    params,
 		log:       log,
+	}
+	for _, opt := range opts {
+		opt(p)
+	}
+	return p
+}
+
+// PolicyOption configures optional behaviour for PolicyProvider.
+type PolicyOption func(*PolicyProvider)
+
+// WithSessionStarter enables DB-backed session-start tracking via the provided
+// SessionStarter. When set, PolicyProvider records the first-seen timestamp for
+// sessions that lack the fva claim and uses it for max-age enforcement instead
+// of falling back to IssuedAt.
+func WithSessionStarter(ss SessionStarter) PolicyOption {
+	return func(p *PolicyProvider) {
+		p.sessionStarts = ss
 	}
 }
 
@@ -79,13 +109,36 @@ func (p *PolicyProvider) ValidateToken(ctx context.Context, rawToken string) (au
 	}
 
 	maxAgeSecs := p.params.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
-	// Use SessionStartedAt (derived from Clerk's fva[0] claim) as the session
-	// origin for max-age enforcement. Clerk issues short-lived JWTs (~60 s) that
-	// are refreshed automatically; IssuedAt is always recent and would make the
-	// max-age check a no-op. SessionStartedAt is stable across refreshes.
-	// Falls back to IssuedAt for tokens that predate the fva claim (e.g. tests).
+	// Resolve the session origin for max-age enforcement.
+	// Priority:
+	//   1. fva[0] claim (SessionStartedAt) — stable across JWT refreshes, present
+	//      for password / passkey / email-code login flows.
+	//   2. DB-backed session_starts table — used when fva is absent (OAuth / social
+	//      / automatic-login). UpsertSessionStart records NOW() on first call and
+	//      returns the stored value on subsequent calls.
+	//   3. IssuedAt — last-resort fallback when neither fva nor DB tracking is
+	//      available (e.g. test tokens, sessionStarts=nil). Logs a warning because
+	//      this makes max-age enforcement inaccurate for long-lived sessions.
 	sessionStart := claims.SessionStartedAt
-	if sessionStart.IsZero() {
+	if sessionStart.IsZero() && claims.SessionID != "" && p.sessionStarts != nil {
+		t, err := p.sessionStarts.UpsertSessionStart(ctx, claims.SessionID)
+		if err != nil {
+			p.log.Warn("session_starts upsert failed; falling back to IssuedAt for max-age (enforcement may be inaccurate)",
+				zap.String("sid", claims.SessionID),
+				zap.Error(err),
+			)
+			sessionStart = claims.IssuedAt
+		} else {
+			sessionStart = t
+		}
+	} else if sessionStart.IsZero() {
+		// fva absent and no DB tracker configured. Log when sid is present so
+		// the operator knows max-age enforcement is degraded for this session type.
+		if claims.SessionID != "" {
+			p.log.Warn("fva claim absent and session_starts tracker not configured; using IssuedAt for max-age (inaccurate for OAuth sessions)",
+				zap.String("sid", claims.SessionID),
+			)
+		}
 		sessionStart = claims.IssuedAt
 	}
 	if time.Since(sessionStart) > time.Duration(maxAgeSecs)*time.Second {

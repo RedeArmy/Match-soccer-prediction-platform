@@ -1313,3 +1313,21 @@ type SessionRepository interface {
 	// Returns the number of rows deleted.
 	PruneRevoked(ctx context.Context, olderThan time.Time) (int64, error)
 }
+
+// SessionStartRepository records when each Clerk session was first seen.
+//
+// Clerk refreshes JWTs every ~60 s, making iat useless for session-age
+// enforcement. The fva[0] claim provides the session origin but is absent
+// for OAuth / automatic-login flows. This repository fills that gap: the first
+// authenticated request for a given sid inserts the current time; subsequent
+// requests retrieve the already-stored value. PolicyProvider uses the returned
+// time to enforce auth.session_max_age_seconds regardless of auth method.
+type SessionStartRepository interface {
+	// UpsertSessionStart records the start time for sid on its first call.
+	// If sid already exists the stored started_at is returned unchanged.
+	// Implementations must be idempotent and concurrency-safe.
+	UpsertSessionStart(ctx context.Context, sid string) (startedAt time.Time, err error)
+	// PruneSessionStarts deletes records created before olderThan.
+	// Called by the worker maintenance job alongside PruneRevoked.
+	PruneSessionStarts(ctx context.Context, olderThan time.Time) (int64, error)
+}

@@ -335,7 +335,10 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		)
 	}
 	clerkProvider := auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, authWarmup, s.log, jwksOpts...)
-	sessionProvider := middleware.NewPolicyProvider(clerkProvider, repos.session, paramSvc, s.log)
+	sessionStartRepo := repository.NewPostgresSessionStartRepository(s.db)
+	sessionProvider := middleware.NewPolicyProvider(clerkProvider, repos.session, paramSvc, s.log,
+		middleware.WithSessionStarter(sessionStartRepo),
+	)
 
 	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))
 	rateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst)

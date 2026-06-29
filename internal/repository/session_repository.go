@@ -63,3 +63,50 @@ func (r *PostgresSessionRepository) PruneRevoked(ctx context.Context, olderThan 
 }
 
 var _ SessionRepository = (*PostgresSessionRepository)(nil)
+
+// PostgresSessionStartRepository is the PostgreSQL-backed implementation of
+// SessionStartRepository.
+type PostgresSessionStartRepository struct {
+	db *pgxpool.Pool
+}
+
+// NewPostgresSessionStartRepository constructs a PostgresSessionStartRepository.
+func NewPostgresSessionStartRepository(db *pgxpool.Pool) *PostgresSessionStartRepository {
+	return &PostgresSessionStartRepository{db: db}
+}
+
+// UpsertSessionStart inserts a new row for sid with the current timestamp on
+// first call, then returns the stored started_at. The upsert uses
+// "DO UPDATE SET started_at = session_starts.started_at" — a no-op update
+// that forces Postgres to include the existing row in the RETURNING clause,
+// making this a single round-trip regardless of whether the row is new.
+func (r *PostgresSessionStartRepository) UpsertSessionStart(ctx context.Context, sid string) (time.Time, error) {
+	var t time.Time
+	err := r.db.QueryRow(ctx,
+		`INSERT INTO session_starts (sid, started_at)
+		 VALUES ($1, NOW())
+		 ON CONFLICT (sid) DO UPDATE
+		   SET started_at = session_starts.started_at
+		 RETURNING started_at`,
+		sid,
+	).Scan(&t)
+	if err != nil {
+		return time.Time{}, apperrors.Internal(err)
+	}
+	return t, nil
+}
+
+// PruneSessionStarts deletes records created before olderThan and returns the
+// number of rows removed.
+func (r *PostgresSessionStartRepository) PruneSessionStarts(ctx context.Context, olderThan time.Time) (int64, error) {
+	tag, err := r.db.Exec(ctx,
+		`DELETE FROM session_starts WHERE started_at < $1`,
+		olderThan,
+	)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+var _ SessionStartRepository = (*PostgresSessionStartRepository)(nil)

@@ -230,3 +230,133 @@ func TestPolicyProvider_ZeroSessionStartedAt_FallsBackToIssuedAt(t *testing.T) {
 		t.Fatalf("expected ErrInvalidToken when falling back to IssuedAt, got %v", err)
 	}
 }
+
+// ── DB-backed session-start tracking (OAuth / fva-absent flows) ──────────────
+
+// stubSessionStarter implements SessionStarter for policy tests.
+type stubSessionStarter struct {
+	startedAt time.Time
+	err       error
+	calls     int
+}
+
+func (s *stubSessionStarter) UpsertSessionStart(_ context.Context, _ string) (time.Time, error) {
+	s.calls++
+	return s.startedAt, s.err
+}
+
+func makePolicyProviderWithStarter(
+	inner auth.IdentityProvider,
+	bl middleware.IsRevoker,
+	ss middleware.SessionStarter,
+	maxAgeSecs int,
+) auth.IdentityProvider {
+	return middleware.NewPolicyProvider(inner, bl, &stubParams{maxAge: maxAgeSecs}, zap.NewNop(),
+		middleware.WithSessionStarter(ss),
+	)
+}
+
+// TestPolicyProvider_DBSession_OldSession_Rejects verifies that when fva is absent
+// and the DB tracker returns a start time older than max-age, the token is rejected.
+// This is the primary regression test for the OAuth session-timeout bug.
+func TestPolicyProvider_DBSession_OldSession_Rejects(t *testing.T) {
+	claims := auth.Claims{
+		Subject:          "user_oauth",
+		IssuedAt:         time.Now(), // JWT just refreshed — very recent
+		SessionStartedAt: time.Time{}, // fva absent (OAuth login)
+		SessionID:        "sid_oauth_old",
+	}
+	ss := &stubSessionStarter{
+		startedAt: time.Now().Add(-6 * time.Hour), // session started 6 h ago
+	}
+	p := makePolicyProviderWithStarter(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		ss,
+		18000, // max_age = 5 h; session is 6 h old → must reject
+	)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken for OAuth session older than max-age, got %v", err)
+	}
+	if ss.calls != 1 {
+		t.Errorf("expected UpsertSessionStart called once, got %d", ss.calls)
+	}
+}
+
+// TestPolicyProvider_DBSession_FreshSession_Passes verifies that a fresh OAuth
+// session (within max-age) passes despite fva being absent.
+func TestPolicyProvider_DBSession_FreshSession_Passes(t *testing.T) {
+	claims := auth.Claims{
+		Subject:          "user_oauth",
+		IssuedAt:         time.Now(),
+		SessionStartedAt: time.Time{}, // fva absent
+		SessionID:        "sid_oauth_fresh",
+	}
+	ss := &stubSessionStarter{
+		startedAt: time.Now().Add(-1 * time.Hour), // 1 h old, within 5 h max-age
+	}
+	p := makePolicyProviderWithStarter(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		ss,
+		18000,
+	)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if err != nil {
+		t.Fatalf("expected no error for fresh OAuth session, got %v", err)
+	}
+}
+
+// TestPolicyProvider_DBSession_StarterError_FallsBackToIssuedAt verifies that
+// when UpsertSessionStart fails the provider falls back to IssuedAt (fail-open),
+// preserving availability during a DB outage.
+func TestPolicyProvider_DBSession_StarterError_FallsBackToIssuedAt(t *testing.T) {
+	claims := auth.Claims{
+		Subject:          "user_oauth",
+		IssuedAt:         time.Now(), // fresh JWT — within max-age via IssuedAt
+		SessionStartedAt: time.Time{},
+		SessionID:        "sid_oauth_dberr",
+	}
+	ss := &stubSessionStarter{err: errors.New("connection refused")}
+	p := makePolicyProviderWithStarter(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		ss,
+		18000,
+	)
+
+	// DB error + fresh IssuedAt → should pass (fail-open)
+	_, err := p.ValidateToken(context.Background(), "any")
+	if err != nil {
+		t.Fatalf("expected fail-open on DB error, got %v", err)
+	}
+}
+
+// TestPolicyProvider_FvaPresent_StarterNotCalled confirms that when fva is present
+// (SessionStartedAt != zero) the DB tracker is not consulted.
+func TestPolicyProvider_FvaPresent_StarterNotCalled(t *testing.T) {
+	claims := auth.Claims{
+		Subject:          "user_abc",
+		IssuedAt:         time.Now(),
+		SessionStartedAt: time.Now().Add(-1 * time.Hour), // fva present
+		SessionID:        "sid_fva",
+	}
+	ss := &stubSessionStarter{startedAt: time.Now()} // would pass if called, but must NOT be called
+	p := makePolicyProviderWithStarter(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		ss,
+		18000,
+	)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if ss.calls != 0 {
+		t.Errorf("expected UpsertSessionStart not called when fva is present, got %d calls", ss.calls)
+	}
+}
