@@ -67,12 +67,21 @@ interface SlotRowProps {
   readonly showScore: boolean;
 }
 
-function SlotRow({ slot, score, penaltyScore, isWinner, showScore }: SlotRowProps) {
+function SlotRow({
+  slot,
+  score,
+  penaltyScore,
+  isWinner,
+  showScore,
+}: SlotRowProps) {
   const { slotDesc, teamName } = useI18n();
   const hasTeam = !!slot?.team;
   const isLoser = showScore && hasTeam && !isWinner;
   let teamClass = "italic text-text-muted";
-  if (hasTeam) teamClass = isWinner ? "font-semibold text-green-400" : "font-semibold text-white";
+  if (hasTeam)
+    teamClass = isWinner
+      ? "font-semibold text-green-400"
+      : "font-semibold text-white";
   return (
     <div
       className={cn(
@@ -81,9 +90,7 @@ function SlotRow({ slot, score, penaltyScore, isWinner, showScore }: SlotRowProp
         isLoser && "opacity-40",
       )}
     >
-      <span
-        className={cn("flex-1 truncate text-sm", teamClass)}
-      >
+      <span className={cn("flex-1 truncate text-sm", teamClass)}>
         {hasTeam ? teamName(slot!.team) : slotDesc(slot?.description)}
       </span>
       {showScore && score !== null && (
@@ -236,15 +243,11 @@ function PhaseAccordion({
         onClick={() => setOpen((o) => !o)}
         className={cn(
           "flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors",
-          isFinal
-            ? "hover:bg-gold-600/[0.05]"
-            : "hover:bg-white/[0.03]",
+          isFinal ? "hover:bg-gold-600/[0.05]" : "hover:bg-white/[0.03]",
         )}
       >
         <div className="flex items-center gap-2">
-          {isFinal && (
-            <Trophy className="h-4 w-4 shrink-0 text-gold-300" />
-          )}
+          {isFinal && <Trophy className="h-4 w-4 shrink-0 text-gold-300" />}
           <span
             className={cn(
               "font-semibold",
@@ -281,7 +284,13 @@ function PhaseAccordion({
           )}
         >
           {pairs.map(({ num, home, away }) => (
-            <MatchPair key={num} index={num} home={home} away={away} isFinal={isFinal} />
+            <MatchPair
+              key={num}
+              index={num}
+              home={home}
+              away={away}
+              isFinal={isFinal}
+            />
           ))}
         </div>
       )}

@@ -137,7 +137,7 @@ export interface MatchResponse {
   home_score: number | null;
   away_score: number | null;
   win_method: string | null;
-  period?: string | null;           // "ET" | "PEN_LIVE" | "1H" | "HT" | "2H" — null when not live
+  period?: string | null; // "ET" | "PEN_LIVE" | "1H" | "HT" | "2H" — null when not live
   penalty_home_score?: number | null; // shootout tally; non-null during/after PEN_LIVE
   penalty_away_score?: number | null; // shootout tally; non-null during/after PEN_LIVE
   status: MatchStatus;
@@ -157,6 +157,8 @@ export interface MatchPredictionSnapshot {
   home_score: number;
   away_score: number;
   has_prediction: boolean;
+  predicted_win_method?: string | null;
+  predicted_penalty_winner?: string | null;
 }
 
 export interface UserLivePrediction {

@@ -17,7 +17,10 @@ vi.mock("@tanstack/react-query", () => ({
 // the JSX transform runs, so JSX syntax causes a parse error in that context.
 vi.mock("@/components/shared/LoadingState", () => ({
   LoadingState: ({ rows }: { rows?: number }) =>
-    React.createElement("div", { "data-testid": "loading-state", "data-rows": rows }),
+    React.createElement("div", {
+      "data-testid": "loading-state",
+      "data-rows": rows,
+    }),
 }));
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────

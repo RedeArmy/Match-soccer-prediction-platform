@@ -894,9 +894,7 @@ describe("PredictionPanel", () => {
     renderPanel();
 
     // Default draft is 0-0 (draw) — penalty winner selector must appear.
-    expect(
-      await screen.findByText("Ganador en penales"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Ganador en penales")).toBeInTheDocument();
     // Both team buttons are rendered inside the selector.
     const buttons = await screen.findAllByText("Alemania");
     expect(buttons.length).toBeGreaterThanOrEqual(1);
@@ -922,7 +920,9 @@ describe("PredictionPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /Guardar prediccion/ }));
 
     expect(
-      await screen.findByText("Selecciona el ganador en penales antes de guardar."),
+      await screen.findByText(
+        "Selecciona el ganador en penales antes de guardar.",
+      ),
     ).toBeInTheDocument();
     expect(api.submitPrediction).not.toHaveBeenCalled();
   });
@@ -949,13 +949,9 @@ describe("PredictionPanel", () => {
     const inputs = screen.getAllByRole("spinbutton");
     fireEvent.change(inputs[0], { target: { value: "2" } });
 
-    expect(
-      await screen.findByText("Tiempo Extra"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Tiempo Extra")).toBeInTheDocument();
     // Penalty winner selector must no longer be shown.
-    expect(
-      screen.queryByText("Ganador en penales"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Ganador en penales")).not.toBeInTheDocument();
   });
 
   it("shows TIEMPO EXTRA badge during extra time (period=ET)", async () => {
@@ -975,9 +971,7 @@ describe("PredictionPanel", () => {
 
     renderPanel();
 
-    expect(
-      await screen.findByText("TIEMPO EXTRA"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("TIEMPO EXTRA")).toBeInTheDocument();
   });
 
   it("shows PENALES badge during penalty shootout (period=PEN_LIVE)", async () => {
@@ -997,9 +991,7 @@ describe("PredictionPanel", () => {
 
     renderPanel();
 
-    expect(
-      await screen.findByText("PENALES"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("PENALES")).toBeInTheDocument();
   });
 
   it("shows shootout tally when penalty_home_score is set", async () => {
@@ -1016,7 +1008,9 @@ describe("PredictionPanel", () => {
       phase: "quarter_final",
       group_label: null,
     };
-    vi.mocked(api.getMatches).mockResolvedValueOnce([finishedPenMatch] as never);
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      finishedPenMatch,
+    ] as never);
     vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
 
     renderPanel();
@@ -1078,7 +1072,9 @@ describe("PredictionPanel", () => {
     // Saving without a selection must show the validation error again.
     fireEvent.click(screen.getByRole("button", { name: /Guardar prediccion/ }));
     expect(
-      await screen.findByText("Selecciona el ganador en penales antes de guardar."),
+      await screen.findByText(
+        "Selecciona el ganador en penales antes de guardar.",
+      ),
     ).toBeInTheDocument();
   });
 

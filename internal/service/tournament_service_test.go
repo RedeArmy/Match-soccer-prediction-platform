@@ -419,6 +419,50 @@ func TestSlotWinnerLoser_Draw_ReturnsBothEmpty(t *testing.T) {
 	}
 }
 
+func TestSlotWinnerLoser_Penalties_HomeWinner(t *testing.T) {
+	hs, as := 0, 0
+	wm := domain.WinMethodPenalties
+	pw := "home"
+	m := &domain.Match{
+		HomeTeam: tournamentMexico, AwayTeam: "USA",
+		HomeScore: &hs, AwayScore: &as,
+		WinMethod: &wm, PenaltyWinner: &pw,
+	}
+	w, l := slotWinnerLoser(m)
+	if w != tournamentMexico || l != "USA" {
+		t.Errorf("got winner=%q loser=%q; want Mexico/USA for home penalty winner", w, l)
+	}
+}
+
+func TestSlotWinnerLoser_Penalties_AwayWinner(t *testing.T) {
+	hs, as := 1, 1
+	wm := domain.WinMethodPenalties
+	pw := "away"
+	m := &domain.Match{
+		HomeTeam: tournamentMexico, AwayTeam: "USA",
+		HomeScore: &hs, AwayScore: &as,
+		WinMethod: &wm, PenaltyWinner: &pw,
+	}
+	w, l := slotWinnerLoser(m)
+	if w != "USA" || l != tournamentMexico {
+		t.Errorf("got winner=%q loser=%q; want USA/Mexico for away penalty winner", w, l)
+	}
+}
+
+func TestSlotWinnerLoser_Penalties_NilPenaltyWinner_ReturnsBothEmpty(t *testing.T) {
+	hs, as := 0, 0
+	wm := domain.WinMethodPenalties
+	m := &domain.Match{
+		HomeTeam: tournamentMexico, AwayTeam: "USA",
+		HomeScore: &hs, AwayScore: &as,
+		WinMethod: &wm, PenaltyWinner: nil,
+	}
+	w, l := slotWinnerLoser(m)
+	if w != "" || l != "" {
+		t.Errorf("got winner=%q loser=%q; want empty/empty when PenaltyWinner is nil", w, l)
+	}
+}
+
 func TestSlotWinnerLoser_NilScores_ReturnsBothEmpty(t *testing.T) {
 	m := &domain.Match{HomeTeam: tournamentMexico, AwayTeam: "USA"}
 	w, l := slotWinnerLoser(m)

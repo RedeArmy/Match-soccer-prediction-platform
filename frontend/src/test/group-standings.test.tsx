@@ -445,15 +445,57 @@ describe("getBestEightThirds", () => {
     // Group B: B1 wins big (2-0), so B3 ends with GD=-1; 3rd=B3.
     // A3(GD=0) should rank above B3(GD=-1) since pts are equal.
     const groupsA = buildGroupStandings([
-      match({ group_label: "A", home_team: "A1", away_team: "A2", status: "finished", home_score: 1, away_score: 0 }),
-      match({ group_label: "A", home_team: "A2", away_team: "A3", status: "finished", home_score: 1, away_score: 0 }),
-      match({ group_label: "A", home_team: "A3", away_team: "A1", status: "finished", home_score: 1, away_score: 0 }),
+      match({
+        group_label: "A",
+        home_team: "A1",
+        away_team: "A2",
+        status: "finished",
+        home_score: 1,
+        away_score: 0,
+      }),
+      match({
+        group_label: "A",
+        home_team: "A2",
+        away_team: "A3",
+        status: "finished",
+        home_score: 1,
+        away_score: 0,
+      }),
+      match({
+        group_label: "A",
+        home_team: "A3",
+        away_team: "A1",
+        status: "finished",
+        home_score: 1,
+        away_score: 0,
+      }),
     ])["A"]; // A1=3pts GD=0, A2=3pts GD=0, A3=3pts GD=0 → sorted by name → A3 is 3rd
 
     const groupsB = buildGroupStandings([
-      match({ group_label: "B", home_team: "B1", away_team: "B2", status: "finished", home_score: 2, away_score: 0 }),
-      match({ group_label: "B", home_team: "B2", away_team: "B3", status: "finished", home_score: 2, away_score: 0 }),
-      match({ group_label: "B", home_team: "B3", away_team: "B1", status: "finished", home_score: 1, away_score: 0 }),
+      match({
+        group_label: "B",
+        home_team: "B1",
+        away_team: "B2",
+        status: "finished",
+        home_score: 2,
+        away_score: 0,
+      }),
+      match({
+        group_label: "B",
+        home_team: "B2",
+        away_team: "B3",
+        status: "finished",
+        home_score: 2,
+        away_score: 0,
+      }),
+      match({
+        group_label: "B",
+        home_team: "B3",
+        away_team: "B1",
+        status: "finished",
+        home_score: 1,
+        away_score: 0,
+      }),
     ])["B"]; // B1=3pts GD+1, B2=3pts GD=0, B3=3pts GD=-1 → 3rd=B3
 
     const result = getBestEightThirds({ A: groupsA, B: groupsB });
@@ -468,15 +510,57 @@ describe("getBestEightThirds", () => {
     // Group B (2-0 circular): all 3pts, GD=0, GF=2 → B3 is 3rd.
     // B3(GF=2) should rank above A3(GF=1); sort reaches GF branch.
     const groupsA = buildGroupStandings([
-      match({ group_label: "A", home_team: "A1", away_team: "A2", status: "finished", home_score: 1, away_score: 0 }),
-      match({ group_label: "A", home_team: "A2", away_team: "A3", status: "finished", home_score: 1, away_score: 0 }),
-      match({ group_label: "A", home_team: "A3", away_team: "A1", status: "finished", home_score: 1, away_score: 0 }),
+      match({
+        group_label: "A",
+        home_team: "A1",
+        away_team: "A2",
+        status: "finished",
+        home_score: 1,
+        away_score: 0,
+      }),
+      match({
+        group_label: "A",
+        home_team: "A2",
+        away_team: "A3",
+        status: "finished",
+        home_score: 1,
+        away_score: 0,
+      }),
+      match({
+        group_label: "A",
+        home_team: "A3",
+        away_team: "A1",
+        status: "finished",
+        home_score: 1,
+        away_score: 0,
+      }),
     ])["A"]; // pts=3, GD=0, GF=1 for all → A3 is 3rd (name sort)
 
     const groupsB = buildGroupStandings([
-      match({ group_label: "B", home_team: "B1", away_team: "B2", status: "finished", home_score: 2, away_score: 0 }),
-      match({ group_label: "B", home_team: "B2", away_team: "B3", status: "finished", home_score: 2, away_score: 0 }),
-      match({ group_label: "B", home_team: "B3", away_team: "B1", status: "finished", home_score: 2, away_score: 0 }),
+      match({
+        group_label: "B",
+        home_team: "B1",
+        away_team: "B2",
+        status: "finished",
+        home_score: 2,
+        away_score: 0,
+      }),
+      match({
+        group_label: "B",
+        home_team: "B2",
+        away_team: "B3",
+        status: "finished",
+        home_score: 2,
+        away_score: 0,
+      }),
+      match({
+        group_label: "B",
+        home_team: "B3",
+        away_team: "B1",
+        status: "finished",
+        home_score: 2,
+        away_score: 0,
+      }),
     ])["B"]; // pts=3, GD=0, GF=2 for all → B3 is 3rd (name sort)
 
     const result = getBestEightThirds({ A: groupsA, B: groupsB });
