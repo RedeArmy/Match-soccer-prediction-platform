@@ -66,7 +66,9 @@ func (r *PostgresTournamentRepository) ListSlots(ctx context.Context) ([]*domain
 	rows, err := r.db.Query(ctx, `
 		SELECT ts.id, ts.label, ts.description, ts.team, ts.auto_source,
 		       ts.confirmed_at, ts.confirmed_by_user_id, ts.created_at, ts.updated_at,
-		       m.kickoff_at AS match_kickoff_at
+		       m.kickoff_at AS match_kickoff_at,
+		       m.home_score, m.away_score, m.status, m.win_method,
+		       m.penalty_home_score, m.penalty_away_score
 		FROM tournament_slots ts
 		LEFT JOIN matches m ON (m.home_slot_id = ts.id OR m.away_slot_id = ts.id)
 		ORDER BY ts.id`,
@@ -83,6 +85,8 @@ func (r *PostgresTournamentRepository) ListSlots(ctx context.Context) ([]*domain
 			&s.ID, &s.Label, &s.Description, &s.Team, &s.AutoSource,
 			&s.ConfirmedAt, &s.ConfirmedByUserID, &s.CreatedAt, &s.UpdatedAt,
 			&s.MatchKickoffAt,
+			&s.MatchHomeScore, &s.MatchAwayScore, &s.MatchStatus, &s.MatchWinMethod,
+			&s.PenaltyHomeScore, &s.PenaltyAwayScore,
 		); err != nil {
 			return nil, apperrors.Internal(err)
 		}
