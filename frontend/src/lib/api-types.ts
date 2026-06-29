@@ -299,6 +299,12 @@ export interface TournamentSlotResponse {
   created_at: string;
   updated_at: string;
   match_kickoff_at?: string | null;
+  match_home_score?: number | null;
+  match_away_score?: number | null;
+  match_status?: string | null;
+  match_win_method?: string | null;
+  penalty_home_score?: number | null;
+  penalty_away_score?: number | null;
 }
 
 export interface BestThirdAssignment {

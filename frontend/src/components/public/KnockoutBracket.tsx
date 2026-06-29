@@ -61,21 +61,46 @@ function formatKickoff(iso: string | null | undefined): string | null {
 
 interface SlotRowProps {
   readonly slot: TournamentSlotResponse | undefined;
+  readonly score: number | null;
+  readonly penaltyScore: number | null;
+  readonly isWinner: boolean;
+  readonly showScore: boolean;
 }
 
-function SlotRow({ slot }: SlotRowProps) {
+function SlotRow({ slot, score, penaltyScore, isWinner, showScore }: SlotRowProps) {
   const { slotDesc, teamName } = useI18n();
   const hasTeam = !!slot?.team;
+  const isLoser = showScore && hasTeam && !isWinner;
+  let teamClass = "italic text-text-muted";
+  if (hasTeam) teamClass = isWinner ? "font-semibold text-green-400" : "font-semibold text-white";
   return (
-    <div className="flex items-center gap-2 px-3 py-2">
+    <div
+      className={cn(
+        "flex items-center gap-2 px-3 py-2 transition-colors",
+        isWinner && "bg-green-500/10",
+        isLoser && "opacity-40",
+      )}
+    >
       <span
-        className={cn(
-          "flex-1 truncate text-sm",
-          hasTeam ? "font-semibold text-white" : "italic text-text-muted",
-        )}
+        className={cn("flex-1 truncate text-sm", teamClass)}
       >
         {hasTeam ? teamName(slot!.team) : slotDesc(slot?.description)}
       </span>
+      {showScore && score !== null && (
+        <span
+          className={cn(
+            "shrink-0 tabular-nums text-sm font-bold",
+            isWinner ? "text-green-400" : "text-white/70",
+          )}
+        >
+          {score}
+          {penaltyScore !== null && (
+            <span className="ml-0.5 text-[10px] font-normal text-white/40">
+              ({penaltyScore})
+            </span>
+          )}
+        </span>
+      )}
     </div>
   );
 }
@@ -83,10 +108,32 @@ function SlotRow({ slot }: SlotRowProps) {
 interface MatchPairProps {
   readonly home: TournamentSlotResponse | undefined;
   readonly away: TournamentSlotResponse | undefined;
+  readonly index: number;
   readonly isFinal?: boolean;
 }
 
-function MatchPair({ home, away, isFinal }: MatchPairProps) {
+function MatchPair({ home, away, index, isFinal }: MatchPairProps) {
+  const ref = home ?? away;
+  const isFinished = ref?.match_status === "finished";
+  const byPenalties = ref?.match_win_method === "penalties";
+
+  const homeScore = ref?.match_home_score ?? null;
+  const awayScore = ref?.match_away_score ?? null;
+  const penHome = byPenalties ? (ref?.penalty_home_score ?? null) : null;
+  const penAway = byPenalties ? (ref?.penalty_away_score ?? null) : null;
+
+  let homeWins = false;
+  let awayWins = false;
+  if (isFinished && homeScore !== null && awayScore !== null) {
+    if (byPenalties) {
+      homeWins = (penHome ?? 0) > (penAway ?? 0);
+      awayWins = (penAway ?? 0) > (penHome ?? 0);
+    } else {
+      homeWins = homeScore > awayScore;
+      awayWins = awayScore > homeScore;
+    }
+  }
+
   const kickoff = formatKickoff(
     home?.match_kickoff_at ?? away?.match_kickoff_at,
   );
@@ -99,26 +146,44 @@ function MatchPair({ home, away, isFinal }: MatchPairProps) {
           : "border-white/10 bg-white/[0.03]",
       )}
     >
-      {kickoff && (
-        <div
+      <div
+        className={cn(
+          "flex items-center justify-between border-b px-3 pt-1.5 pb-0.5",
+          isFinal ? "border-gold-600/20" : "border-white/5",
+        )}
+      >
+        <span
           className={cn(
-            "border-b px-3 pt-1.5 pb-0.5",
-            isFinal ? "border-gold-600/20" : "border-white/5",
+            "text-[10px] font-medium uppercase tracking-wide",
+            isFinal ? "text-gold-300/60" : "text-text-muted/60",
           )}
         >
-          <span
-            className={cn(
-              "text-[10px] font-medium uppercase tracking-wide",
-              isFinal ? "text-gold-300/60" : "text-text-muted/60",
-            )}
-          >
-            {kickoff}
-          </span>
-        </div>
-      )}
-      <SlotRow slot={home} />
+          {kickoff && !isFinished ? kickoff : ""}
+        </span>
+        <span
+          className={cn(
+            "text-[10px] font-medium tabular-nums",
+            isFinal ? "text-gold-300/50" : "text-text-muted/50",
+          )}
+        >
+          M{String(index).padStart(2, "0")}
+        </span>
+      </div>
+      <SlotRow
+        slot={home}
+        score={homeScore}
+        penaltyScore={penHome}
+        isWinner={homeWins}
+        showScore={isFinished}
+      />
       <div className={cn("h-px", isFinal ? "bg-gold-600/20" : "bg-white/10")} />
-      <SlotRow slot={away} />
+      <SlotRow
+        slot={away}
+        score={awayScore}
+        penaltyScore={penAway}
+        isWinner={awayWins}
+        showScore={isFinished}
+      />
     </div>
   );
 }
@@ -216,7 +281,7 @@ function PhaseAccordion({
           )}
         >
           {pairs.map(({ num, home, away }) => (
-            <MatchPair key={num} home={home} away={away} isFinal={isFinal} />
+            <MatchPair key={num} index={num} home={home} away={away} isFinal={isFinal} />
           ))}
         </div>
       )}

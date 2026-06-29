@@ -807,21 +807,35 @@ function translateSlotDescription(
   locale: Locale,
 ): string {
   if (!desc) return "—";
-  if (locale === "es") return desc;
 
   const groupMatch = /^(\d+)\.° Grupo ([A-L])$/.exec(desc);
   if (groupMatch) {
+    if (locale === "es") return desc;
     return `${englishOrdinal(Number(groupMatch[1]))} Group ${groupMatch[2]}`;
   }
 
   const best3rd = /^Mejor 3\.° \(p\.(\d+)\)$/.exec(desc);
-  if (best3rd) return `Best 3rd (p.${best3rd[1]})`;
+  if (best3rd) {
+    if (locale === "es") return desc;
+    return `Best 3rd (p.${best3rd[1]})`;
+  }
+
+  // Strip the phase abbreviation (R32, R16, QF, SF, TP, FIN) that the DB
+  // stores between "Ganador"/"Perdedor" and the match code, e.g.
+  // "Ganador R32 M01" → "Ganador M01" / "Winner M01".
+  const phaseRe = /^(?:R32|R16|QF|SF|TP|FIN)\s+/;
 
   const winner = /^Ganador (.+)$/.exec(desc);
-  if (winner) return `Winner ${winner[1]}`;
+  if (winner) {
+    const code = winner[1].replace(phaseRe, "");
+    return locale === "es" ? `Ganador ${code}` : `Winner ${code}`;
+  }
 
   const loser = /^Perdedor (.+)$/.exec(desc);
-  if (loser) return `Loser ${loser[1]}`;
+  if (loser) {
+    const code = loser[1].replace(phaseRe, "");
+    return locale === "es" ? `Perdedor ${code}` : `Loser ${code}`;
+  }
 
   return desc;
 }

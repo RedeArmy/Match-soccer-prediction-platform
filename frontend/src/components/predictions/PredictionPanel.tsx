@@ -787,8 +787,9 @@ function PredictionMatchCard({
     <article
       className={cn("rounded border p-4 transition-colors", articleClass)}
     >
-      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
-        <div className="min-w-0">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+        {/* ── Match info ── */}
+        <div className="min-w-0 flex-1">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             {statusBadge}
             {isExtraTime && (
@@ -867,12 +868,11 @@ function PredictionMatchCard({
               />
             )}
           </div>
-
         </div>
 
-        {/* Win-method bonus UI — knockout phases only, unlocked matches */}
+        {/* ── Win-method — knockout phases only, unlocked matches ── */}
         {isKnockoutUnlocked && (
-          <div className="rounded border border-white/8 bg-white/[0.03] px-3 py-2">
+          <div className="flex shrink-0 items-center justify-center self-stretch rounded border border-white/8 bg-white/[0.03] px-3 py-2 lg:min-w-[9rem]">
             <WinMethodSelector
               match={match}
               draft={draft}
@@ -883,7 +883,8 @@ function PredictionMatchCard({
           </div>
         )}
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        {/* ── Score inputs + action ── */}
+        <div className="flex shrink-0 items-center gap-2">
           <ScoreInput
             label={t("predictions.home")}
             value={draft.home}
@@ -911,7 +912,7 @@ function PredictionMatchCard({
             }
           />
           {isFinished ? (
-            <div className="flex w-full flex-col items-center justify-center gap-0.5 rounded-lg border border-gold-400/20 bg-gold-400/10 px-4 py-2 sm:w-auto sm:min-w-[4.5rem]">
+            <div className="flex flex-col items-center justify-center gap-0.5 rounded-lg border border-gold-400/20 bg-gold-400/10 px-4 py-2 min-w-[4.5rem]">
               <span className="text-[10px] uppercase tracking-wide text-text-muted">
                 {t("predictions.points")}
               </span>
@@ -931,7 +932,7 @@ function PredictionMatchCard({
                 setLocalError(null);
                 onSave();
               }}
-              className="btn-gold w-full px-2 py-1.5 text-xs sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn-gold px-2 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Save className="h-4 w-4 shrink-0" />
               <span className="relative">
@@ -1036,7 +1037,7 @@ function WinMethodSelector({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col items-center gap-2 text-center">
       <span className="text-xs font-medium text-text-secondary">
         {t("predictions.extraTime")}
       </span>
@@ -1051,7 +1052,7 @@ function WinMethodSelector({
             penaltyWinner: null,
           })
         }
-        className="h-3.5 w-3.5 rounded accent-gold-400"
+        className="h-4 w-4 rounded accent-gold-400"
       />
     </div>
   );

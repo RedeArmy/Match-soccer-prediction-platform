@@ -35,6 +35,12 @@ type TournamentSlotResponse struct {
 	CreatedAt         string  `json:"created_at"`
 	UpdatedAt         string  `json:"updated_at"`
 	MatchKickoffAt    *string `json:"match_kickoff_at,omitempty"`
+	MatchHomeScore    *int    `json:"match_home_score,omitempty"`
+	MatchAwayScore    *int    `json:"match_away_score,omitempty"`
+	MatchStatus       *string `json:"match_status,omitempty"`
+	MatchWinMethod    *string `json:"match_win_method,omitempty"`
+	PenaltyHomeScore  *int    `json:"penalty_home_score,omitempty"`
+	PenaltyAwayScore  *int    `json:"penalty_away_score,omitempty"`
 }
 
 func standingToResponse(st *domain.GroupStanding) GroupStandingResponse {
@@ -83,5 +89,11 @@ func slotToResponse(s *domain.TournamentSlot) TournamentSlotResponse {
 		k := s.MatchKickoffAt.Format(timeFormat)
 		resp.MatchKickoffAt = &k
 	}
+	resp.MatchHomeScore = s.MatchHomeScore
+	resp.MatchAwayScore = s.MatchAwayScore
+	resp.MatchStatus = s.MatchStatus
+	resp.MatchWinMethod = s.MatchWinMethod
+	resp.PenaltyHomeScore = s.PenaltyHomeScore
+	resp.PenaltyAwayScore = s.PenaltyAwayScore
 	return resp
 }
