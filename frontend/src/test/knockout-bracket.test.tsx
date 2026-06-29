@@ -241,28 +241,28 @@ describe("slot descriptions – español", () => {
     expect(await screen.findByText("Mejor 3.° (p.2)")).toBeInTheDocument();
   });
 
-  it("muestra 'Ganador R32 M02' sin cambios en slot no confirmado", async () => {
+  it("muestra 'Ganador M02' (sin código de fase) en slot no confirmado", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
       makeSlot(1, "r16_01_a", "Ganador R32 M01", "México"),
-      makeSlot(2, "r16_01_b", "Ganador R32 M02"), // unconfirmed → shows description
+      makeSlot(2, "r16_01_b", "Ganador R32 M02"), // unconfirmed → shows description without phase code
       makeSlot(3, "r16_02_a", "Ganador R32 M03", "Brasil"),
       makeSlot(4, "r16_02_b", "Ganador R32 M04", "Argentina"), // M02 complete → r16 visible
     ] as never);
     renderBracket();
     // r16 is the only visible phase → defaultOpen=true, content visible without click
-    expect(await screen.findByText("Ganador R32 M02")).toBeInTheDocument();
+    expect(await screen.findByText("Ganador M02")).toBeInTheDocument();
   });
 
-  it("muestra 'Perdedor SF M02' sin cambios en slot no confirmado", async () => {
+  it("muestra 'Perdedor M02' (sin código de fase) en slot no confirmado", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
       makeSlot(1, "tp_01_a", "Perdedor SF M01", "Holanda"),
-      makeSlot(2, "tp_01_b", "Perdedor SF M02"), // unconfirmed → shows description
+      makeSlot(2, "tp_01_b", "Perdedor SF M02"), // unconfirmed → shows description without phase code
       makeSlot(3, "tp_02_a", "Perdedor SF M03", "Alemania"),
       makeSlot(4, "tp_02_b", "Perdedor SF M04", "Francia"), // M02 complete → tp visible
     ] as never);
     renderBracket();
     // tp is the only visible phase → defaultOpen=true, content visible without click
-    expect(await screen.findByText("Perdedor SF M02")).toBeInTheDocument();
+    expect(await screen.findByText("Perdedor M02")).toBeInTheDocument();
   });
 });
 
@@ -303,29 +303,31 @@ describe("slot descriptions – English", () => {
     expect(screen.queryByText("Mejor 3.° (p.2)")).toBeNull();
   });
 
-  it("translates 'Ganador R32 M02' → 'Winner R32 M02'", async () => {
+  it("translates 'Ganador R32 M02' → 'Winner M02' (phase code stripped)", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
       makeSlot(1, "r16_01_a", "Ganador R32 M01", "México"),
-      makeSlot(2, "r16_01_b", "Ganador R32 M02"), // unconfirmed → shows translated desc
+      makeSlot(2, "r16_01_b", "Ganador R32 M02"), // unconfirmed → shows translated desc without phase code
       makeSlot(3, "r16_02_a", "Ganador R32 M03", "Brasil"),
       makeSlot(4, "r16_02_b", "Ganador R32 M04", "Argentina"), // M02 complete → r16 visible
     ] as never);
     renderBracket();
     // r16 is the only visible phase → defaultOpen=true, content visible without click
-    expect(await screen.findByText("Winner R32 M02")).toBeInTheDocument();
+    expect(await screen.findByText("Winner M02")).toBeInTheDocument();
+    expect(screen.queryByText("Winner R32 M02")).toBeNull();
     expect(screen.queryByText("Ganador R32 M02")).toBeNull();
   });
 
-  it("translates 'Perdedor SF M02' → 'Loser SF M02'", async () => {
+  it("translates 'Perdedor SF M02' → 'Loser M02' (phase code stripped)", async () => {
     vi.mocked(api.getSlots).mockResolvedValueOnce([
       makeSlot(1, "tp_01_a", "Perdedor SF M01", "Holanda"),
-      makeSlot(2, "tp_01_b", "Perdedor SF M02"), // unconfirmed → shows translated desc
+      makeSlot(2, "tp_01_b", "Perdedor SF M02"), // unconfirmed → shows translated desc without phase code
       makeSlot(3, "tp_02_a", "Perdedor SF M03", "Alemania"),
       makeSlot(4, "tp_02_b", "Perdedor SF M04", "Francia"), // M02 complete → tp visible
     ] as never);
     renderBracket();
     // tp is the only visible phase → defaultOpen=true, content visible without click
-    expect(await screen.findByText("Loser SF M02")).toBeInTheDocument();
+    expect(await screen.findByText("Loser M02")).toBeInTheDocument();
+    expect(screen.queryByText("Loser SF M02")).toBeNull();
     expect(screen.queryByText("Perdedor SF M02")).toBeNull();
   });
 });
