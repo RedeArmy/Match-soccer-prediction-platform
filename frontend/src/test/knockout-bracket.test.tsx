@@ -266,6 +266,140 @@ describe("slot descriptions – español", () => {
   });
 });
 
+// ── score display — finished matches ─────────────────────────────────────────
+
+describe("score display — finished matches", () => {
+  // Helper that merges match result fields into a slot fixture.
+  function finishedSlot(
+    id: number,
+    label: string,
+    desc: string,
+    team: string | null,
+    result: {
+      match_home_score: number;
+      match_away_score: number;
+      match_win_method?: string | null;
+      penalty_home_score?: number | null;
+      penalty_away_score?: number | null;
+      match_kickoff_at?: string | null;
+    },
+  ) {
+    return {
+      ...makeSlot(id, label, desc, team),
+      match_status: "finished",
+      ...result,
+    };
+  }
+
+  it("displays home and away scores when the match is finished and home wins", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      finishedSlot(1, "r16_01_a", "G M01", "Alemania", {
+        match_home_score: 2,
+        match_away_score: 0,
+      }),
+      makeSlot(2, "r16_01_b", "G M02", "Francia"),
+    ] as never);
+    renderBracket();
+    expect(await screen.findByText("2")).toBeInTheDocument();
+    expect(screen.getByText("0")).toBeInTheDocument();
+  });
+
+  it("applies winner green styling to the home row and loser dimming to the away row", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      finishedSlot(1, "sf_01_a", "G QF M01", "Brasil", {
+        match_home_score: 3,
+        match_away_score: 1,
+      }),
+      makeSlot(2, "sf_01_b", "G QF M02", "Argentina"),
+    ] as never);
+    renderBracket();
+    await screen.findByText("3");
+    // Winner row has green background class
+    const winnerRow = screen.getByText("Brasil").closest("div");
+    expect(winnerRow?.className).toMatch(/bg-green-500/);
+    // Loser row has opacity dimming
+    const loserRow = screen.getByText("Argentina").closest("div");
+    expect(loserRow?.className).toMatch(/opacity-40/);
+  });
+
+  it("applies winner styling to the away row when away wins", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      finishedSlot(1, "qf_01_a", "G R16 M01", "Italia", {
+        match_home_score: 0,
+        match_away_score: 2,
+      }),
+      makeSlot(2, "qf_01_b", "G R16 M02", "España"),
+    ] as never);
+    renderBracket();
+    await screen.findByText("2");
+    const loserRow = screen.getByText("Italia").closest("div");
+    expect(loserRow?.className).toMatch(/opacity-40/);
+    const winnerRow = screen.getByText("España").closest("div");
+    expect(winnerRow?.className).toMatch(/bg-green-500/);
+  });
+
+  it("shows penalty tallies in parentheses when the match was decided by penalties (away wins pen)", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      finishedSlot(1, "fin_01_a", "G SF M01", "Brasil", {
+        match_home_score: 1,
+        match_away_score: 1,
+        match_win_method: "penalties",
+        penalty_home_score: 4,
+        penalty_away_score: 5,
+      }),
+      makeSlot(2, "fin_01_b", "G SF M02", "Argentina"),
+    ] as never);
+    renderBracket();
+    expect(await screen.findByText("(4)")).toBeInTheDocument();
+    expect(screen.getByText("(5)")).toBeInTheDocument();
+    // Away wins on penalties → Argentina row is green
+    const winnerRow = screen.getByText("Argentina").closest("div");
+    expect(winnerRow?.className).toMatch(/bg-green-500/);
+  });
+
+  it("shows penalty tallies and highlights home winner when home wins on penalties", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      finishedSlot(1, "sf_01_a", "G QF M01", "Portugal", {
+        match_home_score: 0,
+        match_away_score: 0,
+        match_win_method: "penalties",
+        penalty_home_score: 5,
+        penalty_away_score: 3,
+      }),
+      makeSlot(2, "sf_01_b", "G QF M02", "Croacia"),
+    ] as never);
+    renderBracket();
+    expect(await screen.findByText("(5)")).toBeInTheDocument();
+    expect(screen.getByText("(3)")).toBeInTheDocument();
+    const winnerRow = screen.getByText("Portugal").closest("div");
+    expect(winnerRow?.className).toMatch(/bg-green-500/);
+  });
+
+  it("hides kickoff time and shows only the match code when the match is finished", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      finishedSlot(1, "r16_01_a", "G M01", "Alemania", {
+        match_home_score: 1,
+        match_away_score: 0,
+        match_kickoff_at: "2026-07-01T20:00:00Z",
+      }),
+      makeSlot(2, "r16_01_b", "G M02", "Francia"),
+    ] as never);
+    renderBracket();
+    expect(await screen.findByText("M01")).toBeInTheDocument();
+    // Kickoff time must not appear for a finished match
+    expect(screen.queryByText(/20:00/)).toBeNull();
+  });
+
+  it("renders the match code badge (M01) on every card header", async () => {
+    vi.mocked(api.getSlots).mockResolvedValueOnce([
+      makeSlot(1, "r16_01_a", "G M01", "México"),
+      makeSlot(2, "r16_01_b", "G M02", "USA"),
+    ] as never);
+    renderBracket();
+    expect(await screen.findByText("M01")).toBeInTheDocument();
+  });
+});
+
 describe("slot descriptions – English", () => {
   beforeEach(() => {
     localStorage.setItem("quiniela-locale", "en");
