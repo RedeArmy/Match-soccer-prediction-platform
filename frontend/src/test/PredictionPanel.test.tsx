@@ -1027,4 +1027,91 @@ describe("PredictionPanel", () => {
     // "Pen 4 – 2" tally rendered as one span with nbsp separators.
     expect(await screen.findByText(/^Pen\s/)).toBeInTheDocument();
   });
+
+  it("selects a team from the penalty-winner dropdown and calls onDraftChange with penalties win method", async () => {
+    const koMatch = {
+      ...scheduledMatch,
+      id: 210,
+      home_team: "Germany",
+      away_team: "France",
+      phase: "round_of_16",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([koMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    await screen.findByText("Ganador en penales");
+
+    const select = screen.getByRole("combobox");
+    fireEvent.change(select, { target: { value: "home" } });
+
+    // Saving now should not show the validation error.
+    fireEvent.click(screen.getByRole("button", { name: /Guardar prediccion/ }));
+    expect(
+      screen.queryByText("Selecciona el ganador en penales antes de guardar."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears the penalty-winner dropdown back to blank and resets win method", async () => {
+    const koMatch = {
+      ...scheduledMatch,
+      id: 211,
+      home_team: "Germany",
+      away_team: "France",
+      phase: "round_of_16",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([koMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    await screen.findByText("Ganador en penales");
+
+    const select = screen.getByRole("combobox");
+    // Select a team first, then clear back to blank.
+    fireEvent.change(select, { target: { value: "away" } });
+    fireEvent.change(select, { target: { value: "" } });
+
+    // Saving without a selection must show the validation error again.
+    fireEvent.click(screen.getByRole("button", { name: /Guardar prediccion/ }));
+    expect(
+      await screen.findByText("Selecciona el ganador en penales antes de guardar."),
+    ).toBeInTheDocument();
+  });
+
+  it("ticks and unticks the extra-time checkbox on a knockout non-draw prediction", async () => {
+    const koMatch = {
+      ...scheduledMatch,
+      id: 212,
+      home_team: "Brazil",
+      away_team: "Argentina",
+      phase: "semi_final",
+      group_label: null,
+      kickoff_at: futureKickoff,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([koMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    await screen.findAllByText("Brasil");
+
+    // Set non-draw score so extra-time section appears.
+    const inputs = screen.getAllByRole("spinbutton");
+    fireEvent.change(inputs[0], { target: { value: "1" } });
+    await screen.findByText("Tiempo Extra");
+
+    const checkbox = screen.getByRole("checkbox");
+    expect(checkbox).not.toBeChecked();
+
+    // Tick.
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+
+    // Untick.
+    fireEvent.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+  });
 }); // end describe(PredictionPanel)
