@@ -202,12 +202,12 @@ function WinMethodLine({ snap, match, t }: WinMethodLineProps) {
   const { teamName } = useI18n();
 
   if (snap.predicted_win_method === "penalties") {
-    const winner =
-      snap.predicted_penalty_winner === "home"
-        ? teamName(match.home_team)
-        : snap.predicted_penalty_winner === "away"
-          ? teamName(match.away_team)
-          : null;
+    let winner: string | null = null;
+    if (snap.predicted_penalty_winner === "home") {
+      winner = teamName(match.home_team);
+    } else if (snap.predicted_penalty_winner === "away") {
+      winner = teamName(match.away_team);
+    }
     return (
       <p className="mt-1.5 text-center text-[11px] text-amber-400/80">
         {t("groups.penaltyWinner")}
