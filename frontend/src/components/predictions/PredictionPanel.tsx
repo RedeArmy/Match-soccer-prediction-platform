@@ -781,7 +781,12 @@ function PredictionMatchCard({
   const articleClass = matchCardClass(isFinished, isLive, isPendingSync);
   const isKnockoutUnlocked =
     match.phase !== null && match.phase !== "group_stage" && !locked;
-  const statusBadge = matchCardStatusBadge(isLive, isPendingSync, match.status, t);
+  const statusBadge = matchCardStatusBadge(
+    isLive,
+    isPendingSync,
+    match.status,
+    t,
+  );
 
   return (
     <article
@@ -831,7 +836,8 @@ function PredictionMatchCard({
                 {hasPenaltyScore && (
                   <span className="font-score text-[11px] tabular-nums text-orange-300/80">
                     {t("predictions.penaltiesScoreLabel")}&nbsp;
-                    {match.penalty_home_score}&nbsp;–&nbsp;{match.penalty_away_score}
+                    {match.penalty_home_score}&nbsp;–&nbsp;
+                    {match.penalty_away_score}
                   </span>
                 )}
               </div>
@@ -925,7 +931,11 @@ function PredictionMatchCard({
               type="button"
               disabled={locked || isPending}
               onClick={() => {
-                if (isKnockoutUnlocked && draft.home === draft.away && !draft.penaltyWinner) {
+                if (
+                  isKnockoutUnlocked &&
+                  draft.home === draft.away &&
+                  !draft.penaltyWinner
+                ) {
                   setLocalError(t("predictions.selectPenaltyWinner"));
                   return;
                 }
@@ -953,7 +963,11 @@ function PredictionMatchCard({
 
 // ── Shared sub-components ──────────────────────────────────────────────────────
 
-function matchCardClass(isFinished: boolean, isLive: boolean, isPendingSync: boolean): string {
+function matchCardClass(
+  isFinished: boolean,
+  isLive: boolean,
+  isPendingSync: boolean,
+): string {
   if (isFinished) return "border-red-500/30 bg-red-500/[0.04]";
   if (isLive) return "border-green-500/30 bg-green-500/[0.04]";
   if (isPendingSync) return "border-amber-500/30 bg-amber-500/[0.04]";
@@ -1022,14 +1036,24 @@ function WinMethodSelector({
             if (val === "") {
               onDraftChange({ ...draft, penaltyWinner: null, winMethod: null });
             } else {
-              onDraftChange({ ...draft, penaltyWinner: val, winMethod: "penalties" });
+              onDraftChange({
+                ...draft,
+                penaltyWinner: val,
+                winMethod: "penalties",
+              });
             }
           }}
           className="w-full rounded border border-white/15 bg-white/5 px-2 py-1.5 text-xs text-white focus:border-gold-400/60 focus:outline-none"
         >
-          <option value="" className="bg-[#0D1420]">—</option>
-          <option value="home" className="bg-[#0D1420]">{teamName(match.home_team)}</option>
-          <option value="away" className="bg-[#0D1420]">{teamName(match.away_team)}</option>
+          <option value="" className="bg-[#0D1420]">
+            —
+          </option>
+          <option value="home" className="bg-[#0D1420]">
+            {teamName(match.home_team)}
+          </option>
+          <option value="away" className="bg-[#0D1420]">
+            {teamName(match.away_team)}
+          </option>
         </select>
         {localError && <p className="text-xs text-red-300">{localError}</p>}
       </div>

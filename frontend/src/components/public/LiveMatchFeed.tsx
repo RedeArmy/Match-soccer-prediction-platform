@@ -233,9 +233,11 @@ function EventsList({ events }: Readonly<{ events: FixtureEvent[] }>) {
                 — {t("tournaments.missedPenalty")}
               </span>
             )}
-            {ev.assist && ev.type !== "subst" && ev.detail !== "Missed Penalty" && (
-              <span className="text-text-muted"> ({ev.assist})</span>
-            )}
+            {ev.assist &&
+              ev.type !== "subst" &&
+              ev.detail !== "Missed Penalty" && (
+                <span className="text-text-muted"> ({ev.assist})</span>
+              )}
             {ev.type === "subst" && ev.assist && (
               <span className="text-green-400"> ↑ {ev.assist}</span>
             )}

@@ -95,10 +95,8 @@ class APIClient {
       const errorBody = body?.error as Record<string, unknown> | undefined;
       const rawMsg = errorBody?.message;
       const rawCode = errorBody?.code;
-      const msg =
-        typeof rawMsg === "string" ? rawMsg : `HTTP ${res.status}`;
-      const code =
-        typeof rawCode === "string" ? rawCode : "ERR_UNKNOWN";
+      const msg = typeof rawMsg === "string" ? rawMsg : `HTTP ${res.status}`;
+      const code = typeof rawCode === "string" ? rawCode : "ERR_UNKNOWN";
       throw Object.assign(new Error(msg), { code, status: res.status });
     }
 
