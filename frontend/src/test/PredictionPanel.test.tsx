@@ -950,7 +950,7 @@ describe("PredictionPanel", () => {
     fireEvent.change(inputs[0], { target: { value: "2" } });
 
     expect(
-      await screen.findByText("Prórroga (tiempo extra)"),
+      await screen.findByText("Tiempo Extra"),
     ).toBeInTheDocument();
     // Penalty winner selector must no longer be shown.
     expect(

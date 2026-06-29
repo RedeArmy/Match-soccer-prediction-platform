@@ -868,8 +868,11 @@ function PredictionMatchCard({
             )}
           </div>
 
-          {/* Win-method bonus UI — knockout phases only, unlocked matches */}
-          {isKnockoutUnlocked && (
+        </div>
+
+        {/* Win-method bonus UI — knockout phases only, unlocked matches */}
+        {isKnockoutUnlocked && (
+          <div className="rounded border border-white/8 bg-white/[0.03] px-3 py-2">
             <WinMethodSelector
               match={match}
               draft={draft}
@@ -877,8 +880,8 @@ function PredictionMatchCard({
               onDraftChange={onDraftChange}
               onClearError={() => setLocalError(null)}
             />
-          )}
-        </div>
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <ScoreInput
@@ -928,7 +931,7 @@ function PredictionMatchCard({
                 setLocalError(null);
                 onSave();
               }}
-              className="btn-gold w-full px-3 py-2 text-sm sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
+              className="btn-gold w-full px-2 py-1.5 text-xs sm:w-auto disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Save className="h-4 w-4 shrink-0" />
               <span className="relative">
@@ -1006,42 +1009,37 @@ function WinMethodSelector({
 
   if (draft.home === draft.away) {
     return (
-      <div className="mt-3 flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-text-secondary">
           {t("predictions.penaltyWinner")}
         </span>
-        <div className="flex gap-2">
-          {(["home", "away"] as const).map((side) => {
-            const label =
-              side === "home" ? teamName(match.home_team) : teamName(match.away_team);
-            const selected = draft.penaltyWinner === side;
-            return (
-              <button
-                key={side}
-                type="button"
-                onClick={() => {
-                  onClearError();
-                  onDraftChange({ ...draft, penaltyWinner: side, winMethod: "penalties" });
-                }}
-                className={cn(
-                  "flex-1 rounded border px-2 py-1.5 text-xs font-medium transition-colors",
-                  selected
-                    ? "border-gold-400 bg-gold-400/20 text-gold-200"
-                    : "border-white/15 text-text-secondary hover:border-white/30 hover:text-white",
-                )}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+        <select
+          value={draft.penaltyWinner ?? ""}
+          onChange={(e) => {
+            onClearError();
+            const val = e.target.value as "home" | "away" | "";
+            if (val === "") {
+              onDraftChange({ ...draft, penaltyWinner: null, winMethod: null });
+            } else {
+              onDraftChange({ ...draft, penaltyWinner: val, winMethod: "penalties" });
+            }
+          }}
+          className="w-full rounded border border-white/15 bg-white/5 px-2 py-1.5 text-xs text-white focus:border-gold-400/60 focus:outline-none"
+        >
+          <option value="" className="bg-[#0D1420]">—</option>
+          <option value="home" className="bg-[#0D1420]">{teamName(match.home_team)}</option>
+          <option value="away" className="bg-[#0D1420]">{teamName(match.away_team)}</option>
+        </select>
         {localError && <p className="text-xs text-red-300">{localError}</p>}
       </div>
     );
   }
 
   return (
-    <div className="mt-3 flex items-center gap-2">
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-text-secondary">
+        {t("predictions.extraTime")}
+      </span>
       <input
         id={`et-${match.id}`}
         type="checkbox"
@@ -1055,12 +1053,6 @@ function WinMethodSelector({
         }
         className="h-3.5 w-3.5 rounded accent-gold-400"
       />
-      <label
-        htmlFor={`et-${match.id}`}
-        className="cursor-pointer text-xs text-text-secondary"
-      >
-        {t("predictions.extraTime")}
-      </label>
     </div>
   );
 }
