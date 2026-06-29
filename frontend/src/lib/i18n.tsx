@@ -647,7 +647,7 @@ const translations: TranslationNode = {
     exactHint:           { es: 'Los marcadores se cierran al iniciar el partido.', en: 'Scores lock when the match starts.' },
     points:              { es: 'pts',                          en: 'pts'                                },
     penaltyWinner:       { es: 'Ganador en penales',           en: 'Penalty winner'                     },
-    extraTime:           { es: 'Prórroga (tiempo extra)',       en: 'Extra time'                         },
+    extraTime:           { es: 'Tiempo Extra',                  en: 'Extra time'                         },
     selectPenaltyWinner: { es: 'Selecciona el ganador en penales antes de guardar.', en: 'Select the penalty winner before saving.' },
   },
   bracket:           { es: 'Llave',                                en: 'Bracket'                                },
