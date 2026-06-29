@@ -195,4 +195,10 @@ type TournamentSlot struct {
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	MatchKickoffAt    *time.Time // kickoff time of the match this slot belongs to; nil when no match is linked yet
+	MatchHomeScore    *int
+	MatchAwayScore    *int
+	MatchStatus       *string
+	MatchWinMethod    *string
+	PenaltyHomeScore  *int
+	PenaltyAwayScore  *int
 }
