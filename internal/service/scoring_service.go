@@ -323,6 +323,8 @@ func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, actual
 		return base
 	}
 	switch *actualWinMethod {
+	case domain.WinMethodNormal:
+		// No bonus for matches decided within 90 minutes.
 	case domain.WinMethodExtraTime:
 		if *pred.PredictedWinMethod == domain.WinMethodExtraTime {
 			base += cfg.extraTimeBonus
