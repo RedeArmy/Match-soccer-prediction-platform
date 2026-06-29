@@ -143,4 +143,31 @@ describe("SessionGuard – proactive timer (session.createdAt + maxAge)", () => 
 
     expect(signOutMock).not.toHaveBeenCalled();
   });
+
+  it("emits a console.warn in development mode when maxAge env var is absent", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    mockMaxAge(undefined);
+    mockSession = { createdAt: new Date() };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    render(<SessionGuard />);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("NEXT_PUBLIC_SESSION_MAX_AGE_SECONDS"),
+    );
+    warnSpy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
+  it("does not emit console.warn in test/production mode when maxAge env var is absent", () => {
+    // NODE_ENV is "test" by default in Vitest — no warning should appear.
+    mockMaxAge(undefined);
+    mockSession = { createdAt: new Date() };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    render(<SessionGuard />);
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
 });

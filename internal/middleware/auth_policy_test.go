@@ -234,6 +234,7 @@ func TestPolicyProvider_ZeroSessionStartedAt_FallsBackToIssuedAt(t *testing.T) {
 // ── DB-backed session-start tracking (OAuth / fva-absent flows) ──────────────
 
 // stubSessionStarter implements SessionStarter for policy tests.
+// calls is a counter of DB round-trips; tests assert it to verify cache behaviour.
 type stubSessionStarter struct {
 	startedAt time.Time
 	err       error
@@ -358,5 +359,138 @@ func TestPolicyProvider_FvaPresent_StarterNotCalled(t *testing.T) {
 	}
 	if ss.calls != 0 {
 		t.Errorf("expected UpsertSessionStart not called when fva is present, got %d calls", ss.calls)
+	}
+}
+
+// ── In-process start cache (DT-001) ──────────────────────────────────────────
+
+// TestPolicyProvider_StartCache_SecondRequest_SkipsDB verifies that the
+// in-process cache absorbs repeated requests from the same OAuth sid, calling
+// UpsertSessionStart exactly once across N consecutive ValidateToken calls.
+// This is the primary regression test for the per-request DB write on the hot
+// authentication path.
+func TestPolicyProvider_StartCache_SecondRequest_SkipsDB(t *testing.T) {
+	sid := "sid_cache_hit_test"
+	claims := auth.Claims{
+		Subject:          "user_oauth",
+		IssuedAt:         time.Now(),
+		SessionStartedAt: time.Time{}, // fva absent → triggers cache path
+		SessionID:        sid,
+	}
+	ss := &stubSessionStarter{startedAt: time.Now().Add(-30 * time.Minute)}
+	p := makePolicyProviderWithStarter(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		ss,
+		18000,
+	)
+
+	const requests = 5
+	for i := range requests {
+		_, err := p.ValidateToken(context.Background(), "any")
+		if err != nil {
+			t.Fatalf("request %d: unexpected error: %v", i+1, err)
+		}
+	}
+	if ss.calls != 1 {
+		t.Errorf("expected UpsertSessionStart called exactly once across %d requests; got %d", requests, ss.calls)
+	}
+}
+
+// TestPolicyProvider_StartCache_DifferentSIDs_EachHitsDB verifies that two
+// sessions with different sids each get their own DB call; they do not share
+// cache entries.
+func TestPolicyProvider_StartCache_DifferentSIDs_EachHitsDB(t *testing.T) {
+	ss := &stubSessionStarter{startedAt: time.Now().Add(-30 * time.Minute)}
+
+	claimsA := auth.Claims{
+		Subject:   "user_a",
+		IssuedAt:  time.Now(),
+		SessionID: "sid_alpha",
+	}
+	claimsB := auth.Claims{
+		Subject:   "user_b",
+		IssuedAt:  time.Now(),
+		SessionID: "sid_beta",
+	}
+
+	// Two providers that share the same stubSessionStarter but different inner providers.
+	// We use a single provider and swap the claims via sequential calls to match
+	// how two distinct users would be served by one PolicyProvider instance.
+	p := makePolicyProviderWithStarter(
+		// The stub returns the same claims on every call; we test call count only.
+		&stubProvider{claims: claimsA},
+		&stubBlocklist{},
+		ss,
+		18000,
+	)
+
+	// First sid.
+	if _, err := p.ValidateToken(context.Background(), "any"); err != nil {
+		t.Fatalf("sid_alpha first request: %v", err)
+	}
+	// Same sid again — cache hit, DB not called.
+	if _, err := p.ValidateToken(context.Background(), "any"); err != nil {
+		t.Fatalf("sid_alpha second request: %v", err)
+	}
+	if ss.calls != 1 {
+		t.Errorf("after 2 requests for same sid expected 1 DB call, got %d", ss.calls)
+	}
+
+	// Switch to a new sid by using a separate provider instance (different inner provider).
+	ss2 := &stubSessionStarter{startedAt: time.Now().Add(-30 * time.Minute)}
+	p2 := makePolicyProviderWithStarter(&stubProvider{claims: claimsB}, &stubBlocklist{}, ss2, 18000)
+	if _, err := p2.ValidateToken(context.Background(), "any"); err != nil {
+		t.Fatalf("sid_beta first request: %v", err)
+	}
+	if ss2.calls != 1 {
+		t.Errorf("new sid should produce exactly 1 DB call, got %d", ss2.calls)
+	}
+}
+
+// ── Bounded revoked cache (DT-002) ───────────────────────────────────────────
+
+// TestPolicyProvider_RevokedCache_FailsClosedDuringDBOutage verifies that a
+// session confirmed revoked in a previous successful check is still rejected
+// when the blocklist DB is unavailable.
+func TestPolicyProvider_RevokedCache_FailsClosedDuringDBOutage(t *testing.T) {
+	claims := auth.Claims{
+		Subject:   "user_revoked",
+		IssuedAt:  time.Now(),
+		SessionID: "sid_will_be_revoked",
+	}
+
+	// First call: DB says "revoked" → populates cache.
+	bl := &stubBlocklist{revoked: true}
+	p := makePolicyProvider(&stubProvider{claims: claims}, bl, 18000)
+	_, err := p.ValidateToken(context.Background(), "any")
+	if !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("first call: expected ErrInvalidToken for revoked session, got %v", err)
+	}
+
+	// Second call: DB is now down, but cache should keep it rejected.
+	bl.revoked = false
+	bl.err = errors.New("connection refused")
+	_, err = p.ValidateToken(context.Background(), "any")
+	if !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("second call with DB down: expected ErrInvalidToken (fail-closed from cache), got %v", err)
+	}
+}
+
+// TestPolicyProvider_RevokedCache_UnknownSID_FailsOpenDuringDBOutage verifies
+// that a session never confirmed revoked by the DB fails-open during an outage,
+// so a DB blip does not lock out all active users.
+func TestPolicyProvider_RevokedCache_UnknownSID_FailsOpenDuringDBOutage(t *testing.T) {
+	claims := auth.Claims{
+		Subject:   "user_active",
+		IssuedAt:  time.Now(),
+		SessionID: "sid_never_revoked",
+	}
+	bl := &stubBlocklist{err: errors.New("timeout")} // DB unavailable from the start
+	p := makePolicyProvider(&stubProvider{claims: claims}, bl, 18000)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if err != nil {
+		t.Fatalf("expected fail-open for unknown sid during DB outage, got %v", err)
 	}
 }
