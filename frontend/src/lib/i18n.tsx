@@ -366,6 +366,9 @@ const translations: TranslationNode = {
     showPredictions:       { es: 'Ver predicciones de',                                      en: 'Show predictions for'                                          },
     hidePredictions:       { es: 'Ocultar predicciones de',                                 en: 'Hide predictions for'                                          },
     predCount:             { es: 'predicciones',                                             en: 'predictions'                                                   },
+    extraTimeYes:          { es: 'Tiempo Extra: Sí',                                         en: 'Extra Time: Yes'                                               },
+    extraTimeNo:           { es: 'Tiempo Extra: No',                                         en: 'Extra Time: No'                                                },
+    penaltyWinner:         { es: 'Ganador Penales:',                                         en: 'Penalty Winner:'                                               },
   },
   ledger: {
     credit:           { es: 'Crédito',              en: 'Credit'             },

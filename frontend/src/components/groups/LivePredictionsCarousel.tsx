@@ -7,6 +7,7 @@ import { Activity, ChevronDown, ChevronUp } from "lucide-react";
 import { api } from "@/lib/api";
 import type {
   LivePredictionsResponse,
+  MatchPredictionSnapshot,
   MatchResponse,
   UserLivePrediction,
 } from "@/lib/api-types";
@@ -146,14 +147,14 @@ function UserPredictionCard({ row, liveMatches, t }: CardProps) {
 
 interface MatchPredictionRowProps {
   readonly match: MatchResponse;
-  readonly snap:
-    | { home_score: number; away_score: number; has_prediction: boolean }
-    | undefined;
+  readonly snap: MatchPredictionSnapshot | undefined;
   readonly t: ReturnType<typeof useI18n>["t"];
 }
 
 function MatchPredictionRow({ match, snap, t }: MatchPredictionRowProps) {
   const { teamName } = useI18n();
+  const isKnockout = match.phase !== "group_stage";
+
   return (
     <div className="px-4 py-3">
       <div className="mb-2 flex items-center justify-between gap-2 text-xs text-text-muted">
@@ -168,20 +169,59 @@ function MatchPredictionRow({ match, snap, t }: MatchPredictionRowProps) {
         </span>
       </div>
       {snap?.has_prediction ? (
-        <div className="flex items-center justify-center gap-3">
-          <span className="font-score w-8 text-right text-xl font-bold tabular-nums text-white">
-            {snap.home_score}
-          </span>
-          <span className="text-xs text-text-muted">—</span>
-          <span className="font-score w-8 text-xl font-bold tabular-nums text-white">
-            {snap.away_score}
-          </span>
-        </div>
+        <>
+          <div className="flex items-center justify-center gap-3">
+            <span className="font-score w-8 text-right text-xl font-bold tabular-nums text-white">
+              {snap.home_score}
+            </span>
+            <span className="text-xs text-text-muted">—</span>
+            <span className="font-score w-8 text-xl font-bold tabular-nums text-white">
+              {snap.away_score}
+            </span>
+          </div>
+          {isKnockout && <WinMethodLine snap={snap} match={match} t={t} />}
+        </>
       ) : (
         <p className="text-center text-xs italic text-text-muted/60">
           {t("groups.noPrediction")}
         </p>
       )}
     </div>
+  );
+}
+
+// ── Win-method annotation ─────────────────────────────────────────────────────
+
+interface WinMethodLineProps {
+  readonly snap: MatchPredictionSnapshot;
+  readonly match: MatchResponse;
+  readonly t: ReturnType<typeof useI18n>["t"];
+}
+
+function WinMethodLine({ snap, match, t }: WinMethodLineProps) {
+  const { teamName } = useI18n();
+
+  if (snap.predicted_win_method === "penalties") {
+    const winner =
+      snap.predicted_penalty_winner === "home"
+        ? teamName(match.home_team)
+        : snap.predicted_penalty_winner === "away"
+          ? teamName(match.away_team)
+          : null;
+    return (
+      <p className="mt-1.5 text-center text-[11px] text-amber-400/80">
+        {t("groups.penaltyWinner")}
+        {winner ? ` ${winner}` : ""}
+      </p>
+    );
+  }
+
+  const isExtraTime = snap.predicted_win_method === "extra_time";
+  return (
+    <p
+      className={`mt-1.5 text-center text-[11px] ${isExtraTime ? "text-sky-400/80" : "text-text-muted/60"}`}
+    >
+      {isExtraTime ? t("groups.extraTimeYes") : t("groups.extraTimeNo")}
+    </p>
   );
 }

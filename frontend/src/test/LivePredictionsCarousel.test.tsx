@@ -168,4 +168,131 @@ describe("LivePredictionsCarousel", () => {
     expect(screen.getByText("Alice Doe")).toBeTruthy();
     expect(screen.getByText("Bob Smith")).toBeTruthy();
   });
+
+  // ── Win-method annotation (knockout matches) ────────────────────────────────
+
+  const knockoutMatch = {
+    ...liveMatch,
+    phase: "round_of_16",
+  };
+
+  function openCard() {
+    fireEvent.click(
+      screen.getByRole("button", { name: /Ver predicciones de Alice Doe/i }),
+    );
+  }
+
+  it("shows 'Tiempo Extra: No' for knockout prediction with no win method", () => {
+    const row = {
+      ...userRow,
+      predictions: [
+        {
+          match_id: 5,
+          home_score: 1,
+          away_score: 0,
+          has_prediction: true,
+          predicted_win_method: null,
+        },
+      ],
+    };
+    mockQueryWith({ live_matches: [knockoutMatch], user_predictions: [row] });
+    renderCarousel();
+    openCard();
+    expect(screen.getByText("Tiempo Extra: No")).toBeTruthy();
+  });
+
+  it("shows 'Tiempo Extra: Sí' for knockout prediction with extra_time", () => {
+    const row = {
+      ...userRow,
+      predictions: [
+        {
+          match_id: 5,
+          home_score: 1,
+          away_score: 0,
+          has_prediction: true,
+          predicted_win_method: "extra_time",
+        },
+      ],
+    };
+    mockQueryWith({ live_matches: [knockoutMatch], user_predictions: [row] });
+    renderCarousel();
+    openCard();
+    expect(screen.getByText("Tiempo Extra: Sí")).toBeTruthy();
+  });
+
+  it("shows 'Ganador Penales: Brasil' for knockout prediction with penalties + home winner", () => {
+    const row = {
+      ...userRow,
+      predictions: [
+        {
+          match_id: 5,
+          home_score: 1,
+          away_score: 1,
+          has_prediction: true,
+          predicted_win_method: "penalties",
+          predicted_penalty_winner: "home",
+        },
+      ],
+    };
+    mockQueryWith({ live_matches: [knockoutMatch], user_predictions: [row] });
+    renderCarousel();
+    openCard();
+    // "Ganador Penales:" label + " Brasil" (home team)
+    expect(screen.getByText(/Ganador Penales:.*Brasil/)).toBeTruthy();
+  });
+
+  it("shows 'Ganador Penales: Argentina' for knockout prediction with penalties + away winner", () => {
+    const row = {
+      ...userRow,
+      predictions: [
+        {
+          match_id: 5,
+          home_score: 1,
+          away_score: 1,
+          has_prediction: true,
+          predicted_win_method: "penalties",
+          predicted_penalty_winner: "away",
+        },
+      ],
+    };
+    mockQueryWith({ live_matches: [knockoutMatch], user_predictions: [row] });
+    renderCarousel();
+    openCard();
+    expect(screen.getByText(/Ganador Penales:.*Argentina/)).toBeTruthy();
+  });
+
+  it("does not show win-method line for group_stage matches", () => {
+    // liveMatch.phase = "group_stage" — no extra time/penalty UI shown
+    const row = {
+      ...userRow,
+      predictions: [
+        {
+          match_id: 5,
+          home_score: 2,
+          away_score: 1,
+          has_prediction: true,
+          predicted_win_method: "extra_time",
+        },
+      ],
+    };
+    mockQueryWith({ live_matches: [liveMatch], user_predictions: [row] });
+    renderCarousel();
+    openCard();
+    expect(screen.queryByText(/Tiempo Extra/)).toBeNull();
+    expect(screen.queryByText(/Ganador Penales/)).toBeNull();
+  });
+
+  it("does not show win-method line when there is no prediction", () => {
+    const row = {
+      ...userRow,
+      predictions: [
+        { match_id: 5, home_score: 0, away_score: 0, has_prediction: false },
+      ],
+    };
+    mockQueryWith({ live_matches: [knockoutMatch], user_predictions: [row] });
+    renderCarousel();
+    openCard();
+    expect(screen.queryByText(/Tiempo Extra/)).toBeNull();
+    expect(screen.queryByText(/Ganador Penales/)).toBeNull();
+  });
 });
