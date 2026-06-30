@@ -41,6 +41,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/session-config": {
+            "get": {
+                "description": "Returns the current runtime value of auth.session_max_age_seconds.\nNo authentication required. Used by the frontend to schedule\na proactive client-side session expiry timer without a redeploy.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "session"
+                ],
+                "summary": "Get session configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.SessionConfigResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Rate limit exceeded",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/audit-log": {
             "get": {
                 "security": [
@@ -4591,6 +4617,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/auth/logout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Inserts the current session's sid into the local revocation blocklist.\nThe caller must also invoke Clerk's signOut() to clear the browser-side\ntoken; both steps together constitute a complete logout.",
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Log out current session",
+                "responses": {
+                    "204": {
+                        "description": "Session revoked"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/auth/sessions": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Force-logs out all devices for the authenticated account by bulk-revoking\nevery known session. Use when an account is compromised to immediately\ninvalidate all active JWTs. The caller's own session is also revoked.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "auth"
+                ],
+                "summary": "Revoke all sessions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.revokeAllResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/bank-transfers": {
             "get": {
                 "security": [
@@ -7745,6 +7839,14 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.SessionConfigResponse": {
+            "type": "object",
+            "properties": {
+                "session_max_age_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.SnapshotEntryResponse": {
             "type": "object",
             "properties": {
@@ -8484,6 +8586,14 @@ const docTemplate = `{
             "properties": {
                 "notes": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_handler.revokeAllResponse": {
+            "type": "object",
+            "properties": {
+                "revoked": {
+                    "type": "integer"
                 }
             }
         },

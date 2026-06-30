@@ -32,17 +32,16 @@ func NewAuthHandler(sessions SessionRevoker, log *zap.Logger) *AuthHandler {
 
 // Logout handles POST /api/v1/auth/logout.
 //
-// Inserts the current session's "sid" into the local revocation blocklist so
-// that any subsequent request carrying the same Clerk JWT is rejected with 401
-// by PolicyProvider — even before Clerk's own session expiry fires.
-//
-// The frontend must also call Clerk's signOut() to clear the browser-side token
-// and prevent it from being sent on future requests. Both operations together
-// (backend revocation + Clerk sign-out) constitute a complete logout.
-//
-// Returns 204 No Content on success. Returns 204 without action when the JWT
-// does not carry a "sid" claim (e.g. test tokens issued without a real Clerk
-// session), because there is nothing to revoke in that case.
+// @Summary      Log out current session
+// @Description  Inserts the current session's sid into the local revocation blocklist.
+// @Description  The caller must also invoke Clerk's signOut() to clear the browser-side
+// @Description  token; both steps together constitute a complete logout.
+// @Tags         auth
+// @Security     BearerAuth
+// @Success      204  "Session revoked"
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/auth/logout [post]
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	sid, ok := middleware.SessionIDFromContext(r.Context())
 	if !ok {
@@ -58,19 +57,24 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// revokeAllResponse is the body returned by DELETE /api/v1/auth/sessions.
+type revokeAllResponse struct {
+	Revoked int64 `json:"revoked"`
+}
+
 // RevokeAll handles DELETE /api/v1/auth/sessions.
 //
-// Force-logs out all devices for the authenticated account by bulk-inserting
-// every known session_starts row for the user into revoked_sessions. Also
-// revokes the current session directly (covers fva-present sessions that may
-// not have a session_starts entry).
-//
-// Use case: compromised account — the user (or admin acting on their behalf)
-// wants to invalidate all active sessions immediately. After this call, any
-// request carrying a previously-valid JWT for this account is rejected with 401.
-//
-// Returns 204 No Content on success. The response body contains the number of
-// sessions revoked in a JSON envelope for diagnostic purposes.
+// @Summary      Revoke all sessions
+// @Description  Force-logs out all devices for the authenticated account by bulk-revoking
+// @Description  every known session. Use when an account is compromised to immediately
+// @Description  invalidate all active JWTs. The caller's own session is also revoked.
+// @Tags         auth
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  handler.revokeAllResponse
+// @Failure      401  {object}  handler.ErrorResponse
+// @Failure      500  {object}  handler.ErrorResponse
+// @Router       /api/v1/auth/sessions [delete]
 func (h *AuthHandler) RevokeAll(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
@@ -91,5 +95,5 @@ func (h *AuthHandler) RevokeAll(w http.ResponseWriter, r *http.Request) {
 		n++
 	}
 
-	writeJSON(w, http.StatusOK, map[string]int64{"revoked": n})
+	writeJSON(w, http.StatusOK, revokeAllResponse{Revoked: n})
 }
