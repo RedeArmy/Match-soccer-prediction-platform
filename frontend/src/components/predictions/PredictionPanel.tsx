@@ -759,6 +759,7 @@ function PredictionMatchCard({
 
   const isExtraTime = isLive && match.period === "ET";
   const isPenaltiesLive = isLive && match.period === "PEN_LIVE";
+  const isFinishedByPenalties = isFinished && match.win_method === "penalties";
   const hasPenaltyScore =
     match.penalty_home_score != null && match.penalty_away_score != null;
 
@@ -804,6 +805,11 @@ function PredictionMatchCard({
             )}
             {isPenaltiesLive && (
               <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-orange-300">
+                {t("predictions.livePenalties")}
+              </span>
+            )}
+            {isFinishedByPenalties && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-orange-300/80">
                 {t("predictions.livePenalties")}
               </span>
             )}

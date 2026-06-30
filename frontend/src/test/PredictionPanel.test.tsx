@@ -994,6 +994,34 @@ describe("PredictionPanel", () => {
     expect(await screen.findByText("PENALES")).toBeInTheDocument();
   });
 
+  it("shows PENALES badge for a finished match decided by penalties", async () => {
+    const finishedPenMatch = {
+      ...scheduledMatch,
+      id: 206,
+      home_team: "Argentina",
+      away_team: "France",
+      status: "finished",
+      home_score: 3,
+      away_score: 3,
+      win_method: "penalties",
+      penalty_home_score: 4,
+      penalty_away_score: 2,
+      phase: "final",
+      group_label: null,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([
+      finishedPenMatch,
+    ] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Pasados" }));
+
+    // The PENALES badge must appear alongside the Finalizado status badge.
+    expect(await screen.findByText("PENALES")).toBeInTheDocument();
+  });
+
   it("shows shootout tally when penalty_home_score is set", async () => {
     const finishedPenMatch = {
       ...scheduledMatch,
