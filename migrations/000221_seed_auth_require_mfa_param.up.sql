@@ -4,9 +4,10 @@
 -- configuring MFA as required in the Clerk dashboard; enabling before Clerk
 -- enforces MFA will lock out all existing users.
 -- is_runtime=TRUE: changes propagate within ~30 s without a process restart.
-INSERT INTO system_params (key, value, type, category, is_runtime, description)
+INSERT INTO system_params (key, value, default_value, type, category, is_runtime, description)
 VALUES (
     'auth.require_mfa',
+    '0',
     '0',
     'int',
     'auth',
