@@ -510,46 +510,54 @@ func (s *matchSyncService) maybeTransitionStatus(ctx context.Context, m *domain.
 func (s *matchSyncService) applyFinishedTransition(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture) {
 	switch m.Status {
 	case domain.MatchStatusLive, domain.MatchStatusScheduled:
-		if m.Status == domain.MatchStatusScheduled {
-			// Live phase was missed; start the match to lock predictions before
-			// writing the result.
-			if _, err := s.matchSvc.StartMatch(ctx, m.ID); err != nil && !errors.Is(err, apperrors.ErrValidation) {
-				s.log.Warn("match daily sync: StartMatch (missed live phase) failed",
-					zap.Int("match_id", m.ID), zap.Error(err))
-				return
-			}
-		}
-		winMethod := winMethodFromStatus(fix.Status)
-		penaltyWinner := derivePenaltyWinner(fix)
-		if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
-			if !errors.Is(err, apperrors.ErrValidation) {
-				s.log.Warn("match daily sync: UpdateResult failed",
-					zap.Int("match_id", m.ID), zap.Error(err))
-			}
-		}
+		s.applyResultFromProvider(ctx, m, fix)
 	case domain.MatchStatusFinished:
-		// Repair: match finished in penalties but penalty_winner was never persisted
-		// (e.g. finalised manually before the validation was added). Re-issue
-		// CorrectResult so the shootout score is stored and the bracket slot
-		// advances automatically via the MatchFinished event.
-		if fix.Status == footballprovider.StatusAfterPEN && m.PenaltyWinner == nil {
-			penaltyWinner := derivePenaltyWinner(fix)
-			if penaltyWinner == nil {
-				s.log.Warn("match daily sync: provider missing penalty scores for repair",
-					zap.Int("match_id", m.ID))
-				break
-			}
-			winMethod := winMethodFromStatus(fix.Status)
-			if _, err := s.matchSvc.CorrectResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
-				s.log.Warn("match daily sync: CorrectResult (penalty repair) failed",
-					zap.Int("match_id", m.ID), zap.Error(err))
-			} else {
-				s.log.Info("match daily sync: repaired missing penalty data",
-					zap.Int("match_id", m.ID), zap.Stringp("penalty_winner", penaltyWinner))
-			}
-		}
+		s.repairPenaltyDataIfMissing(ctx, m, fix)
 	case domain.MatchStatusCancelled:
 		// already in a terminal state; no transition needed
+	}
+}
+
+func (s *matchSyncService) applyResultFromProvider(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture) {
+	if m.Status == domain.MatchStatusScheduled {
+		// Live phase was missed; start the match to lock predictions before writing the result.
+		if _, err := s.matchSvc.StartMatch(ctx, m.ID); err != nil && !errors.Is(err, apperrors.ErrValidation) {
+			s.log.Warn("match daily sync: StartMatch (missed live phase) failed",
+				zap.Int("match_id", m.ID), zap.Error(err))
+			return
+		}
+	}
+	winMethod := winMethodFromStatus(fix.Status)
+	penaltyWinner := derivePenaltyWinner(fix)
+	if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
+		if !errors.Is(err, apperrors.ErrValidation) {
+			s.log.Warn("match daily sync: UpdateResult failed",
+				zap.Int("match_id", m.ID), zap.Error(err))
+		}
+	}
+}
+
+// repairPenaltyDataIfMissing re-issues CorrectResult when a finished match has
+// no penalty_winner but the provider reports StatusAfterPEN. This repairs matches
+// finalised manually before the penalty validation was added so the shootout score
+// is stored and the bracket slot advances via the re-emitted MatchFinished event.
+func (s *matchSyncService) repairPenaltyDataIfMissing(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture) {
+	if fix.Status != footballprovider.StatusAfterPEN || m.PenaltyWinner != nil {
+		return
+	}
+	penaltyWinner := derivePenaltyWinner(fix)
+	if penaltyWinner == nil {
+		s.log.Warn("match daily sync: provider missing penalty scores for repair",
+			zap.Int("match_id", m.ID))
+		return
+	}
+	winMethod := winMethodFromStatus(fix.Status)
+	if _, err := s.matchSvc.CorrectResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
+		s.log.Warn("match daily sync: CorrectResult (penalty repair) failed",
+			zap.Int("match_id", m.ID), zap.Error(err))
+	} else {
+		s.log.Info("match daily sync: repaired missing penalty data",
+			zap.Int("match_id", m.ID), zap.Stringp("penalty_winner", penaltyWinner))
 	}
 }
 

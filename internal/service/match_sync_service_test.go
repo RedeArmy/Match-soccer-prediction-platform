@@ -102,13 +102,13 @@ func (r *stubSyncMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *stri
 }
 
 type stubSyncMatchSvc struct {
-	started              int
-	finished             int
-	corrected            int
-	startErr             error
-	finishErr            error
-	lastPenaltyWinner    *string // last value passed to UpdateResult
-	lastCorrectPWinner   *string // last value passed to CorrectResult
+	started            int
+	finished           int
+	corrected          int
+	startErr           error
+	finishErr          error
+	lastPenaltyWinner  *string // last value passed to UpdateResult
+	lastCorrectPWinner *string // last value passed to CorrectResult
 }
 
 func (s *stubSyncMatchSvc) CreateMatch(_ context.Context, _ *domain.Match) error { return nil }
@@ -1540,9 +1540,9 @@ func TestMatchSync_DailyFixtureSync_FinishedPenaltyMatch_MissingPenaltyWinner_Re
 	matchSvc := &stubSyncMatchSvc{}
 	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
 	provider := &stubProvider{fixture: &footballprovider.Fixture{
-		ExternalID:       id,
-		Status:           footballprovider.StatusAfterPEN,
-		HomeScore:        1, AwayScore: 1,
+		ExternalID: id,
+		Status:     footballprovider.StatusAfterPEN,
+		HomeScore:  1, AwayScore: 1,
 		PenaltyHomeScore: &phome,
 		PenaltyAwayScore: &paway,
 	}}
@@ -1578,9 +1578,9 @@ func TestMatchSync_DailyFixtureSync_FinishedPenaltyMatch_AlreadyHasPenaltyWinner
 	matchSvc := &stubSyncMatchSvc{}
 	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
 	provider := &stubProvider{fixture: &footballprovider.Fixture{
-		ExternalID:       id,
-		Status:           footballprovider.StatusAfterPEN,
-		HomeScore:        1, AwayScore: 1,
+		ExternalID: id,
+		Status:     footballprovider.StatusAfterPEN,
+		HomeScore:  1, AwayScore: 1,
 		PenaltyHomeScore: &phome,
 		PenaltyAwayScore: &paway,
 	}}
