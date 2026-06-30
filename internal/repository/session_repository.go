@@ -105,6 +105,13 @@ func NewPostgresSessionStartRepository(db *pgxpool.Pool) *PostgresSessionStartRe
 // making this a single round-trip regardless of whether the row is new.
 // user_id is stored on insert only; subsequent upserts (ON CONFLICT) leave
 // the stored user_id unchanged so the original attribution is preserved.
+//
+// Timing note (accepted risk): the INSERT path for a new sid takes marginally
+// more time than the ON CONFLICT path at the Postgres level. This asymmetry is
+// swamped by network RTT and cannot be statistically exploited: PolicyProvider's
+// in-process startCache ensures this function is called at most once per OAuth
+// session, giving an attacker no repeated-measurement opportunity to average
+// out the noise.
 func (r *PostgresSessionStartRepository) UpsertSessionStart(ctx context.Context, sid, userID string) (time.Time, error) {
 	start := time.Now()
 	clientIP := nullStr(ClientIPFromContext(ctx))

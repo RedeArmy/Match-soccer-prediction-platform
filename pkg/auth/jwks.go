@@ -230,13 +230,24 @@ func (p *JWKSProvider) resolveKeySet(ctx context.Context, ks jwk.Set, fetchErr e
 // fva[1] = seconds elapsed since second-factor (MFA) verification relative to
 // iat, or a negative value when MFA is not yet completed. Computing iat − fva[N]
 // gives a stable timestamp across token refreshes.
+//
+// fva[0] guard uses > 0 (not >= 0): a value of 0 is theoretically valid
+// ("first factor verified at exactly iat", i.e. a brand-new session), but
+// Clerk has not documented whether 0 is also used as a sentinel for "no
+// first-factor data." Treating 0 as absent is conservative: the DB-backed
+// session_starts path will insert started_at ≈ issuedAt (equivalent result
+// for a genuinely new session) while preventing a potential max-age bypass
+// if 0 were ever sent for an older session with a fresh JWT.
+//
+// fva[1] guard uses >= 0 because Clerk's documented sentinel for "MFA not
+// yet completed" is −1, so 0 unambiguously means "just completed."
 func (p *JWKSProvider) populateFVAClaims(c *Claims, privateClaims map[string]interface{}, issuedAt time.Time) {
 	fva, ok := privateClaims["fva"].([]interface{})
 	if !ok {
 		return
 	}
 	if len(fva) > 0 {
-		if secs, ok := fva[0].(float64); ok && secs >= 0 && secs < 1e9 {
+		if secs, ok := fva[0].(float64); ok && secs > 0 && secs < 1e9 {
 			c.SessionStartedAt = issuedAt.Add(-time.Duration(secs) * time.Second)
 		}
 	}
