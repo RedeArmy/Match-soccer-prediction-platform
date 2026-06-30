@@ -338,18 +338,13 @@ func calculatePoints(pred *domain.Prediction, actualHome, actualAway int, actual
 }
 
 // penaltiesWinnerBonus returns cfg.penaltiesBonus when the user correctly picked
-// the penalty winner, zero otherwise.
-//
-// Rules:
-//   - predWinner must be non-nil; the user must have explicitly selected a team.
-//   - When actualWinner is nil (older match data without a recorded winner),
-//     the method match alone earns the bonus (backward compatibility).
-//   - When actualWinner is non-nil, predWinner must match exactly.
+// the penalty winner, zero otherwise. Both pointers must be non-nil and equal;
+// if actualWinner is nil the match lacks a recorded winner and no bonus is awarded.
 func penaltiesWinnerBonus(predWinner *string, actualWinner *string, cfg scoringConfig) int {
-	if predWinner == nil {
+	if predWinner == nil || actualWinner == nil {
 		return 0
 	}
-	if actualWinner != nil && *predWinner != *actualWinner {
+	if *predWinner != *actualWinner {
 		return 0
 	}
 	return cfg.penaltiesBonus

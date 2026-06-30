@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, act, waitFor } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
 
 // signOut spy shared across all tests in this file.
 const signOutMock = vi.fn();
@@ -14,7 +14,7 @@ vi.mock("@clerk/nextjs", () => ({
 // Default fetch mock: returns a network-error-like rejection so the component
 // falls back to the NEXT_PUBLIC_SESSION_MAX_AGE_SECONDS env var. Individual
 // tests override this to exercise the live-fetch path.
-const fetchMock = vi.fn(() =>
+const fetchMock = vi.fn<() => Promise<Response>>(() =>
   Promise.reject(new Error("fetch disabled in tests")),
 );
 vi.stubGlobal("fetch", fetchMock);

@@ -102,11 +102,13 @@ func (r *stubSyncMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *stri
 }
 
 type stubSyncMatchSvc struct {
-	started           int
-	finished          int
-	startErr          error
-	finishErr         error
-	lastPenaltyWinner *string // last value passed to UpdateResult
+	started            int
+	finished           int
+	corrected          int
+	startErr           error
+	finishErr          error
+	lastPenaltyWinner  *string // last value passed to UpdateResult
+	lastCorrectPWinner *string // last value passed to CorrectResult
 }
 
 func (s *stubSyncMatchSvc) CreateMatch(_ context.Context, _ *domain.Match) error { return nil }
@@ -124,12 +126,14 @@ func (s *stubSyncMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, 
 	s.started++
 	return &domain.Match{Status: domain.MatchStatusLive}, s.startErr
 }
-func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, penaltyWinner *string) (*domain.Match, error) {
+func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
 	s.finished++
-	s.lastPenaltyWinner = penaltyWinner
+	s.lastPenaltyWinner = score.PenaltyWinner
 	return &domain.Match{Status: domain.MatchStatusFinished}, s.finishErr
 }
-func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, _ *string) (*domain.Match, error) {
+func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
+	s.corrected++
+	s.lastCorrectPWinner = score.PenaltyWinner
 	return &domain.Match{Status: domain.MatchStatusFinished}, nil
 }
 func (s *stubSyncMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
@@ -1458,7 +1462,7 @@ func TestMatchSync_PollAndApply_LiveMatchWritesPeriodAndPenaltyScore(t *testing.
 	}
 }
 
-func TestMatchSync_PollAndApply_FinishedMatch_UpdateLiveProgressError_ContinuesWithoutFailing(t *testing.T) {
+func TestMatchSync_PollAndApply_FinishedMatch_RecordsResult(t *testing.T) {
 	// applyResult calls UpdateLiveProgress to clear the period after a result is
 	// recorded. An error from that call must be logged and swallowed — the
 	// overall PollAndApply must still succeed.
@@ -1471,8 +1475,7 @@ func TestMatchSync_PollAndApply_FinishedMatch_UpdateLiveProgressError_ContinuesW
 	}
 	matchSvc := &stubSyncMatchSvc{}
 	repo := &stubSyncMatchRepo{
-		candidates:            []*domain.Match{candidate},
-		updateLiveProgressErr: errors.New("db timeout"),
+		candidates: []*domain.Match{candidate},
 	}
 	provider := &stubProvider{fixture: &footballprovider.Fixture{
 		ExternalID: id,
@@ -1483,19 +1486,14 @@ func TestMatchSync_PollAndApply_FinishedMatch_UpdateLiveProgressError_ContinuesW
 
 	_, err := svc.PollAndApply(context.Background(), 0)
 	if err != nil {
-		t.Fatalf("PollAndApply must not propagate UpdateLiveProgress error: %v", err)
+		t.Fatalf("PollAndApply: %v", err)
 	}
 	if matchSvc.finished != 1 {
 		t.Errorf("UpdateResult calls: want 1, got %d", matchSvc.finished)
 	}
-	if repo.updateLiveProgressHits != 1 {
-		t.Errorf("UpdateLiveProgress calls: want 1, got %d", repo.updateLiveProgressHits)
-	}
 }
 
-func TestMatchSync_DailyFixtureSync_FinishedMatch_UpdateLiveProgressError_ContinuesWithoutFailing(t *testing.T) {
-	// applyFinishedTransition calls UpdateLiveProgress after recording the
-	// result. An error must be logged and swallowed without aborting the sync.
+func TestMatchSync_DailyFixtureSync_FinishedMatch_RecordsResult(t *testing.T) {
 	id := int64(820)
 	candidate := &domain.Match{
 		ID: 82, Status: domain.MatchStatusScheduled,
@@ -1505,8 +1503,7 @@ func TestMatchSync_DailyFixtureSync_FinishedMatch_UpdateLiveProgressError_Contin
 	}
 	matchSvc := &stubSyncMatchSvc{}
 	repo := &stubSyncMatchRepo{
-		candidates:            []*domain.Match{candidate},
-		updateLiveProgressErr: errors.New("network error"),
+		candidates: []*domain.Match{candidate},
 	}
 	provider := &stubProvider{fixture: &footballprovider.Fixture{
 		ExternalID: id,
@@ -1517,13 +1514,84 @@ func TestMatchSync_DailyFixtureSync_FinishedMatch_UpdateLiveProgressError_Contin
 
 	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
 	if err != nil {
-		t.Fatalf("DailyFixtureSync must not propagate UpdateLiveProgress error: %v", err)
+		t.Fatalf("DailyFixtureSync: %v", err)
 	}
 	if matchSvc.finished != 1 {
 		t.Errorf("UpdateResult calls: want 1, got %d", matchSvc.finished)
 	}
-	if repo.updateLiveProgressHits != 1 {
-		t.Errorf("UpdateLiveProgress calls: want 1, got %d", repo.updateLiveProgressHits)
+}
+
+// ── penalty repair tests ──────────────────────────────────────────────────────
+
+func TestMatchSync_DailyFixtureSync_FinishedPenaltyMatch_MissingPenaltyWinner_RepairsViaCorrectResult(t *testing.T) {
+	// A match that was finalised manually without penalty_winner must be repaired
+	// automatically on the next DailyFixtureSync when the provider reports
+	// StatusAfterPEN with penalty scores.
+	id := int64(830)
+	phome, paway := 4, 5
+	candidate := &domain.Match{
+		ID: 83, Status: domain.MatchStatusFinished,
+		HomeTeam: "Germany", AwayTeam: "Paraguay",
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-3 * time.Hour),
+		// PenaltyWinner intentionally nil — simulates the broken state
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusAfterPEN,
+		HomeScore:  1, AwayScore: 1,
+		PenaltyHomeScore: &phome,
+		PenaltyAwayScore: &paway,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("DailyFixtureSync: %v", err)
+	}
+	if matchSvc.corrected != 1 {
+		t.Errorf("CorrectResult calls: want 1 (repair), got %d", matchSvc.corrected)
+	}
+	if matchSvc.lastCorrectPWinner == nil || *matchSvc.lastCorrectPWinner != "away" {
+		t.Errorf("penalty_winner: want %q, got %v", "away", matchSvc.lastCorrectPWinner)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_FinishedPenaltyMatch_AlreadyHasPenaltyWinner_Skips(t *testing.T) {
+	// A match that already has penalty_winner set must not be touched.
+	id := int64(831)
+	pw := "home"
+	phome, paway := 5, 3
+	candidate := &domain.Match{
+		ID: 84, Status: domain.MatchStatusFinished,
+		HomeTeam: "Morocco", AwayTeam: "Spain",
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-3 * time.Hour),
+		PenaltyWinner:    &pw,
+		PenaltyHomeScore: &phome,
+		PenaltyAwayScore: &paway,
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusAfterPEN,
+		HomeScore:  1, AwayScore: 1,
+		PenaltyHomeScore: &phome,
+		PenaltyAwayScore: &paway,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("DailyFixtureSync: %v", err)
+	}
+	if matchSvc.corrected != 0 {
+		t.Errorf("CorrectResult calls: want 0 (already repaired), got %d", matchSvc.corrected)
 	}
 }
 

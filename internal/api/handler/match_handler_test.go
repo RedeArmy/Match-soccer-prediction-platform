@@ -249,6 +249,24 @@ func TestUpdateResult_WithValidWinMethod_Returns200(t *testing.T) {
 	}
 }
 
+func TestUpdateResult_PenaltiesWinMethod_MissingPenaltyWinner_Returns422(t *testing.T) {
+	svc := &stubMatchSvc{err: apperrors.Validation(`penalty_winner must be "home" or "away" when win_method is "penalties"`)}
+	w := do(newMatchRouter(svc), http.MethodPatch, "/1",
+		`{"home_score":1,"away_score":1,"win_method":"penalties"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
+func TestUpdateResult_PenaltiesWithScores_Returns200(t *testing.T) {
+	svc := &stubMatchSvc{match: &domain.Match{ID: 1}}
+	w := do(newMatchRouter(svc), http.MethodPatch, "/1",
+		`{"home_score":1,"away_score":1,"win_method":"penalties","penalty_winner":"away","penalty_home_score":3,"penalty_away_score":4}`)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
 // ── StartMatch ────────────────────────────────────────────────────────────────
 
 func TestStartMatch_Success_Returns200(t *testing.T) {

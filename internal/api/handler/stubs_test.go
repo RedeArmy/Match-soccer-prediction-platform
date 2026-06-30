@@ -106,13 +106,13 @@ func (s *stubMatchSvc) ListMatchesByPhase(_ context.Context, _ domain.MatchPhase
 func (s *stubMatchSvc) ListMatchesByStatus(_ context.Context, _ domain.MatchStatus) ([]*domain.Match, error) {
 	return s.matches, s.err
 }
-func (s *stubMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, _ *string) (*domain.Match, error) {
+func (s *stubMatchSvc) UpdateResult(_ context.Context, _ int, _ service.ScoreUpdate) (*domain.Match, error) {
 	return s.match, s.err
 }
 func (s *stubMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, error) {
 	return s.match, s.err
 }
-func (s *stubMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, _ *string) (*domain.Match, error) {
+func (s *stubMatchSvc) CorrectResult(_ context.Context, _ int, _ service.ScoreUpdate) (*domain.Match, error) {
 	return s.match, s.err
 }
 func (s *stubMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
