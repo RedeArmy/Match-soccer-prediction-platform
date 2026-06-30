@@ -155,6 +155,9 @@ func (r *stubWorkerMatchRepo) UpdateSlots(_ context.Context, _ int, _, _ *int) (
 func (r *stubWorkerMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *string, _, _ *int) error {
 	return nil
 }
+func (r *stubWorkerMatchRepo) ListFinishedPenaltyMatchesMissingWinner(_ context.Context) ([]*domain.Match, error) {
+	return nil, nil
+}
 
 var _ repository.MatchRepository = (*stubWorkerMatchRepo)(nil)
 

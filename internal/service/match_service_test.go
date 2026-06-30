@@ -75,6 +75,9 @@ func (r *stubMatchRepo) UpdateSlots(_ context.Context, _ int, _, _ *int) (*domai
 func (r *stubMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *string, _, _ *int) error {
 	return nil
 }
+func (r *stubMatchRepo) ListFinishedPenaltyMatchesMissingWinner(_ context.Context) ([]*domain.Match, error) {
+	return nil, nil
+}
 
 // stubPublisher records published envelopes without delivering them.
 type stubPublisher struct {

@@ -351,7 +351,35 @@ func (s *matchSyncService) DailyFixtureSync(ctx context.Context, leagueID, seaso
 		s.dailySyncOneMatch(ctx, m, result)
 	}
 
+	// Phase 3: repair finished penalty matches whose penalty_winner is still
+	// NULL. These rows are excluded from ListSyncCandidates (non-finished only),
+	// so they need a dedicated sweep on every daily run.
+	s.repairFinishedPenaltyMatches(ctx, result)
+
 	return result, nil
+}
+
+// repairFinishedPenaltyMatches fetches all finished matches with win_method =
+// "penalties" and penalty_winner IS NULL, then calls repairPenaltyDataIfMissing
+// for each one. Each successful repair increments result.Corrected.
+func (s *matchSyncService) repairFinishedPenaltyMatches(ctx context.Context, result *DailySyncResult) {
+	toRepair, err := s.matchRepo.ListFinishedPenaltyMatchesMissingWinner(ctx)
+	if err != nil {
+		s.log.Warn("daily fixture sync: list finished penalty matches missing winner failed",
+			zap.Error(err))
+		return
+	}
+	for _, m := range toRepair {
+		fix, err := s.provider.GetFixture(ctx, *m.ExternalMatchID)
+		if err != nil {
+			s.log.Warn("match daily sync: GetFixture (penalty repair) failed",
+				zap.Int("match_id", m.ID), zap.Error(err))
+			continue
+		}
+		if s.repairPenaltyDataIfMissing(ctx, m, fix) {
+			result.Corrected++
+		}
+	}
 }
 
 // autoLinkByDateRange fetches provider fixtures for every UTC date in
@@ -550,18 +578,17 @@ func (s *matchSyncService) applyResultFromProvider(ctx context.Context, m *domai
 }
 
 // repairPenaltyDataIfMissing re-issues CorrectResult when a finished match has
-// no penalty_winner but the provider reports StatusAfterPEN. This repairs matches
-// finalised manually before the penalty validation was added so the shootout score
-// is stored and the bracket slot advances via the re-emitted MatchFinished event.
-func (s *matchSyncService) repairPenaltyDataIfMissing(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture) {
+// no penalty_winner but the provider reports StatusAfterPEN. Returns true when
+// the repair was applied, false when the match was skipped or the call failed.
+func (s *matchSyncService) repairPenaltyDataIfMissing(ctx context.Context, m *domain.Match, fix *footballprovider.Fixture) bool {
 	if fix.Status != footballprovider.StatusAfterPEN || m.PenaltyWinner != nil {
-		return
+		return false
 	}
 	penaltyWinner := derivePenaltyWinner(fix)
 	if penaltyWinner == nil {
 		s.log.Warn("match daily sync: provider missing penalty scores for repair",
 			zap.Int("match_id", m.ID))
-		return
+		return false
 	}
 	score := ScoreUpdate{
 		HomeScore:        fix.HomeScore,
@@ -574,10 +601,11 @@ func (s *matchSyncService) repairPenaltyDataIfMissing(ctx context.Context, m *do
 	if _, err := s.matchSvc.CorrectResult(ctx, m.ID, score); err != nil {
 		s.log.Warn("match daily sync: CorrectResult (penalty repair) failed",
 			zap.Int("match_id", m.ID), zap.Error(err))
-	} else {
-		s.log.Info("match daily sync: repaired missing penalty data",
-			zap.Int("match_id", m.ID), zap.Stringp("penalty_winner", penaltyWinner))
+		return false
 	}
+	s.log.Info("match daily sync: repaired missing penalty data",
+		zap.Int("match_id", m.ID), zap.Stringp("penalty_winner", penaltyWinner))
+	return true
 }
 
 func (s *matchSyncService) applyStartTransition(ctx context.Context, m *domain.Match) {
