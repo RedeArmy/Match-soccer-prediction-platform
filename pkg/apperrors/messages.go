@@ -16,4 +16,6 @@ const (
 	MsgRequestBodyTooLarge = "request body exceeds the maximum allowed size"
 	MsgInternal            = "an unexpected error occurred; please try again later"
 	MsgRateLimited         = "too many requests; please slow down and try again later"
+	MsgSessionExpired      = "your session has expired; please sign in again"
+	MsgSessionRevoked      = "your session has been revoked; please sign in again"
 )

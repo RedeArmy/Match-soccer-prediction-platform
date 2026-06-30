@@ -84,7 +84,6 @@ class APIClient {
     });
 
     if (!res.ok) {
-      if (res.status === 401 && !!token) this.notifySessionExpired();
       // Read the body as text first so we can attempt JSON parsing without
       // consuming the stream twice. If the upstream returns an HTML error page
       // (reverse proxy, CDN) json() would throw and silently produce {}, masking
@@ -102,6 +101,9 @@ class APIClient {
       const rawCode = errorBody?.code;
       const msg = typeof rawMsg === "string" ? rawMsg : `HTTP ${res.status}`;
       const code = typeof rawCode === "string" ? rawCode : "ERR_UNKNOWN";
+      if (!!token && (code === "SESSION_EXPIRED" || code === "SESSION_REVOKED")) {
+        this.notifySessionExpired();
+      }
       throw Object.assign(new Error(msg), { code, status: res.status });
     }
 
@@ -1135,13 +1137,13 @@ class APIClient {
     });
 
     if (!res.ok) {
-      if (res.status === 401 && !!token) this.notifySessionExpired();
       const body = await res.json().catch(() => ({}));
       const msg = body?.error?.message ?? `HTTP ${res.status}`;
-      throw Object.assign(new Error(msg), {
-        code: body?.error?.code,
-        status: res.status,
-      });
+      const code = body?.error?.code;
+      if (!!token && (code === "SESSION_EXPIRED" || code === "SESSION_REVOKED")) {
+        this.notifySessionExpired();
+      }
+      throw Object.assign(new Error(msg), { code, status: res.status });
     }
     return res.json();
   }

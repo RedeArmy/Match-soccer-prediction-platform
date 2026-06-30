@@ -1378,10 +1378,10 @@ import { onSessionExpired } from "@/lib/session-bus";
 describe("api – session-expired dispatch (session-bus)", () => {
   beforeEach(() => mockFetch.mockReset());
 
-  it("notifies session-bus when an authenticated request receives 401", async () => {
+  it("notifies session-bus when authenticated request receives SESSION_EXPIRED code", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(
-        { error: { message: "Unauthorised", code: "ERR_UNAUTH" } },
+        { error: { message: "your session has expired", code: "SESSION_EXPIRED" } },
         401,
       ),
     );
@@ -1392,10 +1392,38 @@ describe("api – session-expired dispatch (session-bus)", () => {
     expect(handler).toHaveBeenCalledOnce();
   });
 
-  it("does not notify session-bus when an unauthenticated request receives 401", async () => {
+  it("notifies session-bus when authenticated request receives SESSION_REVOKED code", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(
-        { error: { message: "Unauthorised", code: "ERR_UNAUTH" } },
+        { error: { message: "your session has been revoked", code: "SESSION_REVOKED" } },
+        401,
+      ),
+    );
+    const handler = vi.fn();
+    const unsubscribe = onSessionExpired(handler);
+    await api.getBalance("tok_valid").catch(() => {});
+    unsubscribe();
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it("does not notify session-bus when authenticated request receives generic UNAUTHORISED code", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse(
+        { error: { message: "invalid or expired token", code: "UNAUTHORISED" } },
+        401,
+      ),
+    );
+    const handler = vi.fn();
+    const unsubscribe = onSessionExpired(handler);
+    await api.getBalance("tok_valid").catch(() => {});
+    unsubscribe();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("does not notify session-bus when an unauthenticated request receives SESSION_EXPIRED code", async () => {
+    mockFetch.mockResolvedValueOnce(
+      makeResponse(
+        { error: { message: "your session has expired", code: "SESSION_EXPIRED" } },
         401,
       ),
     );
@@ -1406,10 +1434,10 @@ describe("api – session-expired dispatch (session-bus)", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("notifies session-bus on authenticated FormData upload that receives 401", async () => {
+  it("notifies session-bus on authenticated FormData upload that receives SESSION_REVOKED code", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(
-        { error: { message: "Unauthorised", code: "ERR_UNAUTH" } },
+        { error: { message: "your session has been revoked", code: "SESSION_REVOKED" } },
         401,
       ),
     );
@@ -1425,7 +1453,7 @@ describe("api – session-expired dispatch (session-bus)", () => {
   it("does not notify session-bus in a non-browser (SSR) environment", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(
-        { error: { message: "Unauthorised", code: "ERR_UNAUTH" } },
+        { error: { message: "your session has expired", code: "SESSION_EXPIRED" } },
         401,
       ),
     );

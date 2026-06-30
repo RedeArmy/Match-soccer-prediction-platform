@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/auth"
 )
 
@@ -155,7 +156,7 @@ func (p *PolicyProvider) ValidateToken(ctx context.Context, rawToken string) (au
 	maxAgeSecs := p.params.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
 	sessionStart := p.resolveSessionStart(ctx, claims, maxAgeSecs)
 	if time.Since(sessionStart) > time.Duration(maxAgeSecs)*time.Second {
-		return auth.Claims{}, fmt.Errorf("%w: session exceeded maximum age of %d seconds", auth.ErrInvalidToken, maxAgeSecs)
+		return auth.Claims{}, apperrors.SessionExpired(fmt.Sprintf("session exceeded maximum age of %d seconds", maxAgeSecs))
 	}
 
 	if p.params.GetInt(ctx, domain.ParamKeyAuthRequireMFA, domain.DefaultAuthRequireMFA) != 0 && claims.MFAVerifiedAt.IsZero() {
@@ -226,7 +227,7 @@ func (p *PolicyProvider) checkRevocation(ctx context.Context, sid string) error 
 	revoked, checkErr := p.blocklist.IsRevoked(ctx, sid)
 	if checkErr != nil {
 		if p.isRevokedCached(sid) {
-			return fmt.Errorf("%w: session has been revoked", auth.ErrInvalidToken)
+			return apperrors.SessionRevoked("session has been revoked")
 		}
 		if p.isAllowedCached(sid) {
 			return nil // recently confirmed valid by this process — allow during outage
@@ -239,7 +240,7 @@ func (p *PolicyProvider) checkRevocation(ctx context.Context, sid string) error 
 	}
 	if revoked {
 		p.cacheRevoked(sid)
-		return fmt.Errorf("%w: session has been revoked", auth.ErrInvalidToken)
+		return apperrors.SessionRevoked("session has been revoked")
 	}
 	p.cacheAllowed(sid)
 	return nil

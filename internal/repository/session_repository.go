@@ -110,11 +110,11 @@ func (r *PostgresSessionStartRepository) UpsertSessionStart(ctx context.Context,
 	var t time.Time
 	err := r.db.QueryRow(ctx,
 		`INSERT INTO session_starts (sid, user_id, started_at)
-		 VALUES ($1, $2, NOW())
+		 VALUES ($1, $2, $3)
 		 ON CONFLICT (sid) DO UPDATE
 		   SET started_at = session_starts.started_at
 		 RETURNING started_at`,
-		sid, userID,
+		sid, userID, start,
 	).Scan(&t)
 	if err != nil {
 		return time.Time{}, apperrors.Internal(err)

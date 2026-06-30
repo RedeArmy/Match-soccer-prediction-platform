@@ -10,6 +10,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/auth"
 )
 
@@ -80,7 +81,7 @@ func TestPolicyProvider_FreshToken_NotRevoked_Passes(t *testing.T) {
 	}
 }
 
-func TestPolicyProvider_ExpiredToken_RejectsWithInvalidToken(t *testing.T) {
+func TestPolicyProvider_ExpiredToken_RejectsWithSessionExpired(t *testing.T) {
 	claims := auth.Claims{
 		Subject:   "user_abc",
 		IssuedAt:  time.Now().Add(-2 * time.Hour),
@@ -93,12 +94,12 @@ func TestPolicyProvider_ExpiredToken_RejectsWithInvalidToken(t *testing.T) {
 	)
 
 	_, err := p.ValidateToken(context.Background(), "any")
-	if !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("expected ErrInvalidToken for expired token, got %v", err)
+	if !errors.Is(err, apperrors.ErrSessionExpired) {
+		t.Fatalf("expected ErrSessionExpired for expired token, got %v", err)
 	}
 }
 
-func TestPolicyProvider_RevokedSession_RejectsWithInvalidToken(t *testing.T) {
+func TestPolicyProvider_RevokedSession_RejectsWithSessionRevoked(t *testing.T) {
 	claims := auth.Claims{
 		Subject:   "user_abc",
 		IssuedAt:  time.Now(),
@@ -111,8 +112,8 @@ func TestPolicyProvider_RevokedSession_RejectsWithInvalidToken(t *testing.T) {
 	)
 
 	_, err := p.ValidateToken(context.Background(), "any")
-	if !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("expected ErrInvalidToken for revoked session, got %v", err)
+	if !errors.Is(err, apperrors.ErrSessionRevoked) {
+		t.Fatalf("expected ErrSessionRevoked for revoked session, got %v", err)
 	}
 }
 
@@ -182,7 +183,7 @@ func TestPolicyProvider_InnerProviderError_Propagated(t *testing.T) {
 // In production, Clerk refreshes JWTs every ~60 s: IssuedAt is always recent
 // even for a 24-hour-old session. SessionStartedAt (derived from fva[0]) is
 // stable across refreshes and correctly reflects the session origin.
-func TestPolicyProvider_OldSession_FreshJWT_RejectsWithInvalidToken(t *testing.T) {
+func TestPolicyProvider_OldSession_FreshJWT_RejectsWithSessionExpired(t *testing.T) {
 	claims := auth.Claims{
 		Subject:          "user_abc",
 		IssuedAt:         time.Now(),                     // JWT just refreshed — very recent
@@ -196,8 +197,8 @@ func TestPolicyProvider_OldSession_FreshJWT_RejectsWithInvalidToken(t *testing.T
 	)
 
 	_, err := p.ValidateToken(context.Background(), "any")
-	if !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("expected ErrInvalidToken for session older than max-age, got %v", err)
+	if !errors.Is(err, apperrors.ErrSessionExpired) {
+		t.Fatalf("expected ErrSessionExpired for session older than max-age, got %v", err)
 	}
 }
 
@@ -239,8 +240,8 @@ func TestPolicyProvider_ZeroSessionStartedAt_FallsBackToIssuedAt(t *testing.T) {
 	)
 
 	_, err := p.ValidateToken(context.Background(), "any")
-	if !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("expected ErrInvalidToken when falling back to IssuedAt, got %v", err)
+	if !errors.Is(err, apperrors.ErrSessionExpired) {
+		t.Fatalf("expected ErrSessionExpired when falling back to IssuedAt, got %v", err)
 	}
 }
 
@@ -293,8 +294,8 @@ func TestPolicyProvider_DBSession_OldSession_Rejects(t *testing.T) {
 	)
 
 	_, err := p.ValidateToken(context.Background(), "any")
-	if !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("expected ErrInvalidToken for OAuth session older than max-age, got %v", err)
+	if !errors.Is(err, apperrors.ErrSessionExpired) {
+		t.Fatalf("expected ErrSessionExpired for OAuth session older than max-age, got %v", err)
 	}
 	if ss.calls != 1 {
 		t.Errorf("expected UpsertSessionStart called once, got %d", ss.calls)
@@ -506,16 +507,16 @@ func TestPolicyProvider_RevokedCache_FailsClosedDuringDBOutage(t *testing.T) {
 	bl := &stubBlocklist{revoked: true}
 	p := makePolicyProvider(&stubProvider{claims: claims}, bl, 18000)
 	_, err := p.ValidateToken(context.Background(), "any")
-	if !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("first call: expected ErrInvalidToken for revoked session, got %v", err)
+	if !errors.Is(err, apperrors.ErrSessionRevoked) {
+		t.Fatalf("first call: expected ErrSessionRevoked for revoked session, got %v", err)
 	}
 
 	// Second call: DB is now down, but cache should keep it rejected.
 	bl.revoked = false
 	bl.err = errors.New("connection refused")
 	_, err = p.ValidateToken(context.Background(), "any")
-	if !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("second call with DB down: expected ErrInvalidToken (fail-closed from cache), got %v", err)
+	if !errors.Is(err, apperrors.ErrSessionRevoked) {
+		t.Fatalf("second call with DB down: expected ErrSessionRevoked (fail-closed from cache), got %v", err)
 	}
 }
 
@@ -581,14 +582,14 @@ func TestPolicyProvider_RevokedBeatsAllowCache(t *testing.T) {
 	// Session is now revoked — DB returns true.
 	bl.revoked = true
 	bl.err = nil
-	if _, err := p.ValidateToken(context.Background(), "any"); !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("expected ErrInvalidToken for revoked session, got %v", err)
+	if _, err := p.ValidateToken(context.Background(), "any"); !errors.Is(err, apperrors.ErrSessionRevoked) {
+		t.Fatalf("expected ErrSessionRevoked for revoked session, got %v", err)
 	}
 
 	// DB goes down — revoked cache wins over allow cache.
 	bl.revoked = false
 	bl.err = errors.New("connection refused")
-	if _, err := p.ValidateToken(context.Background(), "any"); !errors.Is(err, auth.ErrInvalidToken) {
+	if _, err := p.ValidateToken(context.Background(), "any"); !errors.Is(err, apperrors.ErrSessionRevoked) {
 		t.Fatalf("DB down after revocation: expected deny from revokedCache, got %v", err)
 	}
 }
