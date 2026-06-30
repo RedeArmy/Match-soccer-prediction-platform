@@ -527,7 +527,28 @@ func (s *matchSyncService) applyFinishedTransition(ctx context.Context, m *domai
 					zap.Int("match_id", m.ID), zap.Error(err))
 			}
 		}
-	case domain.MatchStatusFinished, domain.MatchStatusCancelled:
+	case domain.MatchStatusFinished:
+		// Repair: match finished in penalties but penalty_winner was never persisted
+		// (e.g. finalised manually before the validation was added). Re-issue
+		// CorrectResult so the shootout score is stored and the bracket slot
+		// advances automatically via the MatchFinished event.
+		if fix.Status == footballprovider.StatusAfterPEN && m.PenaltyWinner == nil {
+			penaltyWinner := derivePenaltyWinner(fix)
+			if penaltyWinner == nil {
+				s.log.Warn("match daily sync: provider missing penalty scores for repair",
+					zap.Int("match_id", m.ID))
+				break
+			}
+			winMethod := winMethodFromStatus(fix.Status)
+			if _, err := s.matchSvc.CorrectResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
+				s.log.Warn("match daily sync: CorrectResult (penalty repair) failed",
+					zap.Int("match_id", m.ID), zap.Error(err))
+			} else {
+				s.log.Info("match daily sync: repaired missing penalty data",
+					zap.Int("match_id", m.ID), zap.Stringp("penalty_winner", penaltyWinner))
+			}
+		}
+	case domain.MatchStatusCancelled:
 		// already in a terminal state; no transition needed
 	}
 }
