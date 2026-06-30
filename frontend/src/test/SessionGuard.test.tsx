@@ -31,8 +31,9 @@ function mockMaxAge(seconds: number | undefined) {
 }
 
 import { SessionGuard } from "@/components/shared/SessionGuard";
+import { dispatchSessionExpired } from "@/lib/session-bus";
 
-describe("SessionGuard – reactive path (wcq:session-expired event)", () => {
+describe("SessionGuard – reactive path (session-bus event)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession = null;
@@ -40,10 +41,10 @@ describe("SessionGuard – reactive path (wcq:session-expired event)", () => {
     fetchMock.mockRejectedValue(new Error("fetch disabled in tests"));
   });
 
-  it("calls signOut when wcq:session-expired is dispatched", () => {
+  it("calls signOut when dispatchSessionExpired is called", () => {
     render(<SessionGuard />);
     act(() => {
-      globalThis.dispatchEvent(new Event("wcq:session-expired"));
+      dispatchSessionExpired();
     });
     expect(signOutMock).toHaveBeenCalledOnce();
     expect(signOutMock).toHaveBeenCalledWith({ redirectUrl: "/sign-in" });
@@ -53,7 +54,7 @@ describe("SessionGuard – reactive path (wcq:session-expired event)", () => {
     const { unmount } = render(<SessionGuard />);
     unmount();
     act(() => {
-      globalThis.dispatchEvent(new Event("wcq:session-expired"));
+      dispatchSessionExpired();
     });
     expect(signOutMock).not.toHaveBeenCalled();
   });

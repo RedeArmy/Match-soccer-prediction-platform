@@ -1371,12 +1371,14 @@ describe("api – getTeams", () => {
   });
 });
 
-// ── wcq:session-expired dispatch logic ────────────────────────────────────────
+// ── session-bus dispatch logic ─────────────────────────────────────────────────
 
-describe("api – wcq:session-expired dispatch", () => {
+import { onSessionExpired } from "@/lib/session-bus";
+
+describe("api – session-expired dispatch (session-bus)", () => {
   beforeEach(() => mockFetch.mockReset());
 
-  it("dispatches wcq:session-expired when an authenticated request receives 401", async () => {
+  it("notifies session-bus when an authenticated request receives 401", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(
         { error: { message: "Unauthorised", code: "ERR_UNAUTH" } },
@@ -1384,13 +1386,13 @@ describe("api – wcq:session-expired dispatch", () => {
       ),
     );
     const handler = vi.fn();
-    globalThis.addEventListener("wcq:session-expired", handler);
+    const unsubscribe = onSessionExpired(handler);
     await api.getBalance("tok_valid").catch(() => {});
-    globalThis.removeEventListener("wcq:session-expired", handler);
+    unsubscribe();
     expect(handler).toHaveBeenCalledOnce();
   });
 
-  it("does not dispatch wcq:session-expired when an unauthenticated request receives 401", async () => {
+  it("does not notify session-bus when an unauthenticated request receives 401", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(
         { error: { message: "Unauthorised", code: "ERR_UNAUTH" } },
@@ -1398,13 +1400,13 @@ describe("api – wcq:session-expired dispatch", () => {
       ),
     );
     const handler = vi.fn();
-    globalThis.addEventListener("wcq:session-expired", handler);
+    const unsubscribe = onSessionExpired(handler);
     await api.getExchangeRate().catch(() => {});
-    globalThis.removeEventListener("wcq:session-expired", handler);
+    unsubscribe();
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("dispatches wcq:session-expired on authenticated FormData upload that receives 401", async () => {
+  it("notifies session-bus on authenticated FormData upload that receives 401", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(
         { error: { message: "Unauthorised", code: "ERR_UNAUTH" } },
@@ -1412,15 +1414,15 @@ describe("api – wcq:session-expired dispatch", () => {
       ),
     );
     const handler = vi.fn();
-    globalThis.addEventListener("wcq:session-expired", handler);
+    const unsubscribe = onSessionExpired(handler);
     const fd = new FormData();
     fd.append("file", new Blob(["data"], { type: "image/jpeg" }), "doc.jpg");
     await api.uploadKYCDocument("tok_valid", fd).catch(() => {});
-    globalThis.removeEventListener("wcq:session-expired", handler);
+    unsubscribe();
     expect(handler).toHaveBeenCalledOnce();
   });
 
-  it("does not dispatch wcq:session-expired in a non-browser (SSR) environment", async () => {
+  it("does not notify session-bus in a non-browser (SSR) environment", async () => {
     mockFetch.mockResolvedValueOnce(
       makeResponse(
         { error: { message: "Unauthorised", code: "ERR_UNAUTH" } },
@@ -1429,12 +1431,12 @@ describe("api – wcq:session-expired dispatch", () => {
     );
     vi.stubGlobal("window", undefined);
     const handler = vi.fn();
-    globalThis.addEventListener("wcq:session-expired", handler);
+    const unsubscribe = onSessionExpired(handler);
     try {
       await api.getBalance("tok_valid").catch(() => {});
       expect(handler).not.toHaveBeenCalled();
     } finally {
-      globalThis.removeEventListener("wcq:session-expired", handler);
+      unsubscribe();
       vi.unstubAllGlobals();
     }
   });

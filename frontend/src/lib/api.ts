@@ -49,6 +49,7 @@ import type {
   TournamentSlotResponse,
   BestThirdAssignment,
 } from "./api-types";
+import { dispatchSessionExpired } from "./session-bus";
 
 // ── Base fetch ────────────────────────────────────────────────────────────────
 
@@ -59,9 +60,9 @@ class APIClient {
     this.base = base;
   }
 
-  private dispatchSessionExpired(): void {
+  private notifySessionExpired(): void {
     if (globalThis.window !== undefined) {
-      globalThis.dispatchEvent(new CustomEvent("wcq:session-expired"));
+      dispatchSessionExpired();
     }
   }
 
@@ -83,7 +84,7 @@ class APIClient {
     });
 
     if (!res.ok) {
-      if (res.status === 401 && !!token) this.dispatchSessionExpired();
+      if (res.status === 401 && !!token) this.notifySessionExpired();
       // Read the body as text first so we can attempt JSON parsing without
       // consuming the stream twice. If the upstream returns an HTML error page
       // (reverse proxy, CDN) json() would throw and silently produce {}, masking
@@ -1134,7 +1135,7 @@ class APIClient {
     });
 
     if (!res.ok) {
-      if (res.status === 401 && !!token) this.dispatchSessionExpired();
+      if (res.status === 401 && !!token) this.notifySessionExpired();
       const body = await res.json().catch(() => ({}));
       const msg = body?.error?.message ?? `HTTP ${res.status}`;
       throw Object.assign(new Error(msg), {

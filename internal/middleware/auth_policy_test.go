@@ -537,6 +537,62 @@ func TestPolicyProvider_RevokedCache_UnknownSID_FailsOpenDuringDBOutage(t *testi
 	}
 }
 
+// TestPolicyProvider_AllowCache_KnownGoodSID_AllowsDuringDBOutage verifies that
+// a session confirmed valid by the DB (not revoked) is cached and continues to
+// be allowed when the DB subsequently becomes unavailable. This reduces the
+// fail-open window compared to a completely unknown SID.
+func TestPolicyProvider_AllowCache_KnownGoodSID_AllowsDuringDBOutage(t *testing.T) {
+	claims := auth.Claims{
+		Subject:   "user_active",
+		IssuedAt:  time.Now(),
+		SessionID: "sid_known_good",
+	}
+	bl := &stubBlocklist{revoked: false} // DB healthy: not revoked
+	p := makePolicyProvider(&stubProvider{claims: claims}, bl, 18000)
+
+	// First call: DB is healthy, session confirmed valid → populates allowedEntries.
+	if _, err := p.ValidateToken(context.Background(), "any"); err != nil {
+		t.Fatalf("first call (DB healthy): unexpected error: %v", err)
+	}
+
+	// Second call: DB goes down — session should still be allowed from allowCache.
+	bl.err = errors.New("connection refused")
+	if _, err := p.ValidateToken(context.Background(), "any"); err != nil {
+		t.Fatalf("second call (DB down): expected allow from cache, got %v", err)
+	}
+}
+
+// TestPolicyProvider_RevokedBeatsAllowCache verifies that a session in both
+// caches (revoked wins) is still denied during a DB outage.
+func TestPolicyProvider_RevokedBeatsAllowCache(t *testing.T) {
+	claims := auth.Claims{
+		Subject:   "user_tricky",
+		IssuedAt:  time.Now(),
+		SessionID: "sid_revoked_after_allow",
+	}
+	bl := &stubBlocklist{revoked: false}
+	p := makePolicyProvider(&stubProvider{claims: claims}, bl, 18000)
+
+	// Populate the allow cache.
+	if _, err := p.ValidateToken(context.Background(), "any"); err != nil {
+		t.Fatalf("setup (allow cache): unexpected error: %v", err)
+	}
+
+	// Session is now revoked — DB returns true.
+	bl.revoked = true
+	bl.err = nil
+	if _, err := p.ValidateToken(context.Background(), "any"); !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken for revoked session, got %v", err)
+	}
+
+	// DB goes down — revoked cache wins over allow cache.
+	bl.revoked = false
+	bl.err = errors.New("connection refused")
+	if _, err := p.ValidateToken(context.Background(), "any"); !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("DB down after revocation: expected deny from revokedCache, got %v", err)
+	}
+}
+
 // ── MFA enforcement (DT-016) ─────────────────────────────────────────────────
 
 // TestPolicyProvider_MFARequired_NoMFA_Rejects verifies that when

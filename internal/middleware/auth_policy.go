@@ -18,6 +18,14 @@ import (
 // 8 days ≈ default max-age (7 days) + 1 day grace, matching the DB prune cutoff.
 const revokedCacheTTL = 8 * 24 * time.Hour
 
+// allowedCacheTTL is the TTL for in-process positive (confirmed-valid) entries.
+// When the DB confirms a session is NOT revoked, we cache that result so that
+// a subsequent DB outage can still serve recently-active sessions without
+// degrading to pure fail-open. Short TTL keeps the window tight: at most
+// allowedCacheTTL elapses between the last positive confirmation and a logout
+// that the outage prevents us from learning about.
+const allowedCacheTTL = 5 * time.Minute
+
 // GetInter is the subset of SystemParamService consumed by PolicyProvider.
 // Using a narrow interface prevents an import cycle between middleware and service.
 type GetInter interface {
@@ -74,7 +82,7 @@ type PolicyProvider struct {
 	// subsequent request from the same session.
 	startCache sync.Map // string → time.Time
 
-	// revokedMu guards revokedEntries.
+	// revokedMu guards revokedEntries and allowedEntries.
 	revokedMu sync.Mutex
 	// revokedEntries maps confirmed-revoked SIDs to the time the revocation was
 	// first observed by this process. Used for fail-closed behaviour when the DB is
@@ -83,6 +91,11 @@ type PolicyProvider struct {
 	// revokedCacheTTL — beyond that window the session would be rejected by the
 	// max-age check anyway, so fail-closed protection is no longer needed.
 	revokedEntries map[string]time.Time
+	// allowedEntries maps confirmed-valid SIDs to the time of the last successful
+	// DB confirmation. During a DB outage, entries still within allowedCacheTTL
+	// are served without hitting the DB, reducing the fail-open window for sessions
+	// that have been recently confirmed active by this process.
+	allowedEntries map[string]time.Time
 }
 
 // NewPolicyProvider wraps inner with the two session-policy enforcement layers.
@@ -103,6 +116,7 @@ func NewPolicyProvider(
 		params:         params,
 		log:            log,
 		revokedEntries: make(map[string]time.Time),
+		allowedEntries: make(map[string]time.Time),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -214,6 +228,9 @@ func (p *PolicyProvider) checkRevocation(ctx context.Context, sid string) error 
 		if p.isRevokedCached(sid) {
 			return fmt.Errorf("%w: session has been revoked", auth.ErrInvalidToken)
 		}
+		if p.isAllowedCached(sid) {
+			return nil // recently confirmed valid by this process — allow during outage
+		}
 		p.log.Warn("session blocklist check failed; treating as not revoked (fail-open for uncached session)",
 			zap.String("sid", sid),
 			zap.Error(checkErr),
@@ -224,6 +241,7 @@ func (p *PolicyProvider) checkRevocation(ctx context.Context, sid string) error 
 		p.cacheRevoked(sid)
 		return fmt.Errorf("%w: session has been revoked", auth.ErrInvalidToken)
 	}
+	p.cacheAllowed(sid)
 	return nil
 }
 
@@ -247,6 +265,29 @@ func (p *PolicyProvider) isRevokedCached(sid string) bool {
 func (p *PolicyProvider) cacheRevoked(sid string) {
 	p.revokedMu.Lock()
 	p.revokedEntries[sid] = time.Now()
+	p.revokedMu.Unlock()
+}
+
+// isAllowedCached reports whether sid has a live entry in the in-process positive
+// (confirmed-valid) cache. Entries older than allowedCacheTTL are lazily evicted.
+func (p *PolicyProvider) isAllowedCached(sid string) bool {
+	p.revokedMu.Lock()
+	defer p.revokedMu.Unlock()
+	t, ok := p.allowedEntries[sid]
+	if !ok {
+		return false
+	}
+	if time.Since(t) > allowedCacheTTL {
+		delete(p.allowedEntries, sid)
+		return false
+	}
+	return true
+}
+
+// cacheAllowed records sid as confirmed-valid in the in-process positive cache.
+func (p *PolicyProvider) cacheAllowed(sid string) {
+	p.revokedMu.Lock()
+	p.allowedEntries[sid] = time.Now()
 	p.revokedMu.Unlock()
 }
 

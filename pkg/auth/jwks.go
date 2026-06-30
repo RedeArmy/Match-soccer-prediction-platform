@@ -236,12 +236,12 @@ func (p *JWKSProvider) populateFVAClaims(c *Claims, privateClaims map[string]int
 		return
 	}
 	if len(fva) > 0 {
-		if secs, ok := fva[0].(float64); ok && secs >= 0 {
+		if secs, ok := fva[0].(float64); ok && secs >= 0 && secs < 1e9 {
 			c.SessionStartedAt = issuedAt.Add(-time.Duration(secs) * time.Second)
 		}
 	}
 	if len(fva) > 1 {
-		if secs, ok := fva[1].(float64); ok && secs >= 0 {
+		if secs, ok := fva[1].(float64); ok && secs >= 0 && secs < 1e9 {
 			c.MFAVerifiedAt = issuedAt.Add(-time.Duration(secs) * time.Second)
 		}
 	}

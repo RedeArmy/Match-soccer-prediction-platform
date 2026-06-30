@@ -387,6 +387,30 @@ func TestJWKSProvider_ValidToken_FvaBothFactors_ExtractsMFAVerifiedAt(t *testing
 	}
 }
 
+// TestJWKSProvider_ValidToken_FvaOverflow_SessionStartedAtZero verifies that an
+// fva[0] value large enough to overflow int64 (e.g. 1e18) is rejected and
+// SessionStartedAt remains zero rather than being set to a nonsensical future time.
+// Without the upper-bound check, time.Duration(1e18)*time.Second overflows int64
+// and produces a negative duration, making SessionStartedAt appear in the future.
+func TestJWKSProvider_ValidToken_FvaOverflow_SessionStartedAtZero(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+
+	now := time.Now().Truncate(time.Second)
+	raw := kp.sign(t, "user_abc", "sid_overflow", now, map[string]interface{}{
+		"fva": []interface{}{float64(1e18), float64(-1)},
+	})
+
+	claims, err := p.ValidateToken(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("token itself is valid; parse should not fail: %v", err)
+	}
+	if !claims.SessionStartedAt.IsZero() {
+		t.Errorf("SessionStartedAt should be zero for overflow fva[0]; got %v", claims.SessionStartedAt)
+	}
+}
+
 // TestJWKSProvider_WithKeysetPersister_PersistsSucessfulFetch verifies that
 // a successful ValidateToken call on a healthy endpoint refreshes the persisted
 // keyset (exercises the else-branch of ValidateToken's keySet fetch).

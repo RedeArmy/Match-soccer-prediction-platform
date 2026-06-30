@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useClerk, useSession } from "@clerk/nextjs";
+import { onSessionExpired } from "@/lib/session-bus";
 
 // JavaScript's setTimeout stores its delay as a 32-bit signed integer.
 // Values above 2^31 − 1 ms (~24.8 days) overflow to a negative number,
@@ -50,19 +51,12 @@ export function SessionGuard() {
   }, []);
 
   // Reactive: handle backend-initiated expiry signalled via HTTP 401.
-  // api.ts dispatches "wcq:session-expired" on any 401 response, which triggers
-  // immediate sign-out even when the max-age timer has not yet fired.
+  // api.ts calls dispatchSessionExpired() (session-bus) on any 401 response,
+  // which triggers immediate sign-out even when the max-age timer has not fired.
   useEffect(() => {
-    function handleSessionExpired() {
+    return onSessionExpired(() => {
       void signOut({ redirectUrl: "/sign-in" });
-    }
-    globalThis.addEventListener("wcq:session-expired", handleSessionExpired);
-    return () => {
-      globalThis.removeEventListener(
-        "wcq:session-expired",
-        handleSessionExpired,
-      );
-    };
+    });
   }, [signOut]);
 
   // Proactive: schedule sign-out when session.createdAt + maxAge is reached.
