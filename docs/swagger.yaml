@@ -800,6 +800,11 @@ definitions:
       updated_at:
         type: string
     type: object
+  internal_api_handler.SessionConfigResponse:
+    properties:
+      session_max_age_seconds:
+        type: integer
+    type: object
   internal_api_handler.SnapshotEntryResponse:
     properties:
       prize_winner:
@@ -1293,6 +1298,11 @@ definitions:
       notes:
         type: string
     type: object
+  internal_api_handler.revokeAllResponse:
+    properties:
+      revoked:
+        type: integer
+    type: object
   internal_api_handler.rollbackTemplateRequest:
     properties:
       history_id:
@@ -1479,6 +1489,26 @@ paths:
       summary: Get current exchange rate
       tags:
       - exchange-rate
+  /api/session-config:
+    get:
+      description: |-
+        Returns the current runtime value of auth.session_max_age_seconds.
+        No authentication required. Used by the frontend to schedule
+        a proactive client-side session expiry timer without a redeploy.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.SessionConfigResponse'
+        "429":
+          description: Rate limit exceeded
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      summary: Get session configuration
+      tags:
+      - session
   /api/v1/admin/audit-log:
     get:
       description: Returns a cursor-paginated list of audit log entries. Supports
@@ -4400,6 +4430,54 @@ paths:
       summary: List pending withdrawals
       tags:
       - admin-payments
+  /api/v1/auth/logout:
+    post:
+      description: |-
+        Inserts the current session's sid into the local revocation blocklist.
+        The caller must also invoke Clerk's signOut() to clear the browser-side
+        token; both steps together constitute a complete logout.
+      responses:
+        "204":
+          description: Session revoked
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Log out current session
+      tags:
+      - auth
+  /api/v1/auth/sessions:
+    delete:
+      description: |-
+        Force-logs out all devices for the authenticated account by bulk-revoking
+        every known session. Use when an account is compromised to immediately
+        invalidate all active JWTs. The caller's own session is also revoked.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.revokeAllResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Revoke all sessions
+      tags:
+      - auth
   /api/v1/bank-transfers:
     get:
       description: Returns all bank transfer proofs submitted by the authenticated

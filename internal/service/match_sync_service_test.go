@@ -102,10 +102,11 @@ func (r *stubSyncMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *stri
 }
 
 type stubSyncMatchSvc struct {
-	started   int
-	finished  int
-	startErr  error
-	finishErr error
+	started           int
+	finished          int
+	startErr          error
+	finishErr         error
+	lastPenaltyWinner *string // last value passed to UpdateResult
 }
 
 func (s *stubSyncMatchSvc) CreateMatch(_ context.Context, _ *domain.Match) error { return nil }
@@ -123,8 +124,9 @@ func (s *stubSyncMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, 
 	s.started++
 	return &domain.Match{Status: domain.MatchStatusLive}, s.startErr
 }
-func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, _ *string) (*domain.Match, error) {
+func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, penaltyWinner *string) (*domain.Match, error) {
 	s.finished++
+	s.lastPenaltyWinner = penaltyWinner
 	return &domain.Match{Status: domain.MatchStatusFinished}, s.finishErr
 }
 func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, _ *string) (*domain.Match, error) {
@@ -1522,5 +1524,85 @@ func TestMatchSync_DailyFixtureSync_FinishedMatch_UpdateLiveProgressError_Contin
 	}
 	if repo.updateLiveProgressHits != 1 {
 		t.Errorf("UpdateLiveProgress calls: want 1, got %d", repo.updateLiveProgressHits)
+	}
+}
+
+// ── derivePenaltyWinner unit tests ────────────────────────────────────────────
+
+func ptrInt(v int) *int { return &v }
+
+func TestDerivePenaltyWinner_HomeWins_ReturnsHome(t *testing.T) {
+	fix := &footballprovider.Fixture{
+		Status:           footballprovider.StatusAfterPEN,
+		PenaltyHomeScore: ptrInt(4),
+		PenaltyAwayScore: ptrInt(2),
+	}
+	got := service.DerivePenaltyWinner(fix)
+	if got == nil || *got != "home" {
+		t.Errorf("got %v; want \"home\"", got)
+	}
+}
+
+func TestDerivePenaltyWinner_AwayWins_ReturnsAway(t *testing.T) {
+	fix := &footballprovider.Fixture{
+		Status:           footballprovider.StatusAfterPEN,
+		PenaltyHomeScore: ptrInt(2),
+		PenaltyAwayScore: ptrInt(3),
+	}
+	got := service.DerivePenaltyWinner(fix)
+	if got == nil || *got != "away" {
+		t.Errorf("got %v; want \"away\"", got)
+	}
+}
+
+func TestDerivePenaltyWinner_NonPENStatus_ReturnsNil(t *testing.T) {
+	fix := &footballprovider.Fixture{
+		Status:           footballprovider.StatusFullTime,
+		PenaltyHomeScore: ptrInt(3),
+		PenaltyAwayScore: ptrInt(1),
+	}
+	got := service.DerivePenaltyWinner(fix)
+	if got != nil {
+		t.Errorf("got %v; want nil for non-PEN status", got)
+	}
+}
+
+func TestDerivePenaltyWinner_NilScores_ReturnsNil(t *testing.T) {
+	fix := &footballprovider.Fixture{Status: footballprovider.StatusAfterPEN}
+	got := service.DerivePenaltyWinner(fix)
+	if got != nil {
+		t.Errorf("got %v; want nil when penalty scores are absent", got)
+	}
+}
+
+// TestMatchSync_PollAndApply_AfterPenalties_SetsPenaltyWinner verifies that
+// when the provider reports PEN with a clear shootout tally, UpdateResult
+// receives the derived penalty winner instead of nil.
+func TestMatchSync_PollAndApply_AfterPenalties_SetsPenaltyWinner(t *testing.T) {
+	extMatchID := int64(991)
+	candidate := &domain.Match{
+		ID: 91, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &extMatchID,
+	}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	matchSvc := &stubSyncMatchSvc{}
+	penHome, penAway := 4, 2
+	provider := &stubProvider{
+		fixture: &footballprovider.Fixture{
+			ExternalID: extMatchID,
+			Status:     footballprovider.StatusAfterPEN,
+			HomeScore:  1, AwayScore: 1,
+			PenaltyHomeScore: &penHome,
+			PenaltyAwayScore: &penAway,
+		},
+	}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	if _, err := svc.PollAndApply(context.Background(), 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if matchSvc.lastPenaltyWinner == nil || *matchSvc.lastPenaltyWinner != "home" {
+		t.Errorf("penalty_winner: got %v; want \"home\" (home won 4-2 on pens)", matchSvc.lastPenaltyWinner)
 	}
 }

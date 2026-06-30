@@ -49,7 +49,7 @@ This document describes the complete system parameters catalog, validation proce
 
 ## Parameter Catalog
 
-### 📊 Complete Parameter List (23 parameters)
+### 📊 Complete Parameter List (25 parameters)
 
 | Key | Default | Category | Runtime | Description |
 |-----|---------|----------|---------|-------------|
@@ -71,11 +71,21 @@ This document describes the complete system parameters catalog, validation proce
 | `cache.dashboard_ttl_seconds` | 30 | cache | ✅ | Dashboard cache TTL (runtime tunable) |
 | `audit.write_timeout_seconds` | 5 | system | ❌ | Audit log write timeout (restart to apply) |
 | `auth.validation_timeout_seconds` | 5 | system | ❌ | JWKS warm-up timeout (restart to apply) |
+| `auth.session_max_age_seconds` | 604800 | auth | ✅ | Maximum session lifetime in seconds (7 days). See ⚠️ below. |
+| `auth.require_mfa` | false | auth | ✅ | Reject tokens where Clerk MFA second factor was not completed. Enable only after enabling MFA in the Clerk dashboard. |
 | `dlq.sample_size` | 5 | dlq | ❌ | Max DLQ entries in Stats sample |
 | `dlq.replay_default_limit` | 10 | dlq | ❌ | Default DLQ replay batch size |
 | `messaging.max_retries` | 3 | messaging | ❌ | Event handler retry attempts |
 | `messaging.stream_max_len` | 600000 | messaging | ❌ | Redis Stream MAXLEN cap |
 | `system.purge_retention_days` | 30 | system | ❌ | Days before soft-deleted items purged |
+
+> ⚠️ **`auth.session_max_age_seconds` — operational constraint:** This parameter
+> is `is_runtime=TRUE` so backend enforcement takes effect within ~30 s of a DB
+> change. The frontend `SessionGuard` also reads the live value via
+> `GET /api/session-config` on every page mount, so the proactive client-side
+> timer stays in sync automatically. Do **not** set this above 2,147,483 s
+> (~24.8 days): the browser's `setTimeout` uses a 32-bit signed integer and
+> would overflow, forcing an immediate logout on page load.
 
 **Legend:**
 - ✅ **Runtime** = Changes take effect immediately (no restart needed)

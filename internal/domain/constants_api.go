@@ -15,6 +15,10 @@ const (
 	// is_runtime=TRUE: changes propagate within 30 s without restart.
 	DefaultAuthSessionMaxAgeSecs = 604800 // auth.session_max_age_seconds
 
+	// DefaultAuthRequireMFA is 0 (disabled): MFA enforcement is opt-in.
+	// Store 1 in system_params only after enabling MFA in the Clerk dashboard.
+	DefaultAuthRequireMFA = 0 // auth.require_mfa
+
 	// API request limits.
 	DefaultAPIBodySizeLimitBytes = 65536 // api.body_size_limit_bytes (64 KB)
 
@@ -87,6 +91,13 @@ const (
 	// duration. Tokens whose "iat" is older than this value are rejected with 401.
 	// is_runtime=TRUE: changes propagate within 30 s without restart.
 	ParamKeyAuthSessionMaxAgeSecs = "auth.session_max_age_seconds"
+
+	// ParamKeyAuthRequireMFA controls whether tokens without a completed MFA
+	// second factor (fva[1] absent or negative in the Clerk JWT) are rejected
+	// with 401. Enable only after configuring MFA as required in the Clerk
+	// dashboard; enabling before Clerk enforces MFA will lock out all users.
+	// is_runtime=TRUE: changes propagate within 30 s without restart.
+	ParamKeyAuthRequireMFA = "auth.require_mfa"
 
 	// ParamKeyAPIBodySizeLimitBytes is the maximum request body size in bytes.
 	// Requests exceeding this limit are rejected with 413 to prevent DoS.

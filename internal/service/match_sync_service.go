@@ -260,7 +260,8 @@ func (s *matchSyncService) applyLiveScore(ctx context.Context, m *domain.Match, 
 
 func (s *matchSyncService) applyResult(ctx context.Context, matchID int, fix *footballprovider.Fixture) (bool, bool, error) {
 	winMethod := winMethodFromStatus(fix.Status)
-	if _, err := s.matchSvc.UpdateResult(ctx, matchID, fix.HomeScore, fix.AwayScore, winMethod, nil); err != nil {
+	penaltyWinner := derivePenaltyWinner(fix)
+	if _, err := s.matchSvc.UpdateResult(ctx, matchID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner); err != nil {
 		if errors.Is(err, apperrors.ErrValidation) {
 			s.log.Info("match sync: UpdateResult already done (idempotent)", zap.Int("match_id", matchID))
 			return false, false, nil
@@ -524,7 +525,8 @@ func (s *matchSyncService) applyFinishedTransition(ctx context.Context, m *domai
 			}
 		}
 		winMethod := winMethodFromStatus(fix.Status)
-		if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, nil); err != nil {
+		penaltyWinner := derivePenaltyWinner(fix)
+		if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner); err != nil {
 			if !errors.Is(err, apperrors.ErrValidation) {
 				s.log.Warn("match daily sync: UpdateResult failed",
 					zap.Int("match_id", m.ID), zap.Error(err))
@@ -545,6 +547,29 @@ func (s *matchSyncService) applyStartTransition(ctx context.Context, m *domain.M
 			s.log.Warn("match daily sync: StartMatch failed",
 				zap.Int("match_id", m.ID), zap.Error(err))
 		}
+	}
+}
+
+// derivePenaltyWinner returns "home" or "away" when the provider fixture
+// reports a completed penalty shootout with a clear winner, and nil otherwise.
+// It is only populated for StatusAfterPEN — FT and AET fixtures will always
+// have nil penalty scores, but we guard on the status explicitly to be safe.
+func derivePenaltyWinner(fix *footballprovider.Fixture) *string {
+	if fix.Status != footballprovider.StatusAfterPEN {
+		return nil
+	}
+	if fix.PenaltyHomeScore == nil || fix.PenaltyAwayScore == nil {
+		return nil
+	}
+	switch {
+	case *fix.PenaltyHomeScore > *fix.PenaltyAwayScore:
+		s := "home"
+		return &s
+	case *fix.PenaltyAwayScore > *fix.PenaltyHomeScore:
+		s := "away"
+		return &s
+	default:
+		return nil // tied penalties should never happen but handled defensively
 	}
 }
 

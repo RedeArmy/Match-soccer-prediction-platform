@@ -59,6 +59,12 @@ class APIClient {
     this.base = base;
   }
 
+  private dispatchSessionExpired(): void {
+    if (globalThis.window !== undefined) {
+      globalThis.dispatchEvent(new CustomEvent("wcq:session-expired"));
+    }
+  }
+
   private async request<T>(
     path: string,
     init: RequestInit = {},
@@ -77,9 +83,7 @@ class APIClient {
     });
 
     if (!res.ok) {
-      if (res.status === 401 && !!token && globalThis.window !== undefined) {
-        globalThis.dispatchEvent(new CustomEvent("wcq:session-expired"));
-      }
+      if (res.status === 401 && !!token) this.dispatchSessionExpired();
       // Read the body as text first so we can attempt JSON parsing without
       // consuming the stream twice. If the upstream returns an HTML error page
       // (reverse proxy, CDN) json() would throw and silently produce {}, masking
@@ -1130,9 +1134,7 @@ class APIClient {
     });
 
     if (!res.ok) {
-      if (res.status === 401 && !!token && globalThis.window !== undefined) {
-        globalThis.dispatchEvent(new CustomEvent("wcq:session-expired"));
-      }
+      if (res.status === 401 && !!token) this.dispatchSessionExpired();
       const body = await res.json().catch(() => ({}));
       const msg = body?.error?.message ?? `HTTP ${res.status}`;
       throw Object.assign(new Error(msg), {

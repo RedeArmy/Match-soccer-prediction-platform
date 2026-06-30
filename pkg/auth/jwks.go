@@ -164,29 +164,10 @@ func NewJWKSProvider(ctx context.Context, jwksURL string, warmupTimeout time.Dur
 // all (neither live nor cached). Returns ErrInvalidToken when the JWT is
 // malformed, has an invalid signature, or has expired.
 func (p *JWKSProvider) ValidateToken(ctx context.Context, rawToken string) (Claims, error) {
-	keySet, err := p.jwkCache.Get(ctx, p.jwksURL)
+	ks, fetchErr := p.jwkCache.Get(ctx, p.jwksURL)
+	keySet, err := p.resolveKeySet(ctx, ks, fetchErr)
 	if err != nil {
-		p.fallbackMu.RLock()
-		fk := p.fallback
-		p.fallbackMu.RUnlock()
-		if fk != nil {
-			p.log.Warn("auth: JWKS fetch failed; using cached keyset fallback",
-				zap.Error(err))
-			if p.onDegraded != nil {
-				p.onDegraded(ctx)
-			}
-			keySet = fk
-		} else {
-			p.log.Error("auth: JWKS fetch failed and no fallback available",
-				zap.Error(err))
-			return Claims{}, fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
-		}
-	} else {
-		// Successful fetch: keep the in-memory and persisted fallbacks fresh.
-		p.fallbackMu.Lock()
-		p.fallback = keySet
-		p.fallbackMu.Unlock()
-		p.persistKeyset(ctx, keySet)
+		return Claims{}, err
 	}
 
 	// WithAcceptableSkew tolerates up to 10 s of clock drift between the host
@@ -210,16 +191,60 @@ func (p *JWKSProvider) ValidateToken(ctx context.Context, rawToken string) (Clai
 	if sid, ok := token.PrivateClaims()["sid"].(string); ok {
 		claims.SessionID = sid
 	}
-	// Clerk v2 "fva" (factors_verified_at): []interface{}{float64, float64}
-	// fva[0] = seconds elapsed since first-factor verification relative to iat.
-	// Computing iat − fva[0] gives the session origin, which is stable across
-	// token refreshes and is the correct reference point for max-age enforcement.
-	if fva, ok := token.PrivateClaims()["fva"].([]interface{}); ok && len(fva) > 0 {
-		if firstFactorAgeSecs, ok := fva[0].(float64); ok && firstFactorAgeSecs >= 0 {
-			claims.SessionStartedAt = issuedAt.Add(-time.Duration(firstFactorAgeSecs) * time.Second)
+	p.populateFVAClaims(&claims, token.PrivateClaims(), issuedAt)
+	return claims, nil
+}
+
+// resolveKeySet returns a usable keyset from either the live fetch or the
+// in-memory fallback. On a successful fetch it also refreshes the fallback and
+// persisted copy. Extracted from ValidateToken to keep cognitive complexity
+// within the project limit.
+func (p *JWKSProvider) resolveKeySet(ctx context.Context, ks jwk.Set, fetchErr error) (jwk.Set, error) {
+	if fetchErr == nil {
+		p.fallbackMu.Lock()
+		p.fallback = ks
+		p.fallbackMu.Unlock()
+		p.persistKeyset(ctx, ks)
+		return ks, nil
+	}
+
+	p.fallbackMu.RLock()
+	fk := p.fallback
+	p.fallbackMu.RUnlock()
+	if fk == nil {
+		p.log.Error("auth: JWKS fetch failed and no fallback available", zap.Error(fetchErr))
+		return nil, fmt.Errorf("%w: %v", ErrProviderUnavailable, fetchErr)
+	}
+
+	p.log.Warn("auth: JWKS fetch failed; using cached keyset fallback", zap.Error(fetchErr))
+	if p.onDegraded != nil {
+		p.onDegraded(ctx)
+	}
+	return fk, nil
+}
+
+// populateFVAClaims extracts Clerk's "fva" (factors_verified_at) claim and
+// fills SessionStartedAt and MFAVerifiedAt on c.
+//
+// fva[0] = seconds elapsed since first-factor verification relative to iat.
+// fva[1] = seconds elapsed since second-factor (MFA) verification relative to
+// iat, or a negative value when MFA is not yet completed. Computing iat − fva[N]
+// gives a stable timestamp across token refreshes.
+func (p *JWKSProvider) populateFVAClaims(c *Claims, privateClaims map[string]interface{}, issuedAt time.Time) {
+	fva, ok := privateClaims["fva"].([]interface{})
+	if !ok {
+		return
+	}
+	if len(fva) > 0 {
+		if secs, ok := fva[0].(float64); ok && secs >= 0 {
+			c.SessionStartedAt = issuedAt.Add(-time.Duration(secs) * time.Second)
 		}
 	}
-	return claims, nil
+	if len(fva) > 1 {
+		if secs, ok := fva[1].(float64); ok && secs >= 0 {
+			c.MFAVerifiedAt = issuedAt.Add(-time.Duration(secs) * time.Second)
+		}
+	}
 }
 
 // persistKeyset serialises ks to JSON and writes it to the persister, if one

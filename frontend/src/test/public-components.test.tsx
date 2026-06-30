@@ -464,6 +464,42 @@ describe("LiveMatchFeed – MatchCard HT (halftime) status", () => {
   });
 });
 
+describe("LiveMatchFeed – MatchCard PEN_LIVE (penalty shootout) status", () => {
+  beforeEach(() => {
+    vi.mocked(useQuery).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        fixtures: [
+          makeFixture({
+            id: 45,
+            status: "PEN_LIVE",
+            elapsed: 120,
+            homeScore: 1,
+            awayScore: 1,
+          }),
+        ],
+      },
+    } as never);
+  });
+
+  it("shows the PENALES badge alongside the live chip", () => {
+    renderFeed();
+    expect(screen.getByText("PENALES")).toBeInTheDocument();
+  });
+
+  it("shows the score during penalty shootout", () => {
+    renderFeed();
+    expect(screen.getByText("1 – 1")).toBeInTheDocument();
+  });
+
+  it("shows the live pulse dot (match is still in progress)", () => {
+    const { container } = renderFeed();
+    // The pulse dot is rendered as a nested span pair; assert the green animate-ping span exists.
+    expect(container.querySelector(".animate-ping")).toBeInTheDocument();
+  });
+});
+
 describe("LiveMatchFeed – MatchCard live without elapsed", () => {
   beforeEach(() => {
     vi.mocked(useQuery).mockReturnValue({
