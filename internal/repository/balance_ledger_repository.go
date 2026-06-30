@@ -416,14 +416,16 @@ func (r *PostgresBalanceLedgerRepository) CountRows(ctx context.Context) (int64,
 
 var _ BalanceLedgerRepository = (*PostgresBalanceLedgerRepository)(nil)
 
-// ── IP address context helpers ────────────────────────────────────────────────
+// ── Request-metadata context helpers ─────────────────────────────────────────
 // These live here (rather than in middleware) so that the repository can read
-// client IP from the context without importing the middleware package, which
-// itself imports repository — avoiding a circular dependency.
+// client metadata from the context without importing the middleware package,
+// which itself imports repository — avoiding a circular dependency.
 
 type ipCtxKey struct{}
+type uaCtxKey struct{}
 
-// ContextWithClientIP stores the client IP in ctx for use by ledger writes.
+// ContextWithClientIP stores the client IP in ctx for use by ledger and
+// session-start writes.
 func ContextWithClientIP(ctx context.Context, ip string) context.Context {
 	return context.WithValue(ctx, ipCtxKey{}, ip)
 }
@@ -433,4 +435,17 @@ func ContextWithClientIP(ctx context.Context, ip string) context.Context {
 func ClientIPFromContext(ctx context.Context) string {
 	ip, _ := ctx.Value(ipCtxKey{}).(string)
 	return ip
+}
+
+// ContextWithUserAgent stores the client User-Agent in ctx for use by
+// session-start writes.
+func ContextWithUserAgent(ctx context.Context, ua string) context.Context {
+	return context.WithValue(ctx, uaCtxKey{}, ua)
+}
+
+// UserAgentFromContext returns the client User-Agent stored by
+// ContextWithUserAgent. Returns empty string when not present.
+func UserAgentFromContext(ctx context.Context) string {
+	ua, _ := ctx.Value(uaCtxKey{}).(string)
+	return ua
 }

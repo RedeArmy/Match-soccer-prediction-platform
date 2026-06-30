@@ -96,4 +96,20 @@ const (
 	// is logged internally but never forwarded to the client.
 	// Maps to HTTP 502 Bad Gateway.
 	CodeUpstreamError Code = "UPSTREAM_ERROR"
+
+	// CodeSessionExpired indicates that the session has exceeded the system's
+	// maximum session lifetime (auth.session_max_age_seconds). The client must
+	// sign in again to obtain a fresh session. Unlike CodeUnauthorised (which
+	// covers missing or cryptographically invalid tokens), this code is reserved
+	// for sessions that were valid but have outlived the policy window.
+	// Maps to HTTP 401 Unauthorised.
+	CodeSessionExpired Code = "SESSION_EXPIRED"
+
+	// CodeSessionRevoked indicates that the session has been explicitly revoked —
+	// for example, because the user signed out on another device or an admin
+	// issued a force-logout. The client must sign in again. Unlike
+	// CodeSessionExpired (lifetime policy), this code reflects a deliberate
+	// revocation action.
+	// Maps to HTTP 401 Unauthorised.
+	CodeSessionRevoked Code = "SESSION_REVOKED"
 )

@@ -159,13 +159,17 @@ func RequireAuth(provider auth.IdentityProvider, log *zap.Logger) func(http.Hand
 
 			claims, err := provider.ValidateToken(r.Context(), rawToken)
 			if err != nil {
-				if errors.Is(err, auth.ErrProviderUnavailable) {
+				var appErr *apperrors.AppError
+				switch {
+				case errors.As(err, &appErr):
+					WriteError(w, r, log, appErr)
+				case errors.Is(err, auth.ErrProviderUnavailable):
 					log.Error("RequireAuth: identity provider unavailable",
 						zap.String("request_id", GetRequestID(r.Context())),
 						zap.Error(err),
 					)
 					WriteError(w, r, log, apperrors.Internal(err))
-				} else {
+				default:
 					WriteError(w, r, log, apperrors.Unauthorised("invalid or expired token"))
 				}
 				return

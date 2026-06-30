@@ -61,6 +61,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.TrustedClientIP) // replaces chi's RealIP; reads Fly-Client-IP to prevent header injection
 	r.Use(middleware.StoreClientIP)
+	r.Use(middleware.StoreUserAgent)
 	r.Use(middleware.Recover(s.log))
 	r.Use(middleware.RequestLogger(s.log))
 	r.Use(middleware.CORS(s.cfg.CORS.AllowedOrigins))

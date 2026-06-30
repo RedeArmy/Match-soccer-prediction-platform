@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/auth"
 )
 
@@ -17,6 +18,28 @@ import (
 // request independently — keeping the entry longer provides no security value.
 // 8 days ≈ default max-age (7 days) + 1 day grace, matching the DB prune cutoff.
 const revokedCacheTTL = 8 * 24 * time.Hour
+
+// allowedCacheTTL is the TTL for in-process positive (confirmed-valid) entries.
+// When the DB confirms a session is NOT revoked, we cache that result so that
+// a subsequent DB outage can still serve recently-active sessions without
+// degrading to pure fail-open. Short TTL keeps the window tight: at most
+// allowedCacheTTL elapses between the last positive confirmation and a logout
+// that the outage prevents us from learning about.
+const allowedCacheTTL = 5 * time.Minute
+
+// startCacheTTL is the maximum lifetime of an in-process session-start entry.
+// Lazy eviction at this boundary bounds memory in long-running processes and
+// prevents stale data from persisting if a SID were ever reused by the identity
+// provider. 8 days matches revokedCacheTTL — sessions this old are independently
+// rejected by the max-age check before the cache is consulted.
+const startCacheTTL = 8 * 24 * time.Hour
+
+// startCacheEntry is the value stored in PolicyProvider.startCache.
+// cachedAt enables lazy TTL eviction without a background goroutine.
+type startCacheEntry struct {
+	startedAt time.Time
+	cachedAt  time.Time
+}
 
 // GetInter is the subset of SystemParamService consumed by PolicyProvider.
 // Using a narrow interface prevents an import cycle between middleware and service.
@@ -65,16 +88,14 @@ type PolicyProvider struct {
 	params        GetInter
 	log           *zap.Logger
 
-	// startCache is a write-once, read-many in-process cache for OAuth session
-	// origins (sid → startedAt). It avoids a DB round-trip on every authenticated
-	// request for sessions whose JWT lacks the fva claim. Keys are never explicitly
-	// removed — entries become unreachable once the session exceeds max-age and the
-	// subsequent max-age check rejects the request before the cache is consulted.
-	// sync.Map is appropriate: entries are written once per sid and read on every
-	// subsequent request from the same session.
-	startCache sync.Map // string → time.Time
+	// startCache is a write-once-per-sid, read-many in-process cache for OAuth
+	// session origins (sid → startCacheEntry). It avoids a DB round-trip on every
+	// authenticated request for sessions whose JWT lacks the fva claim. Entries
+	// are lazily evicted after startCacheTTL to bound memory in long-running
+	// processes and prevent stale data if a SID is ever reused by the provider.
+	startCache sync.Map // string → startCacheEntry
 
-	// revokedMu guards revokedEntries.
+	// revokedMu guards revokedEntries and allowedEntries.
 	revokedMu sync.Mutex
 	// revokedEntries maps confirmed-revoked SIDs to the time the revocation was
 	// first observed by this process. Used for fail-closed behaviour when the DB is
@@ -83,6 +104,11 @@ type PolicyProvider struct {
 	// revokedCacheTTL — beyond that window the session would be rejected by the
 	// max-age check anyway, so fail-closed protection is no longer needed.
 	revokedEntries map[string]time.Time
+	// allowedEntries maps confirmed-valid SIDs to the time of the last successful
+	// DB confirmation. During a DB outage, entries still within allowedCacheTTL
+	// are served without hitting the DB, reducing the fail-open window for sessions
+	// that have been recently confirmed active by this process.
+	allowedEntries map[string]time.Time
 }
 
 // NewPolicyProvider wraps inner with the two session-policy enforcement layers.
@@ -103,6 +129,7 @@ func NewPolicyProvider(
 		params:         params,
 		log:            log,
 		revokedEntries: make(map[string]time.Time),
+		allowedEntries: make(map[string]time.Time),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -141,7 +168,7 @@ func (p *PolicyProvider) ValidateToken(ctx context.Context, rawToken string) (au
 	maxAgeSecs := p.params.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
 	sessionStart := p.resolveSessionStart(ctx, claims, maxAgeSecs)
 	if time.Since(sessionStart) > time.Duration(maxAgeSecs)*time.Second {
-		return auth.Claims{}, fmt.Errorf("%w: session exceeded maximum age of %d seconds", auth.ErrInvalidToken, maxAgeSecs)
+		return auth.Claims{}, apperrors.SessionExpired(fmt.Sprintf("session exceeded maximum age of %d seconds", maxAgeSecs))
 	}
 
 	if p.params.GetInt(ctx, domain.ParamKeyAuthRequireMFA, domain.DefaultAuthRequireMFA) != 0 && claims.MFAVerifiedAt.IsZero() {
@@ -177,18 +204,22 @@ func (p *PolicyProvider) resolveSessionStart(ctx context.Context, claims auth.Cl
 	if claims.SessionID != "" && p.sessionStarts != nil {
 		// Check the in-process cache before going to DB.
 		if cached, ok := p.startCache.Load(claims.SessionID); ok {
-			return cached.(time.Time)
+			entry := cached.(startCacheEntry)
+			if time.Since(entry.cachedAt) <= startCacheTTL {
+				return entry.startedAt
+			}
+			p.startCache.Delete(claims.SessionID) // stale entry; re-fetch from DB
 		}
 		// Cache miss: resolve from DB and populate the cache.
 		t, err := p.sessionStarts.UpsertSessionStart(ctx, claims.SessionID, claims.Subject)
 		if err != nil {
 			p.log.Warn("session_starts upsert failed; falling back to IssuedAt for max-age (enforcement may be inaccurate)",
-				zap.String("sid", claims.SessionID),
+				zap.String("sid", truncateSID(claims.SessionID)),
 				zap.Error(err),
 			)
 			return claims.IssuedAt
 		}
-		p.startCache.Store(claims.SessionID, t)
+		p.startCache.Store(claims.SessionID, startCacheEntry{startedAt: t, cachedAt: time.Now()})
 		return t
 	}
 
@@ -212,18 +243,22 @@ func (p *PolicyProvider) checkRevocation(ctx context.Context, sid string) error 
 	revoked, checkErr := p.blocklist.IsRevoked(ctx, sid)
 	if checkErr != nil {
 		if p.isRevokedCached(sid) {
-			return fmt.Errorf("%w: session has been revoked", auth.ErrInvalidToken)
+			return apperrors.SessionRevoked("session has been revoked")
+		}
+		if p.isAllowedCached(sid) {
+			return nil // recently confirmed valid by this process — allow during outage
 		}
 		p.log.Warn("session blocklist check failed; treating as not revoked (fail-open for uncached session)",
-			zap.String("sid", sid),
+			zap.String("sid", truncateSID(sid)),
 			zap.Error(checkErr),
 		)
 		return nil
 	}
 	if revoked {
 		p.cacheRevoked(sid)
-		return fmt.Errorf("%w: session has been revoked", auth.ErrInvalidToken)
+		return apperrors.SessionRevoked("session has been revoked")
 	}
+	p.cacheAllowed(sid)
 	return nil
 }
 
@@ -248,6 +283,40 @@ func (p *PolicyProvider) cacheRevoked(sid string) {
 	p.revokedMu.Lock()
 	p.revokedEntries[sid] = time.Now()
 	p.revokedMu.Unlock()
+}
+
+// isAllowedCached reports whether sid has a live entry in the in-process positive
+// (confirmed-valid) cache. Entries older than allowedCacheTTL are lazily evicted.
+func (p *PolicyProvider) isAllowedCached(sid string) bool {
+	p.revokedMu.Lock()
+	defer p.revokedMu.Unlock()
+	t, ok := p.allowedEntries[sid]
+	if !ok {
+		return false
+	}
+	if time.Since(t) > allowedCacheTTL {
+		delete(p.allowedEntries, sid)
+		return false
+	}
+	return true
+}
+
+// cacheAllowed records sid as confirmed-valid in the in-process positive cache.
+func (p *PolicyProvider) cacheAllowed(sid string) {
+	p.revokedMu.Lock()
+	p.allowedEntries[sid] = time.Now()
+	p.revokedMu.Unlock()
+}
+
+// truncateSID returns the first 8 bytes of sid followed by "..." to make session
+// IDs safe for structured logs. The prefix is sufficient to correlate log lines
+// without exposing a full bearer credential that could be replayed from stolen logs.
+func truncateSID(sid string) string {
+	const prefixLen = 8
+	if len(sid) <= prefixLen {
+		return sid
+	}
+	return sid[:prefixLen] + "..."
 }
 
 var _ auth.IdentityProvider = (*PolicyProvider)(nil)
