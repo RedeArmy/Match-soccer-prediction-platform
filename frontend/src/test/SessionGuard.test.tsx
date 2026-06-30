@@ -155,6 +155,35 @@ describe("SessionGuard – proactive timer (session.createdAt + maxAge)", () => 
     expect(signOutMock).not.toHaveBeenCalled();
   });
 
+  // VULN-012: invalid Date guard
+  it("does nothing when session.createdAt is an invalid Date (NaN timestamp)", () => {
+    mockMaxAge(3600);
+    mockSession = { createdAt: new Date(NaN) };
+
+    render(<SessionGuard />);
+
+    act(() => {
+      vi.advanceTimersByTime(2 * 60 * 60 * 1000);
+    });
+
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
+  it("emits console.warn in development when session.createdAt is an invalid Date", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    mockMaxAge(3600);
+    mockSession = { createdAt: new Date(NaN) };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    render(<SessionGuard />);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("session.createdAt is an invalid Date"),
+    );
+    warnSpy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
   it("emits a console.warn in development mode when maxAge env var is absent", () => {
     vi.stubEnv("NODE_ENV", "development");
     mockMaxAge(undefined);

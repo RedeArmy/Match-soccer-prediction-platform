@@ -87,6 +87,19 @@ export function SessionGuard() {
 
     if (!session?.createdAt) return;
 
+    // Guard against an invalid Date object. Clerk types createdAt as Date|null;
+    // null is handled above, but a Date whose getTime() returns NaN would make
+    // expiresAt NaN and cause the timer to fire immediately with a wrong delay.
+    if (isNaN(session.createdAt.getTime())) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn(
+          "[SessionGuard] session.createdAt is an invalid Date; proactive timer disabled. " +
+            "This is unexpected — check the Clerk session object.",
+        );
+      }
+      return;
+    }
+
     const expiresAt = session.createdAt.getTime() + maxAgeMs;
 
     // arm() schedules sign-out for the remaining window, or fires immediately

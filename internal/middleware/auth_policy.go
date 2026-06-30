@@ -27,6 +27,20 @@ const revokedCacheTTL = 8 * 24 * time.Hour
 // that the outage prevents us from learning about.
 const allowedCacheTTL = 5 * time.Minute
 
+// startCacheTTL is the maximum lifetime of an in-process session-start entry.
+// Lazy eviction at this boundary bounds memory in long-running processes and
+// prevents stale data from persisting if a SID were ever reused by the identity
+// provider. 8 days matches revokedCacheTTL — sessions this old are independently
+// rejected by the max-age check before the cache is consulted.
+const startCacheTTL = 8 * 24 * time.Hour
+
+// startCacheEntry is the value stored in PolicyProvider.startCache.
+// cachedAt enables lazy TTL eviction without a background goroutine.
+type startCacheEntry struct {
+	startedAt time.Time
+	cachedAt  time.Time
+}
+
 // GetInter is the subset of SystemParamService consumed by PolicyProvider.
 // Using a narrow interface prevents an import cycle between middleware and service.
 type GetInter interface {
@@ -74,14 +88,12 @@ type PolicyProvider struct {
 	params        GetInter
 	log           *zap.Logger
 
-	// startCache is a write-once, read-many in-process cache for OAuth session
-	// origins (sid → startedAt). It avoids a DB round-trip on every authenticated
-	// request for sessions whose JWT lacks the fva claim. Keys are never explicitly
-	// removed — entries become unreachable once the session exceeds max-age and the
-	// subsequent max-age check rejects the request before the cache is consulted.
-	// sync.Map is appropriate: entries are written once per sid and read on every
-	// subsequent request from the same session.
-	startCache sync.Map // string → time.Time
+	// startCache is a write-once-per-sid, read-many in-process cache for OAuth
+	// session origins (sid → startCacheEntry). It avoids a DB round-trip on every
+	// authenticated request for sessions whose JWT lacks the fva claim. Entries
+	// are lazily evicted after startCacheTTL to bound memory in long-running
+	// processes and prevent stale data if a SID is ever reused by the provider.
+	startCache sync.Map // string → startCacheEntry
 
 	// revokedMu guards revokedEntries and allowedEntries.
 	revokedMu sync.Mutex
@@ -192,18 +204,22 @@ func (p *PolicyProvider) resolveSessionStart(ctx context.Context, claims auth.Cl
 	if claims.SessionID != "" && p.sessionStarts != nil {
 		// Check the in-process cache before going to DB.
 		if cached, ok := p.startCache.Load(claims.SessionID); ok {
-			return cached.(time.Time)
+			entry := cached.(startCacheEntry)
+			if time.Since(entry.cachedAt) <= startCacheTTL {
+				return entry.startedAt
+			}
+			p.startCache.Delete(claims.SessionID) // stale entry; re-fetch from DB
 		}
 		// Cache miss: resolve from DB and populate the cache.
 		t, err := p.sessionStarts.UpsertSessionStart(ctx, claims.SessionID, claims.Subject)
 		if err != nil {
 			p.log.Warn("session_starts upsert failed; falling back to IssuedAt for max-age (enforcement may be inaccurate)",
-				zap.String("sid", claims.SessionID),
+				zap.String("sid", truncateSID(claims.SessionID)),
 				zap.Error(err),
 			)
 			return claims.IssuedAt
 		}
-		p.startCache.Store(claims.SessionID, t)
+		p.startCache.Store(claims.SessionID, startCacheEntry{startedAt: t, cachedAt: time.Now()})
 		return t
 	}
 
@@ -233,7 +249,7 @@ func (p *PolicyProvider) checkRevocation(ctx context.Context, sid string) error 
 			return nil // recently confirmed valid by this process — allow during outage
 		}
 		p.log.Warn("session blocklist check failed; treating as not revoked (fail-open for uncached session)",
-			zap.String("sid", sid),
+			zap.String("sid", truncateSID(sid)),
 			zap.Error(checkErr),
 		)
 		return nil
@@ -290,6 +306,17 @@ func (p *PolicyProvider) cacheAllowed(sid string) {
 	p.revokedMu.Lock()
 	p.allowedEntries[sid] = time.Now()
 	p.revokedMu.Unlock()
+}
+
+// truncateSID returns the first 8 bytes of sid followed by "..." to make session
+// IDs safe for structured logs. The prefix is sufficient to correlate log lines
+// without exposing a full bearer credential that could be replayed from stolen logs.
+func truncateSID(sid string) string {
+	const prefixLen = 8
+	if len(sid) <= prefixLen {
+		return sid
+	}
+	return sid[:prefixLen] + "..."
 }
 
 var _ auth.IdentityProvider = (*PolicyProvider)(nil)
