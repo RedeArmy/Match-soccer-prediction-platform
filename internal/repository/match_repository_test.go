@@ -435,8 +435,8 @@ func TestMatchRepository_ListFinishedPenaltyMatchesMissingWinner_ReturnsEligible
 	pw := "home"
 	makeFinished(2, 2, &wm, &pw)
 	// Should NOT appear: different win method.
-	wmNormal := domain.WinMethod("normal_time")
-	makeFinished(3, 0, &wmNormal, nil)
+	wmET := domain.WinMethodExtraTime
+	makeFinished(3, 2, &wmET, nil)
 
 	got, err := repo.ListFinishedPenaltyMatchesMissingWinner(ctx)
 	if err != nil {
