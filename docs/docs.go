@@ -8784,6 +8784,12 @@ const docTemplate = `{
                 "home_score": {
                     "type": "integer"
                 },
+                "penalty_away_score": {
+                    "type": "integer"
+                },
+                "penalty_home_score": {
+                    "type": "integer"
+                },
                 "penalty_winner": {
                     "type": "string"
                 },

@@ -439,6 +439,38 @@ func TestCalculatePoints_PenaltiesBonus_NilPredWinner_NoBonus(t *testing.T) {
 	}
 }
 
+// TestCalculatePoints_PenaltiesBonus_NilActualWinner_NoBonus verifies the
+// Netherlands vs Morocco scenario: user predicted 2-2 with Netherlands winning
+// the shootout, actual was 1-1 with Morocco winning — but penalty_winner was NULL
+// in the database at scoring time. No bonus should be awarded when the actual
+// winner is unknown.
+func TestCalculatePoints_PenaltiesBonus_NilActualWinner_NoBonus(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	netherlands := "home"
+	pred := &domain.Prediction{HomeScore: 2, AwayScore: 2, PredictedWinMethod: &pen, PredictedPenaltyWinner: &netherlands}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 1, 1, &pen, nil, cfg)
+	want := cfg.correctOutcome // correct draw outcome only; no penalty bonus without recorded winner
+	if got != want {
+		t.Errorf("nil actual penalty winner: expected %d pts (no bonus), got %d", want, got)
+	}
+}
+
+// TestCalculatePoints_PenaltiesBonus_WrongWinner_NoBonus verifies that predicting
+// the wrong penalty winner earns zero bonus even when the base score (draw) is correct.
+func TestCalculatePoints_PenaltiesBonus_WrongWinner_NoBonus(t *testing.T) {
+	pen := domain.WinMethodPenalties
+	netherlands := "home"
+	morocco := "away"
+	pred := &domain.Prediction{HomeScore: 1, AwayScore: 1, PredictedWinMethod: &pen, PredictedPenaltyWinner: &netherlands}
+	cfg := scoringConfig{exactScore: 8, correctOutcome: 4, goalDifference: 2, extraTimeBonus: 1, penaltiesBonus: 2}
+	got := calculatePoints(pred, 1, 1, &pen, &morocco, cfg)
+	want := cfg.exactScore // exact draw score, no penalty bonus for wrong winner
+	if got != want {
+		t.Errorf("wrong penalty winner: expected %d pts (exact score only), got %d", want, got)
+	}
+}
+
 // TestCalculatePoints_ExtraTimeBonus_WrongOutcomeSameMargin verifies that the
 // extra-time bonus IS awarded even when base points come from the margin-only
 // tier (wrong outcome, same goal margin). The bonus is tied solely to the
