@@ -1091,12 +1091,37 @@ function BracketTab({ getToken }: BracketTabProps) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+type ResultPayload = {
+  home_score: number;
+  away_score: number;
+  win_method?: string;
+  penalty_winner?: string;
+  penalty_home_score?: number;
+  penalty_away_score?: number;
+};
+
 type ModalState =
   | { kind: "start"; match: MatchResponse }
   | { kind: "result"; match: MatchResponse }
   | { kind: "correct"; match: MatchResponse }
   | { kind: "cancel"; match: MatchResponse }
   | null;
+
+function buildResultForm(match: MatchResponse): ResultForm {
+  return {
+    homeScore: match.home_score == null ? "" : String(match.home_score),
+    awayScore: match.away_score == null ? "" : String(match.away_score),
+    winMethod: match.win_method ?? "",
+    penaltyHomeScore:
+      match.penalty_home_score == null
+        ? ""
+        : String(match.penalty_home_score),
+    penaltyAwayScore:
+      match.penalty_away_score == null
+        ? ""
+        : String(match.penalty_away_score),
+  };
+}
 
 export default function AdminMatchesPage() {
   const { getToken } = useAuth();
@@ -1202,41 +1227,13 @@ export default function AdminMatchesPage() {
   function openResult(match: MatchResponse) {
     setModal({ kind: "result", match });
     setModalError("");
-    setResultForm({
-      homeScore: match.home_score === null ? "" : String(match.home_score),
-      awayScore: match.away_score === null ? "" : String(match.away_score),
-      winMethod: match.win_method ?? "",
-      penaltyHomeScore:
-        match.penalty_home_score === null ||
-        match.penalty_home_score === undefined
-          ? ""
-          : String(match.penalty_home_score),
-      penaltyAwayScore:
-        match.penalty_away_score === null ||
-        match.penalty_away_score === undefined
-          ? ""
-          : String(match.penalty_away_score),
-    });
+    setResultForm(buildResultForm(match));
   }
 
   function openCorrect(match: MatchResponse) {
     setModal({ kind: "correct", match });
     setModalError("");
-    setResultForm({
-      homeScore: match.home_score === null ? "" : String(match.home_score),
-      awayScore: match.away_score === null ? "" : String(match.away_score),
-      winMethod: match.win_method ?? "",
-      penaltyHomeScore:
-        match.penalty_home_score === null ||
-        match.penalty_home_score === undefined
-          ? ""
-          : String(match.penalty_home_score),
-      penaltyAwayScore:
-        match.penalty_away_score === null ||
-        match.penalty_away_score === undefined
-          ? ""
-          : String(match.penalty_away_score),
-    });
+    setResultForm(buildResultForm(match));
   }
 
   function openCancel(match: MatchResponse) {
@@ -1266,20 +1263,7 @@ export default function AdminMatchesPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: {
-        home_score: number;
-        away_score: number;
-        win_method?: string;
-        penalty_winner?: string;
-        penalty_home_score?: number;
-        penalty_away_score?: number;
-      };
-    }) => {
+    mutationFn: async ({ id, data }: { id: number; data: ResultPayload }) => {
       const token = await getToken();
       return api.adminUpdateMatchResult(token!, id, data);
     },
@@ -1296,20 +1280,7 @@ export default function AdminMatchesPage() {
   });
 
   const correctMutation = useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: {
-        home_score: number;
-        away_score: number;
-        win_method?: string;
-        penalty_winner?: string;
-        penalty_home_score?: number;
-        penalty_away_score?: number;
-      };
-    }) => {
+    mutationFn: async ({ id, data }: { id: number; data: ResultPayload }) => {
       const token = await getToken();
       return api.adminCorrectMatchResult(token!, id, data);
     },
