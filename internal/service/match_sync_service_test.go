@@ -17,21 +17,23 @@ import (
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type stubSyncMatchRepo struct {
-	candidates             []*domain.Match
-	linkCalled             bool
-	unlinkCalled           bool
-	updateSyncAt           int
-	linkErr                error
-	candidatesErr          error
-	kickoffErr             error
-	updateErr              error
-	updateCount            int
-	updatedMatch           *domain.Match
-	findByTeamsMatch       *domain.Match
-	findByTeamsErr         error
-	linkCalledCount        int
-	updateLiveProgressErr  error
-	updateLiveProgressHits int
+	candidates                      []*domain.Match
+	linkCalled                      bool
+	unlinkCalled                    bool
+	updateSyncAt                    int
+	linkErr                         error
+	candidatesErr                   error
+	kickoffErr                      error
+	updateErr                       error
+	updateCount                     int
+	updatedMatch                    *domain.Match
+	findByTeamsMatch                *domain.Match
+	findByTeamsErr                  error
+	linkCalledCount                 int
+	updateLiveProgressErr           error
+	updateLiveProgressHits          int
+	finishedPenaltyMissingWinner    []*domain.Match
+	finishedPenaltyMissingWinnerErr error
 	// findByTeamsResponses, when non-nil, is consumed sequentially: the first
 	// call returns index 0, the second returns index 1, and so on.  When the
 	// slice is exhausted the last entry is repeated.  This lets tests exercise
@@ -99,6 +101,9 @@ func (r *stubSyncMatchRepo) ListByGroupLabel(_ context.Context, _ string) ([]*do
 func (r *stubSyncMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *string, _, _ *int) error {
 	r.updateLiveProgressHits++
 	return r.updateLiveProgressErr
+}
+func (r *stubSyncMatchRepo) ListFinishedPenaltyMatchesMissingWinner(_ context.Context) ([]*domain.Match, error) {
+	return r.finishedPenaltyMissingWinner, r.finishedPenaltyMissingWinnerErr
 }
 
 type stubSyncMatchSvc struct {
@@ -1592,6 +1597,102 @@ func TestMatchSync_DailyFixtureSync_FinishedPenaltyMatch_AlreadyHasPenaltyWinner
 	}
 	if matchSvc.corrected != 0 {
 		t.Errorf("CorrectResult calls: want 0 (already repaired), got %d", matchSvc.corrected)
+	}
+}
+
+// ── Phase-3 penalty repair (ListFinishedPenaltyMatchesMissingWinner) ─────────
+//
+// These tests exercise the dedicated sweep that runs AFTER ListSyncCandidates
+// so that already-finished matches (excluded from the normal poll path) are
+// still corrected on the next daily run.
+
+func TestMatchSync_DailyFixtureSync_Phase3_RepairsFinishedPenaltyMatch(t *testing.T) {
+	// Arrange: a finished match with penalty_winner NULL is returned by
+	// ListFinishedPenaltyMatchesMissingWinner (not by ListSyncCandidates).
+	id := int64(900)
+	phome, paway := 3, 5
+	broken := &domain.Match{
+		ID: 90, Status: domain.MatchStatusFinished,
+		HomeTeam: "Netherlands", AwayTeam: "Morocco",
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-24 * time.Hour),
+		// PenaltyWinner intentionally nil — the broken state this sweep fixes
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{
+		finishedPenaltyMissingWinner: []*domain.Match{broken},
+	}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID:       id,
+		Status:           footballprovider.StatusAfterPEN,
+		HomeScore:        1,
+		AwayScore:        1,
+		PenaltyHomeScore: &phome,
+		PenaltyAwayScore: &paway,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("DailyFixtureSync: %v", err)
+	}
+	if matchSvc.corrected != 1 {
+		t.Errorf("CorrectResult calls: want 1 (phase-3 repair), got %d", matchSvc.corrected)
+	}
+	if matchSvc.lastCorrectPWinner == nil || *matchSvc.lastCorrectPWinner != "away" {
+		t.Errorf("penalty_winner: want %q, got %v", "away", matchSvc.lastCorrectPWinner)
+	}
+	if result.Corrected != 1 {
+		t.Errorf("result.Corrected: want 1, got %d", result.Corrected)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_Phase3_ProviderFetchError_Skips(t *testing.T) {
+	// If the provider returns an error for a match in the repair list the
+	// match is skipped without propagating the error to the caller.
+	id := int64(901)
+	broken := &domain.Match{
+		ID: 91, Status: domain.MatchStatusFinished,
+		HomeTeam: "Brazil", AwayTeam: "Argentina",
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-48 * time.Hour),
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{
+		finishedPenaltyMissingWinner: []*domain.Match{broken},
+	}
+	provider := &stubProvider{fetchErr: errors.New("provider down")}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("DailyFixtureSync must not fail on provider error: %v", err)
+	}
+	if matchSvc.corrected != 0 {
+		t.Errorf("CorrectResult calls: want 0 (skipped), got %d", matchSvc.corrected)
+	}
+	if result.Corrected != 0 {
+		t.Errorf("result.Corrected: want 0, got %d", result.Corrected)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_Phase3_ListError_DoesNotFail(t *testing.T) {
+	// A DB error from ListFinishedPenaltyMatchesMissingWinner must not abort
+	// DailyFixtureSync — the error is logged and the phase is skipped.
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{
+		finishedPenaltyMissingWinnerErr: errors.New("db timeout"),
+	}
+	svc := buildSyncSvc(repo, matchSvc, &stubProvider{})
+
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("DailyFixtureSync must not propagate list error: %v", err)
+	}
+	if matchSvc.corrected != 0 {
+		t.Errorf("CorrectResult calls: want 0, got %d", matchSvc.corrected)
 	}
 }
 
