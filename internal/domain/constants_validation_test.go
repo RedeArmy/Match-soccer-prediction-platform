@@ -57,6 +57,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		// Auth
 		"ParamKeyAuthValidationTimeout": ParamKeyAuthValidationTimeout,
 		"ParamKeyAuthSessionMaxAgeSecs": ParamKeyAuthSessionMaxAgeSecs,
+		"ParamKeyAuthRequireMFA":        ParamKeyAuthRequireMFA,
 		// DLQ
 		"ParamKeyDLQSampleSize":         ParamKeyDLQSampleSize,
 		"ParamKeyDLQReplayDefaultLimit": ParamKeyDLQReplayDefaultLimit,
@@ -256,8 +257,10 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 		"DefaultMessagingStreamMaxLen":       DefaultMessagingStreamMaxLen,
 		"DefaultMessagingStreamWorkerCount":  DefaultMessagingStreamWorkerCount,
 		"DefaultMessagingStreamReadBlockSec": DefaultMessagingStreamReadBlockSec,
-		// Audit
+		// Audit / Auth
 		"DefaultAuthValidationTimeoutSeconds": DefaultAuthValidationTimeoutSeconds,
+		"DefaultAuthSessionMaxAgeSecs":        DefaultAuthSessionMaxAgeSecs,
+		"DefaultAuthRequireMFA":               DefaultAuthRequireMFA,
 		"DefaultAuditWriteTimeoutSeconds":     DefaultAuditWriteTimeoutSeconds,
 		"DefaultAuditMaxRetries":              DefaultAuditMaxRetries,
 		"DefaultAuditRetryDelayMs":            DefaultAuditRetryDelayMs,
@@ -403,7 +406,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	}
 
 	t.Run("all_param_keys_documented", func(t *testing.T) {
-		const expectedCount = 159 // update when adding a new ParamKey* constant (+1 featflag.paypal from 000198; +2 daily summary from 000202; +1 auth.session_max_age_seconds from 000211; +1 match.sync.no_matches_pause_sec from 000212)
+		const expectedCount = 160 // update when adding a new ParamKey* constant (+1 featflag.paypal from 000198; +2 daily summary from 000202; +1 auth.session_max_age_seconds from 000211; +1 match.sync.no_matches_pause_sec from 000212; +1 auth.require_mfa from 000221)
 		if len(paramKeys) != expectedCount {
 			t.Errorf("ParamKey enumeration may be incomplete: expected %d, got %d", expectedCount, len(paramKeys))
 			t.Log("If you added a new ParamKey* constant, update the enumeration in this test and create a migration")
@@ -411,7 +414,7 @@ func TestSystemParamConstants_AllPaired(t *testing.T) {
 	})
 
 	t.Run("all_defaults_documented", func(t *testing.T) {
-		const expectedCount = 138 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention; +1 withdrawal_min_usd_cents; +2 tournament entry fees; +1 group.free_max_members; +6 match sync; +2 daily summary from 000202)
+		const expectedCount = 140 // update when adding a new Default* constant (+3 string defaults: push_icon_url, push_badge_url, scheduler_timezone; +2 digest gate; +5 sched intervals; +1 render timeout; +4 dlq replay; +5 outbox worker; +2 observability alerting; +2 phase7 infra; +10 kyc/aml; +1 kyc cache ttl; +2 cache breaker; +2 kyc ip velocity; +1 sse max conns; +1 scoring chunk size; +4 ip rate limit; +1 kyc doc retention; +1 exchange rate margin; +4 fx competitive margin; +1 payment intent max cents; +2 admin rate limit; +1 audit max in-flight; +1 fx history retention; +1 outbox retention; +1 withdrawal_min_usd_cents; +2 tournament entry fees; +1 group.free_max_members; +6 match sync; +2 daily summary from 000202; +2 auth session_max_age+require_mfa from 000221)
 		if len(defaults) != expectedCount {
 			t.Errorf("Default enumeration may be incomplete: expected %d, got %d", expectedCount, len(defaults))
 			t.Log("If you added a new Default* constant, update the enumeration in this test")
@@ -490,8 +493,10 @@ func TestSystemParamNamingConventions(t *testing.T) {
 		{"ParamKeyAuditMaxRetries", ParamKeyAuditMaxRetries, "audit"},
 		{"ParamKeyAuditRetryDelayMs", ParamKeyAuditRetryDelayMs, "audit"},
 		{"ParamKeyAuditMaxInFlight", ParamKeyAuditMaxInFlight, "audit"},
-		// Auth (key prefix "auth"; DB category is "system")
+		// Auth (key prefix "auth"; DB category is "auth")
 		{"ParamKeyAuthValidationTimeout", ParamKeyAuthValidationTimeout, "auth"},
+		{"ParamKeyAuthSessionMaxAgeSecs", ParamKeyAuthSessionMaxAgeSecs, "auth"},
+		{"ParamKeyAuthRequireMFA", ParamKeyAuthRequireMFA, "auth"},
 		// DLQ
 		{"ParamKeyDLQSampleSize", ParamKeyDLQSampleSize, "dlq"},
 		{"ParamKeyDLQReplayDefaultLimit", ParamKeyDLQReplayDefaultLimit, "dlq"},
@@ -711,6 +716,7 @@ func TestDefaultConstantsArePositive(t *testing.T) {
 		"DefaultMessagingStreamReadBlockSec": DefaultMessagingStreamReadBlockSec,
 		// Audit / auth
 		"DefaultAuthValidationTimeoutSeconds": DefaultAuthValidationTimeoutSeconds,
+		"DefaultAuthSessionMaxAgeSecs":        DefaultAuthSessionMaxAgeSecs,
 		"DefaultAuditWriteTimeoutSeconds":     DefaultAuditWriteTimeoutSeconds,
 		"DefaultAuditMaxRetries":              DefaultAuditMaxRetries,
 		"DefaultAuditRetryDelayMs":            DefaultAuditRetryDelayMs,
@@ -864,6 +870,8 @@ func TestZeroValuedDefaultsAreIntentional(t *testing.T) {
 		"DefaultScoringPenaltiesBonus": DefaultScoringPenaltiesBonus,
 		// Tier 0/1 withdrawals are fully blocked; velocity cap is 0 by design.
 		"DefaultKYCTier1WithdrawalVelocityCents": DefaultKYCTier1WithdrawalVelocityCents,
+		// MFA enforcement disabled by default; 0 = disabled, 1 = enabled.
+		"DefaultAuthRequireMFA": DefaultAuthRequireMFA,
 	}
 	for name, value := range zeroDefaults {
 		t.Run(name, func(t *testing.T) {

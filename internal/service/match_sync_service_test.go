@@ -102,10 +102,10 @@ func (r *stubSyncMatchRepo) UpdateLiveProgress(_ context.Context, _ int, _ *stri
 }
 
 type stubSyncMatchSvc struct {
-	started          int
-	finished         int
-	startErr         error
-	finishErr        error
+	started           int
+	finished          int
+	startErr          error
+	finishErr         error
 	lastPenaltyWinner *string // last value passed to UpdateResult
 }
 
@@ -1590,9 +1590,9 @@ func TestMatchSync_PollAndApply_AfterPenalties_SetsPenaltyWinner(t *testing.T) {
 	penHome, penAway := 4, 2
 	provider := &stubProvider{
 		fixture: &footballprovider.Fixture{
-			ExternalID:       extMatchID,
-			Status:           footballprovider.StatusAfterPEN,
-			HomeScore:        1, AwayScore: 1,
+			ExternalID: extMatchID,
+			Status:     footballprovider.StatusAfterPEN,
+			HomeScore:  1, AwayScore: 1,
 			PenaltyHomeScore: &penHome,
 			PenaltyAwayScore: &penAway,
 		},

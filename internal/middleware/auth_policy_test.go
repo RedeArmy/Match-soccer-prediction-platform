@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 	"github.com/rede/world-cup-quiniela/pkg/auth"
 )
@@ -23,13 +24,25 @@ func (s *stubProvider) ValidateToken(_ context.Context, _ string) (auth.Claims, 
 }
 
 // stubParams implements GetInter.
-type stubParams struct{ maxAge int }
+// maxAge overrides auth.session_max_age_seconds (0 = use default).
+// requireMFA overrides auth.require_mfa (0 = disabled, 1 = enabled).
+type stubParams struct {
+	maxAge     int
+	requireMFA int
+}
 
-func (s *stubParams) GetInt(_ context.Context, _ string, def int) int {
-	if s.maxAge == 0 {
+func (s *stubParams) GetInt(_ context.Context, key string, def int) int {
+	switch key {
+	case domain.ParamKeyAuthSessionMaxAgeSecs:
+		if s.maxAge == 0 {
+			return def
+		}
+		return s.maxAge
+	case domain.ParamKeyAuthRequireMFA:
+		return s.requireMFA
+	default:
 		return def
 	}
-	return s.maxAge
 }
 
 // stubBlocklist implements IsRevoker.
@@ -236,13 +249,15 @@ func TestPolicyProvider_ZeroSessionStartedAt_FallsBackToIssuedAt(t *testing.T) {
 // stubSessionStarter implements SessionStarter for policy tests.
 // calls is a counter of DB round-trips; tests assert it to verify cache behaviour.
 type stubSessionStarter struct {
-	startedAt time.Time
-	err       error
-	calls     int
+	startedAt  time.Time
+	err        error
+	calls      int
+	lastUserID string
 }
 
-func (s *stubSessionStarter) UpsertSessionStart(_ context.Context, _ string) (time.Time, error) {
+func (s *stubSessionStarter) UpsertSessionStart(_ context.Context, _ string, userID string) (time.Time, error) {
 	s.calls++
+	s.lastUserID = userID
 	return s.startedAt, s.err
 }
 
@@ -263,7 +278,7 @@ func makePolicyProviderWithStarter(
 func TestPolicyProvider_DBSession_OldSession_Rejects(t *testing.T) {
 	claims := auth.Claims{
 		Subject:          "user_oauth",
-		IssuedAt:         time.Now(), // JWT just refreshed — very recent
+		IssuedAt:         time.Now(),  // JWT just refreshed — very recent
 		SessionStartedAt: time.Time{}, // fva absent (OAuth login)
 		SessionID:        "sid_oauth_old",
 	}
@@ -448,6 +463,33 @@ func TestPolicyProvider_StartCache_DifferentSIDs_EachHitsDB(t *testing.T) {
 	}
 }
 
+// TestPolicyProvider_DBSession_PassesUserIDToStarter verifies that the Clerk
+// Subject (user_id) from the JWT claims is forwarded to UpsertSessionStart so
+// the session_starts row is attributable to the correct user (DT-006).
+func TestPolicyProvider_DBSession_PassesUserIDToStarter(t *testing.T) {
+	const subject = "user_oauth_subject"
+	claims := auth.Claims{
+		Subject:          subject,
+		IssuedAt:         time.Now(),
+		SessionStartedAt: time.Time{}, // fva absent → DB path
+		SessionID:        "sid_user_id_check",
+	}
+	ss := &stubSessionStarter{startedAt: time.Now().Add(-1 * time.Hour)}
+	p := makePolicyProviderWithStarter(
+		&stubProvider{claims: claims},
+		&stubBlocklist{},
+		ss,
+		18000,
+	)
+
+	if _, err := p.ValidateToken(context.Background(), "any"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ss.lastUserID != subject {
+		t.Errorf("UpsertSessionStart got userID %q; want %q", ss.lastUserID, subject)
+	}
+}
+
 // ── Bounded revoked cache (DT-002) ───────────────────────────────────────────
 
 // TestPolicyProvider_RevokedCache_FailsClosedDuringDBOutage verifies that a
@@ -492,5 +534,74 @@ func TestPolicyProvider_RevokedCache_UnknownSID_FailsOpenDuringDBOutage(t *testi
 	_, err := p.ValidateToken(context.Background(), "any")
 	if err != nil {
 		t.Fatalf("expected fail-open for unknown sid during DB outage, got %v", err)
+	}
+}
+
+// ── MFA enforcement (DT-016) ─────────────────────────────────────────────────
+
+// TestPolicyProvider_MFARequired_NoMFA_Rejects verifies that when
+// auth.require_mfa = 1 and the token lacks a second factor (MFAVerifiedAt zero),
+// the request is rejected with ErrInvalidToken.
+func TestPolicyProvider_MFARequired_NoMFA_Rejects(t *testing.T) {
+	claims := auth.Claims{
+		Subject:       "user_abc",
+		IssuedAt:      time.Now(),
+		SessionID:     "sid_mfa_absent",
+		MFAVerifiedAt: time.Time{}, // second factor not completed
+	}
+	p := middleware.NewPolicyProvider(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		&stubParams{maxAge: 18000, requireMFA: 1},
+		zap.NewNop(),
+	)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken when MFA required but absent, got %v", err)
+	}
+}
+
+// TestPolicyProvider_MFARequired_WithMFA_Passes verifies that a token with a
+// completed second factor is accepted when auth.require_mfa = 1.
+func TestPolicyProvider_MFARequired_WithMFA_Passes(t *testing.T) {
+	claims := auth.Claims{
+		Subject:       "user_abc",
+		IssuedAt:      time.Now(),
+		SessionID:     "sid_mfa_present",
+		MFAVerifiedAt: time.Now().Add(-5 * time.Minute), // MFA completed 5 min ago
+	}
+	p := middleware.NewPolicyProvider(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		&stubParams{maxAge: 18000, requireMFA: 1},
+		zap.NewNop(),
+	)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if err != nil {
+		t.Fatalf("expected no error when MFA required and present, got %v", err)
+	}
+}
+
+// TestPolicyProvider_MFADisabled_NoMFA_Passes verifies that when
+// auth.require_mfa = 0 (default), tokens without a second factor are accepted.
+func TestPolicyProvider_MFADisabled_NoMFA_Passes(t *testing.T) {
+	claims := auth.Claims{
+		Subject:       "user_abc",
+		IssuedAt:      time.Now(),
+		SessionID:     "sid_no_mfa_ok",
+		MFAVerifiedAt: time.Time{}, // no MFA — fine when not required
+	}
+	p := middleware.NewPolicyProvider(
+		&stubProvider{claims: claims},
+		&stubBlocklist{revoked: false},
+		&stubParams{maxAge: 18000, requireMFA: 0},
+		zap.NewNop(),
+	)
+
+	_, err := p.ValidateToken(context.Background(), "any")
+	if err != nil {
+		t.Fatalf("expected no error when MFA not required, got %v", err)
 	}
 }

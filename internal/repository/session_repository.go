@@ -62,12 +62,35 @@ func (r *PostgresSessionRepository) PruneRevoked(ctx context.Context, olderThan 
 	return tag.RowsAffected(), nil
 }
 
+// RevokeAllUserSessions bulk-inserts all session_starts rows for userID into
+// revoked_sessions, effectively force-logging out all known OAuth sessions for
+// the account. Returns the number of sessions revoked.
+//
+// Rows without a session_starts entry (fva-present sessions that never hit the
+// OAuth path) are not affected; callers should also revoke the current session
+// via RevokeSession to cover the initiating device.
+func (r *PostgresSessionRepository) RevokeAllUserSessions(ctx context.Context, userID string) (int64, error) {
+	tag, err := r.db.Exec(ctx,
+		`INSERT INTO revoked_sessions (sid, user_id, revoked_at)
+		 SELECT sid, user_id, NOW()
+		 FROM session_starts
+		 WHERE user_id = $1
+		 ON CONFLICT (sid) DO NOTHING`,
+		userID,
+	)
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 var _ SessionRepository = (*PostgresSessionRepository)(nil)
 
 // PostgresSessionStartRepository is the PostgreSQL-backed implementation of
 // SessionStartRepository.
 type PostgresSessionStartRepository struct {
-	db *pgxpool.Pool
+	db      *pgxpool.Pool
+	metrics *sessionStartMetrics // nil until RegisterSessionStartMetrics is called
 }
 
 // NewPostgresSessionStartRepository constructs a PostgresSessionStartRepository.
@@ -80,19 +103,23 @@ func NewPostgresSessionStartRepository(db *pgxpool.Pool) *PostgresSessionStartRe
 // "DO UPDATE SET started_at = session_starts.started_at" — a no-op update
 // that forces Postgres to include the existing row in the RETURNING clause,
 // making this a single round-trip regardless of whether the row is new.
-func (r *PostgresSessionStartRepository) UpsertSessionStart(ctx context.Context, sid string) (time.Time, error) {
+// user_id is stored on insert only; subsequent upserts (ON CONFLICT) leave
+// the stored user_id unchanged so the original attribution is preserved.
+func (r *PostgresSessionStartRepository) UpsertSessionStart(ctx context.Context, sid, userID string) (time.Time, error) {
+	start := time.Now()
 	var t time.Time
 	err := r.db.QueryRow(ctx,
-		`INSERT INTO session_starts (sid, started_at)
-		 VALUES ($1, NOW())
+		`INSERT INTO session_starts (sid, user_id, started_at)
+		 VALUES ($1, $2, NOW())
 		 ON CONFLICT (sid) DO UPDATE
 		   SET started_at = session_starts.started_at
 		 RETURNING started_at`,
-		sid,
+		sid, userID,
 	).Scan(&t)
 	if err != nil {
 		return time.Time{}, apperrors.Internal(err)
 	}
+	r.recordUpsert(ctx, start)
 	return t, nil
 }
 

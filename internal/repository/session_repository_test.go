@@ -139,7 +139,7 @@ func TestPostgresSessionStartRepository_UpsertSessionStart_FirstCall_RecordsNow(
 	})
 
 	before := time.Now().Add(-time.Second)
-	got, err := repo.UpsertSessionStart(ctx, sid)
+	got, err := repo.UpsertSessionStart(ctx, sid, "user_test")
 	after := time.Now().Add(time.Second)
 
 	if err != nil {
@@ -163,7 +163,7 @@ func TestPostgresSessionStartRepository_UpsertSessionStart_Idempotent(t *testing
 		_, _ = testDB.Exec(ctx, `DELETE FROM session_starts WHERE sid = $1`, sid)
 	})
 
-	first, err := repo.UpsertSessionStart(ctx, sid)
+	first, err := repo.UpsertSessionStart(ctx, sid, "user_test")
 	if err != nil {
 		t.Fatalf("first UpsertSessionStart: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestPostgresSessionStartRepository_UpsertSessionStart_Idempotent(t *testing
 	// Simulate the next JWT refresh request: same sid, called slightly later.
 	time.Sleep(5 * time.Millisecond)
 
-	second, err := repo.UpsertSessionStart(ctx, sid)
+	second, err := repo.UpsertSessionStart(ctx, sid, "user_test")
 	if err != nil {
 		t.Fatalf("second UpsertSessionStart: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestPostgresSessionStartRepository_UpsertSessionStart_ConcurrentInsert(t *t
 	for i := range goroutines {
 		go func(idx int) {
 			defer wg.Done()
-			results[idx], errs[idx] = repo.UpsertSessionStart(ctx, sid)
+			results[idx], errs[idx] = repo.UpsertSessionStart(ctx, sid, "user_test")
 		}(i)
 	}
 	wg.Wait()
@@ -243,7 +243,7 @@ func TestPostgresSessionStartRepository_PruneSessionStarts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert old row: %v", err)
 	}
-	if _, err := repo.UpsertSessionStart(ctx, recent); err != nil {
+	if _, err := repo.UpsertSessionStart(ctx, recent, "user_test"); err != nil {
 		t.Fatalf("insert recent row: %v", err)
 	}
 

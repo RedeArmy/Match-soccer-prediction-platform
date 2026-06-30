@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, act } from "@testing-library/react";
+import { render, act, waitFor } from "@testing-library/react";
 
 // signOut spy shared across all tests in this file.
 const signOutMock = vi.fn();
@@ -10,6 +10,14 @@ vi.mock("@clerk/nextjs", () => ({
   useClerk: () => ({ signOut: signOutMock }),
   useSession: () => ({ session: mockSession }),
 }));
+
+// Default fetch mock: returns a network-error-like rejection so the component
+// falls back to the NEXT_PUBLIC_SESSION_MAX_AGE_SECONDS env var. Individual
+// tests override this to exercise the live-fetch path.
+const fetchMock = vi.fn(() =>
+  Promise.reject(new Error("fetch disabled in tests")),
+);
+vi.stubGlobal("fetch", fetchMock);
 
 // Helper: set NEXT_PUBLIC_SESSION_MAX_AGE_SECONDS before importing the module
 // under test. Because Vitest hoists vi.mock() calls, we control the env via
@@ -29,6 +37,7 @@ describe("SessionGuard – reactive path (wcq:session-expired event)", () => {
     vi.clearAllMocks();
     mockSession = null;
     mockMaxAge(undefined);
+    fetchMock.mockRejectedValue(new Error("fetch disabled in tests"));
   });
 
   it("calls signOut when wcq:session-expired is dispatched", () => {
@@ -54,6 +63,7 @@ describe("SessionGuard – proactive timer (session.createdAt + maxAge)", () => 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    fetchMock.mockRejectedValue(new Error("fetch disabled in tests"));
   });
 
   afterEach(() => {
@@ -169,5 +179,56 @@ describe("SessionGuard – proactive timer (session.createdAt + maxAge)", () => 
 
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+});
+
+describe("SessionGuard – live session config fetch (DT-009)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it("signs out when live max age from /api/session-config is shorter than env var", async () => {
+    // Env var: 1h. Live fetch: 10 min. Session started 30 min ago.
+    // With env-var alone (1h): not expired. With live 10 min: expired.
+    // Verifies that the fetched value replaces the compile-time env var.
+    mockMaxAge(3600); // 1h from env
+    mockSession = { createdAt: new Date(Date.now() - 30 * 60 * 1000) }; // 30 min ago
+
+    fetchMock.mockResolvedValueOnce({
+      json: () => Promise.resolve({ session_max_age_seconds: 600 }), // 10 min
+      ok: true,
+    } as Response);
+
+    render(<SessionGuard />);
+
+    // Before fetch resolves: env-var 1h → not yet expired.
+    expect(signOutMock).not.toHaveBeenCalled();
+
+    // Flush fetch promise chain so setMaxAgeMs(600_000) fires and React re-renders.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // After re-render with 10-min max age: 30-min-old session is expired → signOut.
+    expect(signOutMock).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to env var when /api/session-config fetch fails", () => {
+    mockMaxAge(3600);
+    mockSession = { createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) }; // 2h ago
+
+    fetchMock.mockRejectedValueOnce(new Error("network error"));
+
+    render(<SessionGuard />);
+
+    // Env-var-based 1h limit → 2h session is already expired → fires immediately.
+    expect(signOutMock).toHaveBeenCalledOnce();
   });
 });

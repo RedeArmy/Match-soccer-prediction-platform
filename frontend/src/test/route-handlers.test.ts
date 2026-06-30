@@ -1524,3 +1524,47 @@ describe("GET /api/public/standings – upstream throws", () => {
     expect(body.matches).toEqual([]);
   });
 });
+
+// ── session-config/route ──────────────────────────────────────────────────────
+
+describe("GET /api/session-config – upstream success", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns session_max_age_seconds from backend", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ session_max_age_seconds: 3600 }), {
+        status: 200,
+      }),
+    );
+    const { GET } = await import("@/app/api/session-config/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(body.session_max_age_seconds).toBe(3600);
+  });
+});
+
+describe("GET /api/session-config – upstream non-ok", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns fallback when backend responds non-ok", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("error", { status: 503 }));
+    const { GET } = await import("@/app/api/session-config/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(typeof body.session_max_age_seconds).toBe("number");
+    expect(body.session_max_age_seconds).toBeGreaterThan(0);
+  });
+});
+
+describe("GET /api/session-config – fetch throws", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("returns fallback when fetch throws", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    const { GET } = await import("@/app/api/session-config/route");
+    const res = await GET();
+    const body = await res.json();
+    expect(typeof body.session_max_age_seconds).toBe("number");
+    expect(body.session_max_age_seconds).toBeGreaterThan(0);
+  });
+});

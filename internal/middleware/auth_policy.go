@@ -34,7 +34,7 @@ type IsRevoker interface {
 // PostgresSessionStartRepository satisfies this interface.
 // It is used as a fallback when the JWT lacks the fva claim (e.g. OAuth flows).
 type SessionStarter interface {
-	UpsertSessionStart(ctx context.Context, sid string) (startedAt time.Time, err error)
+	UpsertSessionStart(ctx context.Context, sid, userID string) (startedAt time.Time, err error)
 }
 
 // PolicyProvider wraps an IdentityProvider with system-controlled session policies:
@@ -144,6 +144,10 @@ func (p *PolicyProvider) ValidateToken(ctx context.Context, rawToken string) (au
 		return auth.Claims{}, fmt.Errorf("%w: session exceeded maximum age of %d seconds", auth.ErrInvalidToken, maxAgeSecs)
 	}
 
+	if p.params.GetInt(ctx, domain.ParamKeyAuthRequireMFA, domain.DefaultAuthRequireMFA) != 0 && claims.MFAVerifiedAt.IsZero() {
+		return auth.Claims{}, fmt.Errorf("%w: MFA second factor not completed", auth.ErrInvalidToken)
+	}
+
 	if err := p.checkRevocation(ctx, claims.SessionID); err != nil {
 		return auth.Claims{}, err
 	}
@@ -176,7 +180,7 @@ func (p *PolicyProvider) resolveSessionStart(ctx context.Context, claims auth.Cl
 			return cached.(time.Time)
 		}
 		// Cache miss: resolve from DB and populate the cache.
-		t, err := p.sessionStarts.UpsertSessionStart(ctx, claims.SessionID)
+		t, err := p.sessionStarts.UpsertSessionStart(ctx, claims.SessionID, claims.Subject)
 		if err != nil {
 			p.log.Warn("session_starts upsert failed; falling back to IssuedAt for max-age (enforcement may be inaccurate)",
 				zap.String("sid", claims.SessionID),

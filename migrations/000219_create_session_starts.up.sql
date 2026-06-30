@@ -9,8 +9,8 @@
 -- (returning session). This ensures max-age enforcement always measures from the true
 -- session origin regardless of how the user authenticated.
 --
--- Cleanup: rows older than session.prune_before are removed by the worker maintenance
--- job ("session.revoked_prune") alongside the revoked_sessions table.
+-- Cleanup: rows older than auth.session_max_age_seconds + 1 day are removed by
+-- the worker maintenance job ("session.starts_prune") that runs daily.
 CREATE TABLE IF NOT EXISTS session_starts (
     sid        TEXT        PRIMARY KEY,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

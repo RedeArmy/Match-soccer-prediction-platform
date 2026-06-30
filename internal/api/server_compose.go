@@ -96,6 +96,7 @@ type appHandlers struct {
 	adminPaymentIntent *handler.AdminPaymentIntentHandler
 	systemClock        *handler.SystemClockHandler
 	featureFlag        *handler.FeatureFlagHandler
+	sessionConfig      *handler.SessionConfigHandler
 }
 
 // buildHandlers constructs the service layer (with optional cache decorators)
@@ -331,6 +332,7 @@ func (s *Server) buildHandlers(
 		user:               handler.NewUserHandler(repos.user, s.log),
 		systemClock:        handler.NewSystemClockHandler(clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log),
 		featureFlag:        handler.NewFeatureFlagHandler(params, s.log),
+		sessionConfig:      handler.NewSessionConfigHandler(params),
 	}
 
 	// ── Phase 9 observability handlers ───────────────────────────────────────

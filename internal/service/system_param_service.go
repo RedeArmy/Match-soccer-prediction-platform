@@ -334,6 +334,8 @@ var paramIntConstraints = map[string]paramIntRange{
 	domain.ParamKeyAuthValidationTimeout: {1, 60},
 	// Session max age: 5 min minimum, 30 days maximum (runtime; propagates within 30 s)
 	domain.ParamKeyAuthSessionMaxAgeSecs: {300, 2_592_000},
+	// MFA enforcement: 0 = disabled, 1 = enabled. Only set to 1 after enabling MFA in Clerk.
+	domain.ParamKeyAuthRequireMFA: {0, 1},
 
 	// Audit retry policy
 	domain.ParamKeyAuditMaxRetries:   {1, 10},

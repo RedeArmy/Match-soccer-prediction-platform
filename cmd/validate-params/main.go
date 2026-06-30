@@ -143,6 +143,7 @@ var allParams = []paramSpec{
 	{key: domain.ParamKeyAuditWriteTimeout, defaultValue: strconv.Itoa(domain.DefaultAuditWriteTimeoutSeconds), paramType: "int", category: "system", isRuntime: false},
 	{key: domain.ParamKeyAuthValidationTimeout, defaultValue: strconv.Itoa(domain.DefaultAuthValidationTimeoutSeconds), paramType: "int", category: "system", isRuntime: false},
 	{key: domain.ParamKeyAuthSessionMaxAgeSecs, defaultValue: strconv.Itoa(domain.DefaultAuthSessionMaxAgeSecs), paramType: "int", category: "auth", isRuntime: true},
+	{key: domain.ParamKeyAuthRequireMFA, defaultValue: strconv.Itoa(domain.DefaultAuthRequireMFA), paramType: "int", category: "auth", isRuntime: true},
 	{key: domain.ParamKeyPurgeRetentionDays, defaultValue: strconv.Itoa(domain.DefaultPurgeRetentionDays), paramType: "int", category: "system", isRuntime: false},
 
 	// DLQ — not runtime: restart required.

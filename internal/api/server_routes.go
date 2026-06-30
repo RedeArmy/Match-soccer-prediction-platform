@@ -198,6 +198,11 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// can gate features at runtime without a deployment.
 	r.Get("/api/feature-flags", h.featureFlag.GetAll)
 
+	// Public session config — no auth required, covered by L1 IP limiter.
+	// Returns {"session_max_age_seconds": N} so the frontend SessionGuard can
+	// use the live runtime value instead of the compile-time env var.
+	r.Get("/api/session-config", h.sessionConfig.GetConfig)
+
 	// Public exchange rate display — no auth required, covered by L1 IP limiter.
 	// Registered outside /api/v1 (which enforces RequireAuth) so unauthenticated
 	// frontend clients can display current buy/sell rates.
@@ -336,8 +341,16 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	}
 	clerkProvider := auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, authWarmup, s.log, jwksOpts...)
 	sessionStartRepo := repository.NewPostgresSessionStartRepository(s.db)
+	if err := sessionStartRepo.RegisterSessionStartMetrics(meter); err != nil {
+		s.log.Warn("sessionStartRepo: RegisterSessionStartMetrics failed", zap.Error(err))
+	}
+	var sessionStarter middleware.SessionStarter = sessionStartRepo
+	if s.redisClient != nil {
+		maxAgeSecs := paramSvc.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
+		sessionStarter = middleware.NewRedisSessionStartCache(sessionStartRepo, s.redisClient, maxAgeSecs, s.log)
+	}
 	sessionProvider := middleware.NewPolicyProvider(clerkProvider, repos.session, paramSvc, s.log,
-		middleware.WithSessionStarter(sessionStartRepo),
+		middleware.WithSessionStarter(sessionStarter),
 	)
 
 	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))

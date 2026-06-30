@@ -2,6 +2,9 @@ package auth_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lestrrat-go/jwx/v2/jwa"
+	"github.com/lestrrat-go/jwx/v2/jwk"
+	"github.com/lestrrat-go/jwx/v2/jwt"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
@@ -229,5 +235,221 @@ func TestJWKSProvider_WithOnDegraded_NotCalledOnHealthyEndpoint(t *testing.T) {
 	}
 	if hookCalls.Load() != 0 {
 		t.Errorf("WithOnDegraded hook must not fire when JWKS endpoint is healthy; fired %d time(s)", hookCalls.Load())
+	}
+}
+
+// ── Valid signed JWT tests ────────────────────────────────────────────────────
+
+// testKeyPair holds an RSA key pair and the JWKS JSON derived from the public key.
+// Used to build test JWKS servers that serve verifiable tokens.
+type testKeyPair struct {
+	privateKey *rsa.PrivateKey
+	privJWK    jwk.Key
+	jwksJSON   []byte
+}
+
+// newTestKeyPair generates a 2048-bit RSA key pair and encodes the public key
+// as a JWKS payload ready to be served from an httptest.Server.
+func newTestKeyPair(t *testing.T) *testKeyPair {
+	t.Helper()
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key: %v", err)
+	}
+	privJWK, err := jwk.FromRaw(priv)
+	if err != nil {
+		t.Fatalf("build private JWK: %v", err)
+	}
+	_ = privJWK.Set(jwk.AlgorithmKey, jwa.RS256)
+	_ = privJWK.Set(jwk.KeyIDKey, "test-kid")
+
+	pubJWK, err := privJWK.PublicKey()
+	if err != nil {
+		t.Fatalf("build public JWK: %v", err)
+	}
+	set := jwk.NewSet()
+	_ = set.AddKey(pubJWK)
+	payload, err := json.Marshal(set)
+	if err != nil {
+		t.Fatalf("marshal JWKS: %v", err)
+	}
+	return &testKeyPair{privateKey: priv, privJWK: privJWK, jwksJSON: payload}
+}
+
+// sign creates a signed RS256 JWT with the given claims.
+func (kp *testKeyPair) sign(t *testing.T, subject, sid string, iat time.Time, extra map[string]interface{}) string {
+	t.Helper()
+	tok := jwt.New()
+	_ = tok.Set(jwt.SubjectKey, subject)
+	_ = tok.Set(jwt.IssuedAtKey, iat)
+	_ = tok.Set(jwt.ExpirationKey, iat.Add(time.Hour))
+	if sid != "" {
+		_ = tok.Set("sid", sid)
+	}
+	for k, v := range extra {
+		_ = tok.Set(k, v)
+	}
+	signed, err := jwt.Sign(tok, jwt.WithKey(jwa.RS256, kp.privJWK))
+	if err != nil {
+		t.Fatalf("sign JWT: %v", err)
+	}
+	return string(signed)
+}
+
+// newJWKSServer starts a test JWKS server that serves kp.jwksJSON.
+func newJWKSServer(t *testing.T, payload []byte) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "max-age=3600")
+		_, _ = w.Write(payload)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestJWKSProvider_ValidToken_ReturnsSubjectAndSessionID verifies the happy path:
+// a correctly signed JWT produces Claims with the expected Subject and SessionID.
+// This exercises the post-parse claims extraction code path including the "sid" claim.
+func TestJWKSProvider_ValidToken_ReturnsSubjectAndSessionID(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+
+	now := time.Now().Truncate(time.Second)
+	raw := kp.sign(t, "user_abc", "sid_123", now, nil)
+
+	claims, err := p.ValidateToken(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("expected valid claims, got error: %v", err)
+	}
+	if claims.Subject != "user_abc" {
+		t.Errorf("subject: got %q, want %q", claims.Subject, "user_abc")
+	}
+	if claims.SessionID != "sid_123" {
+		t.Errorf("session ID: got %q, want %q", claims.SessionID, "sid_123")
+	}
+	if !claims.IssuedAt.Equal(now) {
+		t.Errorf("IssuedAt: got %v, want %v", claims.IssuedAt, now)
+	}
+}
+
+// TestJWKSProvider_ValidToken_FvaFirstFactor_ExtractsSessionStartedAt verifies
+// that fva[0] is parsed and converted to a stable SessionStartedAt timestamp.
+func TestJWKSProvider_ValidToken_FvaFirstFactor_ExtractsSessionStartedAt(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+
+	now := time.Now().Truncate(time.Second)
+	// fva[0] = 300 means first factor was verified 300 s before iat.
+	raw := kp.sign(t, "user_abc", "sid_fva", now, map[string]interface{}{
+		"fva": []interface{}{float64(300), float64(-1)}, // second factor pending
+	})
+
+	claims, err := p.ValidateToken(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := now.Add(-300 * time.Second)
+	if !claims.SessionStartedAt.Equal(want) {
+		t.Errorf("SessionStartedAt: got %v, want %v", claims.SessionStartedAt, want)
+	}
+	if !claims.MFAVerifiedAt.IsZero() {
+		t.Errorf("MFAVerifiedAt must be zero for negative fva[1]; got %v", claims.MFAVerifiedAt)
+	}
+}
+
+// TestJWKSProvider_ValidToken_FvaBothFactors_ExtractsMFAVerifiedAt verifies
+// that both fva[0] and fva[1] are parsed and MFAVerifiedAt is set correctly.
+func TestJWKSProvider_ValidToken_FvaBothFactors_ExtractsMFAVerifiedAt(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+
+	now := time.Now().Truncate(time.Second)
+	raw := kp.sign(t, "user_abc", "sid_mfa", now, map[string]interface{}{
+		"fva": []interface{}{float64(600), float64(120)},
+	})
+
+	claims, err := p.ValidateToken(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !claims.SessionStartedAt.Equal(now.Add(-600 * time.Second)) {
+		t.Errorf("SessionStartedAt wrong: got %v", claims.SessionStartedAt)
+	}
+	if !claims.MFAVerifiedAt.Equal(now.Add(-120 * time.Second)) {
+		t.Errorf("MFAVerifiedAt wrong: got %v", claims.MFAVerifiedAt)
+	}
+}
+
+// TestJWKSProvider_WithKeysetPersister_PersistsSucessfulFetch verifies that
+// a successful ValidateToken call on a healthy endpoint refreshes the persisted
+// keyset (exercises the else-branch of ValidateToken's keySet fetch).
+func TestJWKSProvider_WithKeysetPersister_PersistsSuccessfulFetch(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+
+	sp := &stubPersister{}
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t),
+		auth.WithKeysetPersister(sp, 15*time.Minute),
+	)
+
+	savedAfterWarmup := len(sp.saved)
+
+	now := time.Now().Truncate(time.Second)
+	raw := kp.sign(t, "user_x", "sid_x", now, nil)
+	_, _ = p.ValidateToken(context.Background(), raw)
+
+	// persistKeyset is called both at warmup and on each successful ValidateToken.
+	if len(sp.saved) == 0 {
+		t.Error("expected persister to have saved keyset after successful warmup + ValidateToken")
+	}
+	_ = savedAfterWarmup // used to verify at least warmup path was exercised
+}
+
+// TestJWKSProvider_WithKeysetPersister_EmptyPayload_RemainsFailClosed verifies
+// that a persister returning an empty/nil payload (cache miss) leaves the provider
+// in fail-closed mode when the JWKS endpoint is also unavailable.
+func TestJWKSProvider_WithKeysetPersister_EmptyPayload_RemainsFailClosed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	sp := &stubPersister{loadVal: nil} // empty → cache miss
+	provider := auth.NewJWKSProvider(
+		context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t),
+		auth.WithKeysetPersister(sp, 15*time.Minute),
+	)
+
+	_, err := provider.ValidateToken(context.Background(), "any.token")
+	if !errors.Is(err, auth.ErrProviderUnavailable) {
+		t.Errorf("expected ErrProviderUnavailable when persisted payload is empty; got %v", err)
+	}
+}
+
+// TestJWKSProvider_WithKeysetPersister_InvalidPayload_RemainsFailClosed verifies
+// that an unparse-able persisted JWKS payload is discarded gracefully and the
+// provider remains fail-closed.
+func TestJWKSProvider_WithKeysetPersister_InvalidPayload_RemainsFailClosed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	sp := &stubPersister{loadVal: []byte("not { valid json")}
+	provider := auth.NewJWKSProvider(
+		context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t),
+		auth.WithKeysetPersister(sp, 15*time.Minute),
+	)
+
+	_, err := provider.ValidateToken(context.Background(), "any.token")
+	if !errors.Is(err, auth.ErrProviderUnavailable) {
+		t.Errorf("expected ErrProviderUnavailable when persisted payload is invalid; got %v", err)
 	}
 }

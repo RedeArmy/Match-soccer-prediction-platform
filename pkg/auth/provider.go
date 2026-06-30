@@ -57,6 +57,12 @@ type Claims struct {
 	// PolicyProvider to check the local revocation blocklist on logout.
 	// Empty when the JWT does not carry a "sid" claim (e.g. test tokens).
 	SessionID string
+	// MFAVerifiedAt is when the user completed the second authentication factor.
+	// Derived from Clerk's fva[1]: MFAVerifiedAt = iat − fva[1].
+	// Zero when fva is absent, fva has fewer than 2 elements, or fva[1] is
+	// negative (second factor not yet completed, e.g. during MFA step-up flow).
+	// PolicyProvider enforces this when auth.require_mfa is true.
+	MFAVerifiedAt time.Time
 }
 
 // IdentityProvider validates a raw Bearer token and returns the verified Claims

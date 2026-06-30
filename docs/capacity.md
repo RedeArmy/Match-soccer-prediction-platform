@@ -76,6 +76,32 @@ Key baselines (approximate, single Fly.io machine):
 
 ---
 
+## Authenticated Request Overhead (OAuth Path)
+
+Every authenticated request runs through `PolicyProvider.ValidateToken`, which
+executes two operations in sequence:
+
+1. **`GetInt` (SystemParamService)** — reads `auth.session_max_age_seconds`.
+   Hot path is ~200 ns (in-process cache, 30 s TTL). A DB round-trip only
+   occurs on the first call after cache expiry (~3 ms).
+
+2. **`UpsertSessionStart`** — records the session origin for OAuth flows that
+   lack the `fva` JWT claim. Hits Postgres exactly **once per session** (first
+   request only); all subsequent requests are absorbed by an in-process
+   `sync.Map` cache keyed by Clerk `sid`. Measured at ~3 ms per DB upsert.
+
+**Steady-state overhead per authenticated request (OAuth):** ~200 ns (GetInt
+cache hit) + 0 (startCache hit) = negligible.
+
+**First-request overhead per new OAuth session:** ~200 ns + ~3 ms ≈ 3 ms total
+before reaching the handler. This occurs at most once per session lifetime
+(default 7 days) and is not on the critical scaling path.
+
+**fva-present flows (password / passkey / email-code):** skip step 2 entirely.
+Overhead is ~200 ns only.
+
+---
+
 ## Load Testing
 
 Manual load tests against a running local server:

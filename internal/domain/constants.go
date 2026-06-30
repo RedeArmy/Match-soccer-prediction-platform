@@ -465,6 +465,7 @@ func AllParamKeys() []string {
 		// Auth
 		ParamKeyAuthValidationTimeout,
 		ParamKeyAuthSessionMaxAgeSecs,
+		ParamKeyAuthRequireMFA,
 		// DLQ
 		ParamKeyDLQSampleSize,
 		ParamKeyDLQReplayDefaultLimit,

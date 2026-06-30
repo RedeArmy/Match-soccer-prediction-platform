@@ -1,11 +1,53 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useClerk, useSession } from "@clerk/nextjs";
+
+// JavaScript's setTimeout stores its delay as a 32-bit signed integer.
+// Values above 2^31 − 1 ms (~24.8 days) overflow to a negative number,
+// firing the callback immediately. This helper chunks large delays into
+// MAX_SAFE_TIMEOUT_MS slices so any positive duration works correctly.
+const MAX_SAFE_TIMEOUT_MS = 2 ** 31 - 1;
+
+function clampedTimeout(callback: () => void, ms: number): () => void {
+  if (ms <= MAX_SAFE_TIMEOUT_MS) {
+    const id = setTimeout(callback, ms);
+    return () => clearTimeout(id);
+  }
+  // Delegate the active cancel via an object so the returned function
+  // always cancels whichever timer is currently scheduled.
+  const ref = { cancel: () => {} };
+  const id = setTimeout(() => {
+    ref.cancel = clampedTimeout(callback, ms - MAX_SAFE_TIMEOUT_MS);
+  }, MAX_SAFE_TIMEOUT_MS);
+  ref.cancel = () => clearTimeout(id);
+  return () => ref.cancel();
+}
 
 export function SessionGuard() {
   const { signOut } = useClerk();
   const { session } = useSession();
+
+  // maxAgeMs is fetched from /api/session-config on mount so it always reflects
+  // the backend's live auth.session_max_age_seconds rather than the compile-time
+  // NEXT_PUBLIC_SESSION_MAX_AGE_SECONDS. The env var initialises the state to
+  // avoid a "timer disabled" flash before the fetch resolves.
+  const [maxAgeMs, setMaxAgeMs] = useState<number | null>(() => {
+    const secs = Number(process.env.NEXT_PUBLIC_SESSION_MAX_AGE_SECONDS ?? 0);
+    return secs > 0 ? secs * 1_000 : null;
+  });
+
+  useEffect(() => {
+    void fetch("/api/session-config")
+      .then((r) => r.json())
+      .then((data: { session_max_age_seconds?: number }) => {
+        const secs = data.session_max_age_seconds ?? 0;
+        setMaxAgeMs(secs > 0 ? secs * 1_000 : null);
+      })
+      .catch(() => {
+        // Keep using the compile-time value already in state.
+      });
+  }, []);
 
   // Reactive: handle backend-initiated expiry signalled via HTTP 401.
   // api.ts dispatches "wcq:session-expired" on any 401 response, which triggers
@@ -16,7 +58,10 @@ export function SessionGuard() {
     }
     globalThis.addEventListener("wcq:session-expired", handleSessionExpired);
     return () => {
-      globalThis.removeEventListener("wcq:session-expired", handleSessionExpired);
+      globalThis.removeEventListener(
+        "wcq:session-expired",
+        handleSessionExpired,
+      );
     };
   }, [signOut]);
 
@@ -28,16 +73,7 @@ export function SessionGuard() {
   // SessionStartedAt for password / passkey / email-code flows. For OAuth /
   // social flows the backend derives the origin from session_starts; this timer
   // provides the same enforcement on the browser side.
-  //
-  // NEXT_PUBLIC_SESSION_MAX_AGE_SECONDS is read inside the effect (rather than
-  // as a module constant) to keep it patchable by vi.stubEnv in tests.
-  // It must match auth.session_max_age_seconds in backend system_params.
   useEffect(() => {
-    const maxAgeSecs = Number(
-      process.env.NEXT_PUBLIC_SESSION_MAX_AGE_SECONDS ?? 0,
-    );
-    const maxAgeMs = maxAgeSecs > 0 ? maxAgeSecs * 1_000 : null;
-
     if (!maxAgeMs) {
       if (process.env.NODE_ENV === "development") {
         console.warn(
@@ -59,12 +95,12 @@ export function SessionGuard() {
       return;
     }
 
-    const timer = setTimeout(() => {
+    const cancel = clampedTimeout(() => {
       void signOut({ redirectUrl: "/sign-in" });
     }, remaining);
 
-    return () => clearTimeout(timer);
-  }, [session?.createdAt, signOut]);
+    return cancel;
+  }, [session?.createdAt, signOut, maxAgeMs]);
 
   return null;
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap/zaptest"
@@ -13,17 +14,23 @@ import (
 	"github.com/rede/world-cup-quiniela/internal/middleware"
 )
 
-// stubSessionRevoker captures calls to RevokeSession for assertion.
+// stubSessionRevoker captures calls to RevokeSession/RevokeAllUserSessions for assertion.
 type stubSessionRevoker struct {
 	calledSID    string
 	calledUserID string
 	err          error
+	revokeAllN   int64
+	revokeAllErr error
 }
 
 func (s *stubSessionRevoker) RevokeSession(_ context.Context, sid, userID string) error {
 	s.calledSID = sid
 	s.calledUserID = userID
 	return s.err
+}
+
+func (s *stubSessionRevoker) RevokeAllUserSessions(_ context.Context, _ string) (int64, error) {
+	return s.revokeAllN, s.revokeAllErr
 }
 
 func newAuthHandler(t *testing.T, revoker handler.SessionRevoker) *handler.AuthHandler {
@@ -82,5 +89,60 @@ func TestAuthHandler_Logout_RevokerError_Returns500(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("expected 500 on revoker error, got %d", w.Code)
+	}
+}
+
+// ── RevokeAll (DELETE /api/v1/auth/sessions) ────────────────────────────────
+
+func doRevokeAll(h *handler.AuthHandler, userID, sid string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/auth/sessions", nil)
+	ctx := middleware.ContextWithUserID(req.Context(), userID)
+	if sid != "" {
+		ctx = middleware.ContextWithSessionID(ctx, sid)
+	}
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.RevokeAll(w, req)
+	return w
+}
+
+func TestAuthHandler_RevokeAll_WithSID_Returns200WithCount(t *testing.T) {
+	revoker := &stubSessionRevoker{revokeAllN: 3}
+	h := newAuthHandler(t, revoker)
+
+	w := doRevokeAll(h, "user_abc", "sess_current")
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	// revokeAllN=3 + 1 for the current session = 4
+	body := strings.TrimSpace(w.Body.String())
+	if body != `{"revoked":4}` {
+		t.Errorf("expected body {\"revoked\":4}, got %s", body)
+	}
+}
+
+func TestAuthHandler_RevokeAll_NoUserID_Returns401(t *testing.T) {
+	revoker := &stubSessionRevoker{}
+	h := newAuthHandler(t, revoker)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/auth/sessions", nil)
+	// No user ID in context.
+	w := httptest.NewRecorder()
+	h.RevokeAll(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 when no user ID in context, got %d", w.Code)
+	}
+}
+
+func TestAuthHandler_RevokeAll_BulkError_Returns500(t *testing.T) {
+	revoker := &stubSessionRevoker{revokeAllErr: errors.New("db error")}
+	h := newAuthHandler(t, revoker)
+
+	w := doRevokeAll(h, "user_abc", "sess_current")
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500 on bulk revoke error, got %d", w.Code)
 	}
 }
