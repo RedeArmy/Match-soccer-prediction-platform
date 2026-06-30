@@ -153,6 +153,9 @@ func (s *Server) registerAuthRoutes(r chi.Router, d apiV1Deps) {
 	r.Route("/auth", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
 		r.Post("/logout", d.h.auth.Logout)
+		// Force-logout all devices for the authenticated account. Bulk-revokes
+		// every known session from session_starts plus the current session.
+		r.Delete("/sessions", d.h.auth.RevokeAll)
 	})
 }
 

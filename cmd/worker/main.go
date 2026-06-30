@@ -723,6 +723,24 @@ func makeRevokedSessionsPruneJob(params service.SystemParamService, sessionRepo 
 	}
 }
 
+// makeSessionStartsPruneJob returns the scheduler job that deletes session_starts
+// records older than max_age + 1 day, matching the revoked_sessions cutoff.
+func makeSessionStartsPruneJob(params service.SystemParamService, repo repository.SessionStartRepository, log *zap.Logger) func(context.Context) error {
+	return func(ctx context.Context) error {
+		maxAgeSecs := params.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
+		cutoff := time.Now().Add(-time.Duration(maxAgeSecs)*time.Second - 24*time.Hour)
+		n, err := repo.PruneSessionStarts(ctx, cutoff)
+		if err != nil {
+			log.Warn("session.starts_prune: failed", zap.Error(err))
+			return err
+		}
+		if n > 0 {
+			log.Info("session.starts_prune: deleted stale session-start records", zap.Int64("count", n))
+		}
+		return nil
+	}
+}
+
 // makePushPruneJob returns the scheduler job that deletes inactive push
 // subscriptions older than the configured retention window.
 func makePushPruneJob(params service.SystemParamService, pushRepo repository.PushSubscriptionRepository, log *zap.Logger) func(context.Context) error {
@@ -919,10 +937,17 @@ func buildNotifScheduler(
 
 	// Revoked session cleanup — runs daily to prune entries older than
 	// max_age + 1 day.  Entries beyond max_age are unreachable because the
-	// iat check in PolicyProvider would already have rejected the token.
+	// max-age check in PolicyProvider would already have rejected the token.
 	sessionRepo := repository.NewPostgresSessionRepository(db)
 	s.RegisterInterval("session.revoked_prune", 24*time.Hour,
 		makeRevokedSessionsPruneJob(params, sessionRepo, log))
+
+	// Session-start record cleanup — prune session_starts entries alongside
+	// revoked_sessions using the same cutoff.  Entries live only as long as
+	// the session could still produce a valid token.
+	sessionStartRepo := repository.NewPostgresSessionStartRepository(db)
+	s.RegisterInterval("session.starts_prune", 24*time.Hour,
+		makeSessionStartsPruneJob(params, sessionStartRepo, log))
 
 	// KYC document lifecycle — purge document metadata and physical files for
 	// accounts deleted beyond the configured retention window.  Runs weekly at

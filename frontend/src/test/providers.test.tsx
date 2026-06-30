@@ -11,6 +11,7 @@ vi.mock("@clerk/nextjs", () => ({
   useClerk: vi.fn().mockReturnValue({
     signOut: vi.fn(),
   }),
+  useSession: vi.fn().mockReturnValue({ session: null }),
 }));
 
 describe("Providers", () => {

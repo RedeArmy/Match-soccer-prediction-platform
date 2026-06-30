@@ -589,6 +589,7 @@ const translations: TranslationNode = {
     liveLineups:       { es: 'Alineaciones',                                       en: 'Lineups'                                              },
     liveNoData:        { es: 'Información del partido aún no disponible.',         en: 'Match information not yet available.'                 },
     liveSubs:          { es: 'Suplentes',                                          en: 'Substitutes'                                          },
+    livePenalties:     { es: 'PENALES',                                            en: 'PENALTIES'                                            },
   },
   predictions: {
     title:        { es: 'Panel de predicciones',     en: 'Prediction panel'          },

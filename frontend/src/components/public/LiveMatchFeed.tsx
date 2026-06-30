@@ -396,6 +396,7 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
 
   const live = isLive(fixture.status);
   const done = isDone(fixture.status);
+  const isPenLive = fixture.status === "PEN_LIVE";
   const kickoff = new Date(fixture.kickoffAt);
   const timeStr = kickoff.toLocaleTimeString("es-GT", {
     hour: "2-digit",
@@ -462,6 +463,13 @@ function MatchCard({ fixture, expanded, onToggle }: MatchCardProps) {
               </span>
             )}
           </span>
+
+          {/* Penalties badge — shown alongside the live chip when in shootout */}
+          {isPenLive && (
+            <span className="shrink-0 rounded bg-orange-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-orange-300">
+              {t("tournaments.livePenalties")}
+            </span>
+          )}
 
           {/* Teams + score — fixed-width middle column keeps the vs/score
               lined up across rows regardless of team name length or status */}
