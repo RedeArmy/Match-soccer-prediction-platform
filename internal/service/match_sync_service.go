@@ -261,17 +261,12 @@ func (s *matchSyncService) applyLiveScore(ctx context.Context, m *domain.Match, 
 func (s *matchSyncService) applyResult(ctx context.Context, matchID int, fix *footballprovider.Fixture) (bool, bool, error) {
 	winMethod := winMethodFromStatus(fix.Status)
 	penaltyWinner := derivePenaltyWinner(fix)
-	if _, err := s.matchSvc.UpdateResult(ctx, matchID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner); err != nil {
+	if _, err := s.matchSvc.UpdateResult(ctx, matchID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
 		if errors.Is(err, apperrors.ErrValidation) {
 			s.log.Info("match sync: UpdateResult already done (idempotent)", zap.Int("match_id", matchID))
 			return false, false, nil
 		}
 		return false, false, fmt.Errorf("UpdateResult: %w", err)
-	}
-	// Clear live period and persist final penalty score without touching the result.
-	if err := s.matchRepo.UpdateLiveProgress(ctx, matchID, nil, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
-		s.log.Warn("match sync: UpdateLiveProgress after result failed",
-			zap.Int("match_id", matchID), zap.Error(err))
 	}
 	s.log.Info("match sync: result recorded",
 		zap.Int("match_id", matchID),
@@ -526,15 +521,11 @@ func (s *matchSyncService) applyFinishedTransition(ctx context.Context, m *domai
 		}
 		winMethod := winMethodFromStatus(fix.Status)
 		penaltyWinner := derivePenaltyWinner(fix)
-		if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner); err != nil {
+		if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
 			if !errors.Is(err, apperrors.ErrValidation) {
 				s.log.Warn("match daily sync: UpdateResult failed",
 					zap.Int("match_id", m.ID), zap.Error(err))
 			}
-		}
-		if err := s.matchRepo.UpdateLiveProgress(ctx, m.ID, nil, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
-			s.log.Warn("match daily sync: UpdateLiveProgress after result failed",
-				zap.Int("match_id", m.ID), zap.Error(err))
 		}
 	case domain.MatchStatusFinished, domain.MatchStatusCancelled:
 		// already in a terminal state; no transition needed
