@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useClerk, useSession } from "@clerk/nextjs";
+import { onSessionExpired } from "@/lib/session-bus";
 
 // JavaScript's setTimeout stores its delay as a 32-bit signed integer.
 // Values above 2^31 − 1 ms (~24.8 days) overflow to a negative number,
@@ -50,19 +51,12 @@ export function SessionGuard() {
   }, []);
 
   // Reactive: handle backend-initiated expiry signalled via HTTP 401.
-  // api.ts dispatches "wcq:session-expired" on any 401 response, which triggers
-  // immediate sign-out even when the max-age timer has not yet fired.
+  // api.ts calls dispatchSessionExpired() (session-bus) on any 401 response,
+  // which triggers immediate sign-out even when the max-age timer has not fired.
   useEffect(() => {
-    function handleSessionExpired() {
+    return onSessionExpired(() => {
       void signOut({ redirectUrl: "/sign-in" });
-    }
-    globalThis.addEventListener("wcq:session-expired", handleSessionExpired);
-    return () => {
-      globalThis.removeEventListener(
-        "wcq:session-expired",
-        handleSessionExpired,
-      );
-    };
+    });
   }, [signOut]);
 
   // Proactive: schedule sign-out when session.createdAt + maxAge is reached.
@@ -73,6 +67,12 @@ export function SessionGuard() {
   // SessionStartedAt for password / passkey / email-code flows. For OAuth /
   // social flows the backend derives the origin from session_starts; this timer
   // provides the same enforcement on the browser side.
+  //
+  // setTimeout is throttled by browsers (up to 1 h effective delay) when the
+  // tab is in the background, and is suspended entirely when the OS sleeps the
+  // process. visibilitychange and focus listeners re-arm the timer from the real
+  // current time whenever the tab returns to the foreground, ensuring that a
+  // session that expired during a laptop sleep is caught immediately on wake.
   useEffect(() => {
     if (!maxAgeMs) {
       if (process.env.NODE_ENV === "development") {
@@ -87,19 +87,51 @@ export function SessionGuard() {
 
     if (!session?.createdAt) return;
 
-    const expiresAt = session.createdAt.getTime() + maxAgeMs;
-    const remaining = expiresAt - Date.now();
-
-    if (remaining <= 0) {
-      void signOut({ redirectUrl: "/sign-in" });
+    // Guard against an invalid Date object. Clerk types createdAt as Date|null;
+    // null is handled above, but a Date whose getTime() returns NaN would make
+    // expiresAt NaN and cause the timer to fire immediately with a wrong delay.
+    if (Number.isNaN(session.createdAt.getTime())) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn(
+          "[SessionGuard] session.createdAt is an invalid Date; proactive timer disabled. " +
+            "This is unexpected — check the Clerk session object.",
+        );
+      }
       return;
     }
 
-    const cancel = clampedTimeout(() => {
-      void signOut({ redirectUrl: "/sign-in" });
-    }, remaining);
+    const expiresAt = session.createdAt.getTime() + maxAgeMs;
 
-    return cancel;
+    // arm() schedules sign-out for the remaining window, or fires immediately
+    // if the session has already expired. Returns a cancel function.
+    const arm = (): (() => void) => {
+      const remaining = expiresAt - Date.now();
+      if (remaining <= 0) {
+        void signOut({ redirectUrl: "/sign-in" });
+        return () => {};
+      }
+      return clampedTimeout(() => void signOut({ redirectUrl: "/sign-in" }), remaining);
+    };
+
+    let cancel = arm();
+
+    // Re-arm whenever the tab becomes visible or the window regains focus.
+    // Skipping the "hidden" transition avoids cancelling a running timer
+    // unnecessarily when the user switches away from the tab.
+    const recheck = (): void => {
+      if (document.visibilityState === "hidden") return;
+      cancel();
+      cancel = arm();
+    };
+
+    document.addEventListener("visibilitychange", recheck);
+    window.addEventListener("focus", recheck);
+
+    return () => {
+      cancel();
+      document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener("focus", recheck);
+    };
   }, [session?.createdAt, signOut, maxAgeMs]);
 
   return null;

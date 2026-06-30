@@ -387,6 +387,79 @@ func TestJWKSProvider_ValidToken_FvaBothFactors_ExtractsMFAVerifiedAt(t *testing
 	}
 }
 
+// TestJWKSProvider_ValidToken_FvaZeroFirstFactor_SessionStartedAtZero verifies
+// that fva[0] = 0 leaves SessionStartedAt unset (treated as absent). A zero value
+// is ambiguous: it could mean "first factor verified at exactly iat" (brand-new
+// session) or a Clerk sentinel for missing data. Treating it as absent forces the
+// safe fallback via the session_starts DB path, which produces an equivalent
+// result for a genuinely new session while preventing a potential max-age bypass
+// if 0 were ever sent for an old session with a recently refreshed JWT.
+func TestJWKSProvider_ValidToken_FvaZeroFirstFactor_SessionStartedAtZero(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+
+	now := time.Now().Truncate(time.Second)
+	raw := kp.sign(t, "user_abc", "sid_fva_zero", now, map[string]interface{}{
+		"fva": []interface{}{float64(0), float64(-1)},
+	})
+
+	claims, err := p.ValidateToken(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("token itself is valid; parse should not fail: %v", err)
+	}
+	if !claims.SessionStartedAt.IsZero() {
+		t.Errorf("fva[0]=0 must leave SessionStartedAt zero (treated as absent); got %v", claims.SessionStartedAt)
+	}
+}
+
+// TestJWKSProvider_ValidToken_FvaZeroMFA_MFAVerifiedAtSet verifies that fva[1] = 0
+// correctly sets MFAVerifiedAt = issuedAt. Unlike fva[0], Clerk uses -1 as the
+// documented sentinel for "MFA not yet completed", so 0 unambiguously means
+// "second factor verified at exactly iat" (just completed).
+func TestJWKSProvider_ValidToken_FvaZeroMFA_MFAVerifiedAtSet(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+
+	now := time.Now().Truncate(time.Second)
+	raw := kp.sign(t, "user_abc", "sid_mfa_zero", now, map[string]interface{}{
+		"fva": []interface{}{float64(300), float64(0)}, // MFA completed at exactly iat
+	})
+
+	claims, err := p.ValidateToken(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("token itself is valid; parse should not fail: %v", err)
+	}
+	if !claims.MFAVerifiedAt.Equal(now) {
+		t.Errorf("fva[1]=0 must set MFAVerifiedAt to issuedAt; got %v, want %v", claims.MFAVerifiedAt, now)
+	}
+}
+
+// TestJWKSProvider_ValidToken_FvaOverflow_SessionStartedAtZero verifies that an
+// fva[0] value large enough to overflow int64 (e.g. 1e18) is rejected and
+// SessionStartedAt remains zero rather than being set to a nonsensical future time.
+// Without the upper-bound check, time.Duration(1e18)*time.Second overflows int64
+// and produces a negative duration, making SessionStartedAt appear in the future.
+func TestJWKSProvider_ValidToken_FvaOverflow_SessionStartedAtZero(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+
+	now := time.Now().Truncate(time.Second)
+	raw := kp.sign(t, "user_abc", "sid_overflow", now, map[string]interface{}{
+		"fva": []interface{}{float64(1e18), float64(-1)},
+	})
+
+	claims, err := p.ValidateToken(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("token itself is valid; parse should not fail: %v", err)
+	}
+	if !claims.SessionStartedAt.IsZero() {
+		t.Errorf("SessionStartedAt should be zero for overflow fva[0]; got %v", claims.SessionStartedAt)
+	}
+}
+
 // TestJWKSProvider_WithKeysetPersister_PersistsSucessfulFetch verifies that
 // a successful ValidateToken call on a healthy endpoint refreshes the persisted
 // keyset (exercises the else-branch of ValidateToken's keySet fetch).

@@ -105,16 +105,25 @@ func NewPostgresSessionStartRepository(db *pgxpool.Pool) *PostgresSessionStartRe
 // making this a single round-trip regardless of whether the row is new.
 // user_id is stored on insert only; subsequent upserts (ON CONFLICT) leave
 // the stored user_id unchanged so the original attribution is preserved.
+//
+// Timing note (accepted risk): the INSERT path for a new sid takes marginally
+// more time than the ON CONFLICT path at the Postgres level. This asymmetry is
+// swamped by network RTT and cannot be statistically exploited: PolicyProvider's
+// in-process startCache ensures this function is called at most once per OAuth
+// session, giving an attacker no repeated-measurement opportunity to average
+// out the noise.
 func (r *PostgresSessionStartRepository) UpsertSessionStart(ctx context.Context, sid, userID string) (time.Time, error) {
 	start := time.Now()
+	clientIP := nullStr(ClientIPFromContext(ctx))
+	userAgent := nullStr(UserAgentFromContext(ctx))
 	var t time.Time
 	err := r.db.QueryRow(ctx,
-		`INSERT INTO session_starts (sid, user_id, started_at)
-		 VALUES ($1, $2, NOW())
+		`INSERT INTO session_starts (sid, user_id, started_at, client_ip, user_agent)
+		 VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (sid) DO UPDATE
 		   SET started_at = session_starts.started_at
 		 RETURNING started_at`,
-		sid, userID,
+		sid, userID, start, clientIP, userAgent,
 	).Scan(&t)
 	if err != nil {
 		return time.Time{}, apperrors.Internal(err)
@@ -137,3 +146,12 @@ func (r *PostgresSessionStartRepository) PruneSessionStarts(ctx context.Context,
 }
 
 var _ SessionStartRepository = (*PostgresSessionStartRepository)(nil)
+
+// nullStr converts a non-empty string to a *string for nullable SQL columns.
+// An empty string (absent header or unauthenticated path) becomes nil → NULL.
+func nullStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

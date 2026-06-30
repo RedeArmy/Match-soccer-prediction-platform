@@ -82,6 +82,8 @@ var (
 	ErrBadRequest          = &AppError{Code: CodeBadRequest}
 	ErrInternal            = &AppError{Code: CodeInternal}
 	ErrRateLimited         = &AppError{Code: CodeRateLimited}
+	ErrSessionExpired      = &AppError{Code: CodeSessionExpired}
+	ErrSessionRevoked      = &AppError{Code: CodeSessionRevoked}
 )
 
 // Error implements the error interface. It returns the user-facing message.
@@ -234,5 +236,27 @@ func UpstreamError(message string, cause error) *AppError {
 		Message:    message,
 		HTTPStatus: http.StatusBadGateway,
 		Cause:      cause,
+	}
+}
+
+// SessionExpired returns an AppError indicating that the session has exceeded
+// the system's maximum session lifetime. Clients should treat this as a prompt
+// to re-authenticate. The message should state the violated policy limit.
+func SessionExpired(message string) *AppError {
+	return &AppError{
+		Code:       CodeSessionExpired,
+		Message:    message,
+		HTTPStatus: http.StatusUnauthorized,
+	}
+}
+
+// SessionRevoked returns an AppError indicating that the session was explicitly
+// revoked (e.g. via logout on another device or an admin force-logout). Clients
+// should treat this as a prompt to re-authenticate.
+func SessionRevoked(message string) *AppError {
+	return &AppError{
+		Code:       CodeSessionRevoked,
+		Message:    message,
+		HTTPStatus: http.StatusUnauthorized,
 	}
 }
