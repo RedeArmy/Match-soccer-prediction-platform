@@ -112,6 +112,7 @@ type stubSyncMatchSvc struct {
 	corrected          int
 	startErr           error
 	finishErr          error
+	correctErr         error
 	lastPenaltyWinner  *string // last value passed to UpdateResult
 	lastCorrectPWinner *string // last value passed to CorrectResult
 }
@@ -139,7 +140,7 @@ func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, score service.
 func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
 	s.corrected++
 	s.lastCorrectPWinner = score.PenaltyWinner
-	return &domain.Match{Status: domain.MatchStatusFinished}, nil
+	return &domain.Match{Status: domain.MatchStatusFinished}, s.correctErr
 }
 func (s *stubSyncMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
 	return &domain.Match{Status: domain.MatchStatusCancelled}, nil
@@ -1773,5 +1774,80 @@ func TestMatchSync_PollAndApply_AfterPenalties_SetsPenaltyWinner(t *testing.T) {
 	}
 	if matchSvc.lastPenaltyWinner == nil || *matchSvc.lastPenaltyWinner != "home" {
 		t.Errorf("penalty_winner: got %v; want \"home\" (home won 4-2 on pens)", matchSvc.lastPenaltyWinner)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_Phase3_MissingPenaltyScores_Skips(t *testing.T) {
+	// Provider reports StatusAfterPEN but penalty scores are nil — derivePenaltyWinner
+	// returns nil and the match must be skipped without calling CorrectResult.
+	id := int64(902)
+	broken := &domain.Match{
+		ID: 92, Status: domain.MatchStatusFinished,
+		HomeTeam: "England", AwayTeam: "France",
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-72 * time.Hour),
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{
+		finishedPenaltyMissingWinner: []*domain.Match{broken},
+	}
+	// Fixture has StatusAfterPEN but no penalty score data.
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id,
+		Status:     footballprovider.StatusAfterPEN,
+		HomeScore:  1,
+		AwayScore:  1,
+		// PenaltyHomeScore and PenaltyAwayScore intentionally nil
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("DailyFixtureSync must not fail: %v", err)
+	}
+	if matchSvc.corrected != 0 {
+		t.Errorf("CorrectResult calls: want 0 (skipped — no penalty scores), got %d", matchSvc.corrected)
+	}
+	if result.Corrected != 0 {
+		t.Errorf("result.Corrected: want 0, got %d", result.Corrected)
+	}
+}
+
+func TestMatchSync_DailyFixtureSync_Phase3_CorrectResultError_Skips(t *testing.T) {
+	// Provider returns valid penalty data but CorrectResult fails — the match
+	// must be skipped and result.Corrected must not increment.
+	id := int64(903)
+	phome, paway := 4, 2
+	broken := &domain.Match{
+		ID: 93, Status: domain.MatchStatusFinished,
+		HomeTeam: "Spain", AwayTeam: "Portugal",
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		KickoffAt:        time.Now().Add(-96 * time.Hour),
+	}
+	matchSvc := &stubSyncMatchSvc{correctErr: errors.New("db error")}
+	repo := &stubSyncMatchRepo{
+		finishedPenaltyMissingWinner: []*domain.Match{broken},
+	}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID:       id,
+		Status:           footballprovider.StatusAfterPEN,
+		HomeScore:        1,
+		AwayScore:        1,
+		PenaltyHomeScore: &phome,
+		PenaltyAwayScore: &paway,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	result, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("DailyFixtureSync must not propagate CorrectResult error: %v", err)
+	}
+	if matchSvc.corrected != 1 {
+		t.Errorf("CorrectResult calls: want 1 (attempted), got %d", matchSvc.corrected)
+	}
+	if result.Corrected != 0 {
+		t.Errorf("result.Corrected: want 0 (failed repair not counted), got %d", result.Corrected)
 	}
 }

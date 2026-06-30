@@ -407,6 +407,52 @@ func TestMatchRepository_ListSyncCandidates_ExcludesFinished(t *testing.T) {
 	}
 }
 
+func TestMatchRepository_ListFinishedPenaltyMatchesMissingWinner_ReturnsEligibleOnly(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+	ctx := context.Background()
+
+	makeFinished := func(home, away int, wm *domain.WinMethod, pw *string) *domain.Match {
+		m := seedMatchWithPhase(t, domain.PhaseRoundOf16)
+		if err := repo.LinkExternal(ctx, m.ID, "api-football", int64(m.ID+1000)); err != nil {
+			t.Fatalf("LinkExternal: %v", err)
+		}
+		m.Status = domain.MatchStatusFinished
+		m.HomeScore = &home
+		m.AwayScore = &away
+		m.WinMethod = wm
+		m.PenaltyWinner = pw
+		if err := repo.Update(ctx, m); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		return m
+	}
+
+	wm := domain.WinMethodPenalties
+	// Should appear: finished + penalties + no winner + has external ID.
+	target := makeFinished(1, 1, &wm, nil)
+	// Should NOT appear: has penalty_winner set.
+	pw := "home"
+	makeFinished(2, 2, &wm, &pw)
+	// Should NOT appear: different win method.
+	wmNormal := domain.WinMethod("normal_time")
+	makeFinished(3, 0, &wmNormal, nil)
+
+	got, err := repo.ListFinishedPenaltyMatchesMissingWinner(ctx)
+	if err != nil {
+		t.Fatalf("ListFinishedPenaltyMatchesMissingWinner: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 match, got %d", len(got))
+	}
+	if got[0].ID != target.ID {
+		t.Errorf("returned match ID: want %d, got %d", target.ID, got[0].ID)
+	}
+	if got[0].PenaltyWinner != nil {
+		t.Errorf("PenaltyWinner: want nil, got %v", got[0].PenaltyWinner)
+	}
+}
+
 func TestMatchRepository_UpdateSyncState_SetsLastSyncedAt(t *testing.T) {
 	cleanTables(t)
 	m := seedMatch(t)
