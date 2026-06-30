@@ -223,10 +223,13 @@ func runSlotAutoConfirm(ctx context.Context, mf events.MatchFinished, ac SlotAut
 }
 
 // knockoutWinnerLoser derives the winning and losing team names from the match
-// payload. For a draw in extra time the home team is treated as the "winner"
-// only when WinMethod is "penalties" or "extra_time" (the actual winner is
-// conveyed by the score in those cases; when they are equal, home wins on
-// penalty convention — this never occurs in regular 90-minute results).
+// payload.
+//
+// When scores differ, the team with more goals wins.
+// When scores are level (extra time or penalties), PenaltyWinner determines the
+// winner: "home" → HomeTeam wins, "away" → AwayTeam wins.
+// If PenaltyWinner is empty for a level-score match, ("", "") is returned so
+// no slot is incorrectly confirmed.
 func knockoutWinnerLoser(mf events.MatchFinished) (winner, loser string) {
 	switch {
 	case mf.HomeScore > mf.AwayScore:
@@ -234,11 +237,16 @@ func knockoutWinnerLoser(mf events.MatchFinished) (winner, loser string) {
 	case mf.AwayScore > mf.HomeScore:
 		return mf.AwayTeam, mf.HomeTeam
 	default:
-		// Score level after regular time; WinMethod carries who actually advanced.
-		// The "winner" here is unknown from just the score — we cannot determine it
-		// from the event alone when HomeScore == AwayScore and WinMethod is set.
-		// Return empty strings so no slot is incorrectly confirmed.
-		return "", ""
+		// Score level: rely on PenaltyWinner set by the sync worker from the
+		// shootout tally (home_pen > away_pen → "home", vice versa).
+		switch mf.PenaltyWinner {
+		case "home":
+			return mf.HomeTeam, mf.AwayTeam
+		case "away":
+			return mf.AwayTeam, mf.HomeTeam
+		default:
+			return "", ""
+		}
 	}
 }
 

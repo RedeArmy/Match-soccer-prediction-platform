@@ -681,6 +681,30 @@ func TestKnockoutWinnerLoser_Draw_ReturnsBothEmpty(t *testing.T) {
 	}
 }
 
+func TestKnockoutWinnerLoser_PenaltiesHomeWins_ReturnsHome(t *testing.T) {
+	mf := events.MatchFinished{
+		MatchID: 1, HomeTeam: teamMexico, AwayTeam: "Canada",
+		HomeScore: 1, AwayScore: 1,
+		WinMethod: "penalties", PenaltyWinner: "home",
+	}
+	winner, loser := knockoutWinnerLoser(mf)
+	if winner != teamMexico || loser != "Canada" {
+		t.Errorf("got winner=%q loser=%q; want %s/Canada for home penalty win", winner, loser, teamMexico)
+	}
+}
+
+func TestKnockoutWinnerLoser_PenaltiesAwayWins_ReturnsAway(t *testing.T) {
+	mf := events.MatchFinished{
+		MatchID: 1, HomeTeam: teamMexico, AwayTeam: "Canada",
+		HomeScore: 1, AwayScore: 1,
+		WinMethod: "penalties", PenaltyWinner: "away",
+	}
+	winner, loser := knockoutWinnerLoser(mf)
+	if winner != "Canada" || loser != teamMexico {
+		t.Errorf("got winner=%q loser=%q; want Canada/%s for away penalty win", winner, loser, teamMexico)
+	}
+}
+
 // ── runSlotAutoConfirm ────────────────────────────────────────────────────────
 
 type stubSlotAutoConfirmer struct {
