@@ -259,9 +259,15 @@ func (s *matchSyncService) applyLiveScore(ctx context.Context, m *domain.Match, 
 }
 
 func (s *matchSyncService) applyResult(ctx context.Context, matchID int, fix *footballprovider.Fixture) (bool, bool, error) {
-	winMethod := winMethodFromStatus(fix.Status)
-	penaltyWinner := derivePenaltyWinner(fix)
-	if _, err := s.matchSvc.UpdateResult(ctx, matchID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
+	score := ScoreUpdate{
+		HomeScore:        fix.HomeScore,
+		AwayScore:        fix.AwayScore,
+		WinMethod:        winMethodFromStatus(fix.Status),
+		PenaltyWinner:    derivePenaltyWinner(fix),
+		PenaltyHomeScore: fix.PenaltyHomeScore,
+		PenaltyAwayScore: fix.PenaltyAwayScore,
+	}
+	if _, err := s.matchSvc.UpdateResult(ctx, matchID, score); err != nil {
 		if errors.Is(err, apperrors.ErrValidation) {
 			s.log.Info("match sync: UpdateResult already done (idempotent)", zap.Int("match_id", matchID))
 			return false, false, nil
@@ -527,9 +533,15 @@ func (s *matchSyncService) applyResultFromProvider(ctx context.Context, m *domai
 			return
 		}
 	}
-	winMethod := winMethodFromStatus(fix.Status)
-	penaltyWinner := derivePenaltyWinner(fix)
-	if _, err := s.matchSvc.UpdateResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
+	score := ScoreUpdate{
+		HomeScore:        fix.HomeScore,
+		AwayScore:        fix.AwayScore,
+		WinMethod:        winMethodFromStatus(fix.Status),
+		PenaltyWinner:    derivePenaltyWinner(fix),
+		PenaltyHomeScore: fix.PenaltyHomeScore,
+		PenaltyAwayScore: fix.PenaltyAwayScore,
+	}
+	if _, err := s.matchSvc.UpdateResult(ctx, m.ID, score); err != nil {
 		if !errors.Is(err, apperrors.ErrValidation) {
 			s.log.Warn("match daily sync: UpdateResult failed",
 				zap.Int("match_id", m.ID), zap.Error(err))
@@ -551,8 +563,15 @@ func (s *matchSyncService) repairPenaltyDataIfMissing(ctx context.Context, m *do
 			zap.Int("match_id", m.ID))
 		return
 	}
-	winMethod := winMethodFromStatus(fix.Status)
-	if _, err := s.matchSvc.CorrectResult(ctx, m.ID, fix.HomeScore, fix.AwayScore, winMethod, penaltyWinner, fix.PenaltyHomeScore, fix.PenaltyAwayScore); err != nil {
+	score := ScoreUpdate{
+		HomeScore:        fix.HomeScore,
+		AwayScore:        fix.AwayScore,
+		WinMethod:        winMethodFromStatus(fix.Status),
+		PenaltyWinner:    penaltyWinner,
+		PenaltyHomeScore: fix.PenaltyHomeScore,
+		PenaltyAwayScore: fix.PenaltyAwayScore,
+	}
+	if _, err := s.matchSvc.CorrectResult(ctx, m.ID, score); err != nil {
 		s.log.Warn("match daily sync: CorrectResult (penalty repair) failed",
 			zap.Int("match_id", m.ID), zap.Error(err))
 	} else {

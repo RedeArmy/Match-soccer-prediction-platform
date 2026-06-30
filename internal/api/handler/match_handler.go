@@ -191,11 +191,11 @@ func (h *MatchHandler) CreateMatch(w http.ResponseWriter, r *http.Request) {
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/matches/{id} [patch]
 func (h *MatchHandler) UpdateResult(w http.ResponseWriter, r *http.Request) {
-	id, homeScore, awayScore, winMethod, penaltyWinner, penaltyHomeScore, penaltyAwayScore, ok := h.parseScoreChange(w, r)
+	id, score, ok := h.parseScoreChange(w, r)
 	if !ok {
 		return
 	}
-	match, err := h.svc.UpdateResult(r.Context(), id, homeScore, awayScore, winMethod, penaltyWinner, penaltyHomeScore, penaltyAwayScore)
+	match, err := h.svc.UpdateResult(r.Context(), id, score)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
@@ -273,11 +273,11 @@ func (h *MatchHandler) CancelMatch(w http.ResponseWriter, r *http.Request) {
 // @Failure      500   {object}  handler.ErrorResponse
 // @Router       /api/v1/matches/{id}/correct-result [post]
 func (h *MatchHandler) CorrectMatchResult(w http.ResponseWriter, r *http.Request) {
-	id, homeScore, awayScore, winMethod, penaltyWinner, penaltyHomeScore, penaltyAwayScore, ok := h.parseScoreChange(w, r)
+	id, score, ok := h.parseScoreChange(w, r)
 	if !ok {
 		return
 	}
-	match, err := h.svc.CorrectResult(r.Context(), id, homeScore, awayScore, winMethod, penaltyWinner, penaltyHomeScore, penaltyAwayScore)
+	match, err := h.svc.CorrectResult(r.Context(), id, score)
 	if err != nil {
 		writeError(w, r, h.log, err)
 		return
@@ -289,7 +289,7 @@ func (h *MatchHandler) CorrectMatchResult(w http.ResponseWriter, r *http.Request
 // the path ID, decodes the JSON body, validates that both scores are present,
 // and resolves the optional win method. Returns ok=false when it has already
 // written an error response and the caller should return immediately.
-func (h *MatchHandler) parseScoreChange(w http.ResponseWriter, r *http.Request) (id, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string, penaltyHomeScore, penaltyAwayScore *int, ok bool) {
+func (h *MatchHandler) parseScoreChange(w http.ResponseWriter, r *http.Request) (id int, score service.ScoreUpdate, ok bool) {
 	id, err := pathID(r, "id")
 	if err != nil {
 		writeError(w, r, h.log, err)
@@ -304,6 +304,7 @@ func (h *MatchHandler) parseScoreChange(w http.ResponseWriter, r *http.Request) 
 		writeError(w, r, h.log, apperrors.Validation("request body is missing required fields"))
 		return
 	}
+	var winMethod *domain.WinMethod
 	if req.WinMethod != nil {
 		wm, err := domain.ParseWinMethod(*req.WinMethod)
 		if err != nil {
@@ -312,7 +313,15 @@ func (h *MatchHandler) parseScoreChange(w http.ResponseWriter, r *http.Request) 
 		}
 		winMethod = &wm
 	}
-	return id, *req.HomeScore, *req.AwayScore, winMethod, req.PenaltyWinner, req.PenaltyHomeScore, req.PenaltyAwayScore, true
+	score = service.ScoreUpdate{
+		HomeScore:        *req.HomeScore,
+		AwayScore:        *req.AwayScore,
+		WinMethod:        winMethod,
+		PenaltyWinner:    req.PenaltyWinner,
+		PenaltyHomeScore: req.PenaltyHomeScore,
+		PenaltyAwayScore: req.PenaltyAwayScore,
+	}
+	return id, score, true
 }
 
 // pathID extracts a numeric path parameter from the chi URL context.

@@ -16,6 +16,18 @@ import (
 
 // MatchService defines operations on the Match entity.
 //
+// ScoreUpdate groups all fields needed to finalise or correct a match result.
+// Using a struct keeps UpdateResult and CorrectResult within the 7-parameter
+// limit enforced by static analysis while remaining easy to extend.
+type ScoreUpdate struct {
+	HomeScore        int
+	AwayScore        int
+	WinMethod        *domain.WinMethod
+	PenaltyWinner    *string
+	PenaltyHomeScore *int
+	PenaltyAwayScore *int
+}
+
 // UpdateResult enforces the transition rules: a result may only be set when
 // the match is in the Live or Finished status. After confirming the result
 // the implementation must emit a MatchFinished domain event so that downstream
@@ -27,12 +39,12 @@ type MatchService interface {
 	ListMatches(ctx context.Context) ([]*domain.Match, error)
 	ListMatchesByPhase(ctx context.Context, phase domain.MatchPhase) ([]*domain.Match, error)
 	ListMatchesByStatus(ctx context.Context, status domain.MatchStatus) ([]*domain.Match, error)
-	UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string, penaltyHomeScore, penaltyAwayScore *int) (*domain.Match, error)
+	UpdateResult(ctx context.Context, id int, score ScoreUpdate) (*domain.Match, error)
 	StartMatch(ctx context.Context, id int) (*domain.Match, error)
 	// CorrectResult overwrites the score on a finished match and re-emits
 	// MatchFinished so the scoring engine re-scores all predictions. Use this
 	// when the API-Football feed provided a wrong score that was already confirmed.
-	CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string, penaltyHomeScore, penaltyAwayScore *int) (*domain.Match, error)
+	CorrectResult(ctx context.Context, id int, score ScoreUpdate) (*domain.Match, error)
 	// CancelMatch marks a scheduled or live match as cancelled. Cancelled matches
 	// are excluded from prediction scoring and cannot transition to any other status.
 	CancelMatch(ctx context.Context, id int) (*domain.Match, error)
@@ -150,8 +162,8 @@ func (s *matchService) StartMatch(ctx context.Context, id int) (*domain.Match, e
 //
 // winMethod is optional for group-stage matches (pass nil). For knockout phases
 // it should be provided so the scoring engine can apply win-method bonuses.
-func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string, penaltyHomeScore, penaltyAwayScore *int) (*domain.Match, error) {
-	if err := domain.ValidateMatchResult(&homeScore, &awayScore); err != nil {
+func (s *matchService) UpdateResult(ctx context.Context, id int, score ScoreUpdate) (*domain.Match, error) {
+	if err := domain.ValidateMatchResult(&score.HomeScore, &score.AwayScore); err != nil {
 		return nil, err
 	}
 	m, err := s.GetMatch(ctx, id)
@@ -161,15 +173,15 @@ func (s *matchService) UpdateResult(ctx context.Context, id int, homeScore, away
 	if m.Status != domain.MatchStatusLive {
 		return nil, apperrors.Validation("match result can only be confirmed while the match is live")
 	}
-	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, penaltyWinner, penaltyHomeScore, penaltyAwayScore, applyScoreOpts{auditAction: domain.AuditActionMatchResultSet})
+	return s.applyScoreAndPublish(ctx, m, score, applyScoreOpts{auditAction: domain.AuditActionMatchResultSet})
 }
 
 // CorrectResult overwrites the score on a match that is already finished (or
 // still live if the API confirmed the score early) and re-emits MatchFinished
 // so the scoring engine recomputes predictions. It is the admin escape-hatch
 // for when API-Football delivered a wrong final score.
-func (s *matchService) CorrectResult(ctx context.Context, id int, homeScore, awayScore int, winMethod *domain.WinMethod, penaltyWinner *string, penaltyHomeScore, penaltyAwayScore *int) (*domain.Match, error) {
-	if err := domain.ValidateMatchResult(&homeScore, &awayScore); err != nil {
+func (s *matchService) CorrectResult(ctx context.Context, id int, score ScoreUpdate) (*domain.Match, error) {
+	if err := domain.ValidateMatchResult(&score.HomeScore, &score.AwayScore); err != nil {
 		return nil, err
 	}
 	m, err := s.GetMatch(ctx, id)
@@ -179,7 +191,7 @@ func (s *matchService) CorrectResult(ctx context.Context, id int, homeScore, awa
 	if m.Status != domain.MatchStatusFinished && m.Status != domain.MatchStatusLive {
 		return nil, apperrors.Validation("result can only be corrected on a live or finished match")
 	}
-	return s.applyScoreAndPublish(ctx, m, homeScore, awayScore, winMethod, penaltyWinner, penaltyHomeScore, penaltyAwayScore, applyScoreOpts{auditAction: domain.AuditActionMatchResultCorrected, correction: true})
+	return s.applyScoreAndPublish(ctx, m, score, applyScoreOpts{auditAction: domain.AuditActionMatchResultCorrected, correction: true})
 }
 
 // applyScoreOpts carries the audit and correction flags for applyScoreAndPublish.
@@ -196,32 +208,29 @@ type applyScoreOpts struct {
 func (s *matchService) applyScoreAndPublish(
 	ctx context.Context,
 	m *domain.Match,
-	homeScore, awayScore int,
-	winMethod *domain.WinMethod,
-	penaltyWinner *string,
-	penaltyHomeScore, penaltyAwayScore *int,
+	score ScoreUpdate,
 	opts applyScoreOpts,
 ) (*domain.Match, error) {
-	if winMethod != nil && *winMethod == domain.WinMethodPenalties {
-		if penaltyWinner == nil || (*penaltyWinner != "home" && *penaltyWinner != "away") {
+	if score.WinMethod != nil && *score.WinMethod == domain.WinMethodPenalties {
+		if score.PenaltyWinner == nil || (*score.PenaltyWinner != "home" && *score.PenaltyWinner != "away") {
 			return nil, apperrors.Validation(`penalty_winner must be "home" or "away" when win_method is "penalties"`)
 		}
 	}
-	m.HomeScore = &homeScore
-	m.AwayScore = &awayScore
-	m.WinMethod = winMethod
-	m.PenaltyWinner = penaltyWinner
-	m.PenaltyHomeScore = penaltyHomeScore
-	m.PenaltyAwayScore = penaltyAwayScore
+	m.HomeScore = &score.HomeScore
+	m.AwayScore = &score.AwayScore
+	m.WinMethod = score.WinMethod
+	m.PenaltyWinner = score.PenaltyWinner
+	m.PenaltyHomeScore = score.PenaltyHomeScore
+	m.PenaltyAwayScore = score.PenaltyAwayScore
 	m.Period = nil // clear live-period code when finalising the match
 	m.Status = domain.MatchStatusFinished
 	if err := s.repo.Update(ctx, m); err != nil {
 		return nil, err
 	}
 
-	auditMeta := map[string]any{"home_score": homeScore, "away_score": awayScore}
-	if winMethod != nil {
-		auditMeta["win_method"] = string(*winMethod)
+	auditMeta := map[string]any{"home_score": score.HomeScore, "away_score": score.AwayScore}
+	if score.WinMethod != nil {
+		auditMeta["win_method"] = string(*score.WinMethod)
 	}
 	resType := "match"
 	s.audit.Log(ctx, nil, nil, opts.auditAction, &resType, &m.ID, auditMeta)
@@ -237,13 +246,13 @@ func (s *matchService) applyScoreAndPublish(
 			MatchID:       m.ID,
 			HomeTeam:      m.HomeTeam,
 			AwayTeam:      m.AwayTeam,
-			HomeScore:     homeScore,
-			AwayScore:     awayScore,
-			WinMethod:     winMethodString(winMethod),
+			HomeScore:     score.HomeScore,
+			AwayScore:     score.AwayScore,
+			WinMethod:     winMethodString(score.WinMethod),
 			Phase:         string(m.Phase),
 			GroupLabel:    derefString(m.GroupLabel),
 			MatchCode:     derefString(m.MatchCode),
-			PenaltyWinner: derefString(penaltyWinner),
+			PenaltyWinner: derefString(score.PenaltyWinner),
 		},
 	}); err != nil {
 		s.log.Error("failed to publish MatchFinished event"+suffix+"; falling back to synchronous scoring",

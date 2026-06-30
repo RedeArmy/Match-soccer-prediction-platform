@@ -126,14 +126,14 @@ func (s *stubSyncMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, 
 	s.started++
 	return &domain.Match{Status: domain.MatchStatusLive}, s.startErr
 }
-func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, penaltyWinner *string, _, _ *int) (*domain.Match, error) {
+func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
 	s.finished++
-	s.lastPenaltyWinner = penaltyWinner
+	s.lastPenaltyWinner = score.PenaltyWinner
 	return &domain.Match{Status: domain.MatchStatusFinished}, s.finishErr
 }
-func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, _, _ int, _ *domain.WinMethod, pw *string, _, _ *int) (*domain.Match, error) {
+func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
 	s.corrected++
-	s.lastCorrectPWinner = pw
+	s.lastCorrectPWinner = score.PenaltyWinner
 	return &domain.Match{Status: domain.MatchStatusFinished}, nil
 }
 func (s *stubSyncMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {

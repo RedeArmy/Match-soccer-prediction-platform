@@ -156,7 +156,7 @@ func TestUpdateResult_LiveMatch_ConfirmsResultAndEmitsEvent(t *testing.T) {
 		Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(-time.Hour)}
 	svc, pub := newMatchSvc(match)
 
-	result, err := svc.UpdateResult(context.Background(), 1, 2, 1, nil, nil, nil, nil)
+	result, err := svc.UpdateResult(context.Background(), 1, ScoreUpdate{HomeScore: 2, AwayScore: 1, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
@@ -178,7 +178,7 @@ func TestUpdateResult_LiveMatch_WithWinMethod_PopulatesEventPayload(t *testing.T
 
 	wm := domain.WinMethodPenalties
 	pw := "home"
-	_, err := svc.UpdateResult(context.Background(), 5, 3, 2, &wm, &pw, nil, nil)
+	_, err := svc.UpdateResult(context.Background(), 5, ScoreUpdate{HomeScore: 3, AwayScore: 2, WinMethod: &wm, PenaltyWinner: &pw, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
@@ -200,7 +200,7 @@ func TestUpdateResult_PenaltiesWinMethod_MissingPenaltyWinner_ReturnsValidationE
 	svc, _ := newMatchSvc(match)
 
 	wm := domain.WinMethodPenalties
-	_, err := svc.UpdateResult(context.Background(), 6, 1, 1, &wm, nil, nil, nil)
+	_, err := svc.UpdateResult(context.Background(), 6, ScoreUpdate{HomeScore: 1, AwayScore: 1, WinMethod: &wm, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error when penalty_winner absent, got %v", err)
 	}
@@ -213,7 +213,7 @@ func TestUpdateResult_PenaltiesWinMethod_InvalidPenaltyWinner_ReturnsValidationE
 
 	wm := domain.WinMethodPenalties
 	bad := "draw"
-	_, err := svc.UpdateResult(context.Background(), 7, 1, 1, &wm, &bad, nil, nil)
+	_, err := svc.UpdateResult(context.Background(), 7, ScoreUpdate{HomeScore: 1, AwayScore: 1, WinMethod: &wm, PenaltyWinner: &bad, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for penalty_winner=%q, got %v", bad, err)
 	}
@@ -229,7 +229,7 @@ func TestUpdateResult_PenaltiesWinMethod_WithPenaltyScores_PersistsScores(t *tes
 	wm := domain.WinMethodPenalties
 	pw := "away"
 	phome, paway := 4, 5
-	result, err := svc.UpdateResult(context.Background(), 8, 1, 1, &wm, &pw, &phome, &paway)
+	result, err := svc.UpdateResult(context.Background(), 8, ScoreUpdate{HomeScore: 1, AwayScore: 1, WinMethod: &wm, PenaltyWinner: &pw, PenaltyHomeScore: &phome, PenaltyAwayScore: &paway})
 	if err != nil {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
@@ -252,7 +252,7 @@ func TestUpdateResult_ScheduledMatch_ReturnsValidationError(t *testing.T) {
 		Status: domain.MatchStatusScheduled, KickoffAt: time.Now().Add(time.Hour)}
 	svc, _ := newMatchSvc(match)
 
-	_, err := svc.UpdateResult(context.Background(), 1, 1, 0, nil, nil, nil, nil)
+	_, err := svc.UpdateResult(context.Background(), 1, ScoreUpdate{HomeScore: 1, AwayScore: 0, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for scheduled match, got %v", err)
 	}
@@ -268,7 +268,7 @@ func TestUpdateResult_FinishedMatch_ReturnsValidationError(t *testing.T) {
 		KickoffAt: time.Now().Add(-2 * time.Hour)}
 	svc, _ := newMatchSvc(match)
 
-	_, err := svc.UpdateResult(context.Background(), 1, 3, 0, nil, nil, nil, nil)
+	_, err := svc.UpdateResult(context.Background(), 1, ScoreUpdate{HomeScore: 3, AwayScore: 0, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for finished match, got %v", err)
 	}
@@ -285,7 +285,7 @@ func TestUpdateResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) {
 	scorer := &stubScorer{}
 	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
 
-	result, err := svc.UpdateResult(context.Background(), 42, 2, 1, nil, nil, nil, nil)
+	result, err := svc.UpdateResult(context.Background(), 42, ScoreUpdate{HomeScore: 2, AwayScore: 1, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
 		t.Fatalf("UpdateResult must succeed even when publish fails: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestUpdateResult_PublishFails_ScorerAlsoFails_StillReturnsResult(t *testing
 	scorer := &stubScorer{err: errors.New("db timeout")}
 	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
 
-	result, err := svc.UpdateResult(context.Background(), 7, 1, 0, nil, nil, nil, nil)
+	result, err := svc.UpdateResult(context.Background(), 7, ScoreUpdate{HomeScore: 1, AwayScore: 0, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
 		t.Fatalf("UpdateResult must succeed regardless of scorer failure: %v", err)
 	}
@@ -477,7 +477,7 @@ func TestCorrectResult_FinishedMatch_UpdatesScoreAndEmitsEvent(t *testing.T) {
 	scorer := &stubScorer{}
 	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
 
-	result, err := svc.CorrectResult(context.Background(), 7, 2, 1, nil, nil, nil, nil)
+	result, err := svc.CorrectResult(context.Background(), 7, ScoreUpdate{HomeScore: 2, AwayScore: 1, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
@@ -494,7 +494,7 @@ func TestCorrectResult_LiveMatch_AllowedAndSetsFinished(t *testing.T) {
 		Status: domain.MatchStatusLive}
 	svc, _ := newMatchSvc(match)
 
-	result, err := svc.CorrectResult(context.Background(), 8, 1, 0, nil, nil, nil, nil)
+	result, err := svc.CorrectResult(context.Background(), 8, ScoreUpdate{HomeScore: 1, AwayScore: 0, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
@@ -508,7 +508,7 @@ func TestCorrectResult_ScheduledMatch_ReturnsValidationError(t *testing.T) {
 		Status: domain.MatchStatusScheduled}
 	svc, _ := newMatchSvc(match)
 
-	_, err := svc.CorrectResult(context.Background(), 9, 2, 0, nil, nil, nil, nil)
+	_, err := svc.CorrectResult(context.Background(), 9, ScoreUpdate{HomeScore: 2, AwayScore: 0, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for scheduled match, got %v", err)
 	}
@@ -519,7 +519,7 @@ func TestCorrectResult_CancelledMatch_ReturnsValidationError(t *testing.T) {
 		Status: domain.MatchStatusCancelled}
 	svc, _ := newMatchSvc(match)
 
-	_, err := svc.CorrectResult(context.Background(), 10, 2, 0, nil, nil, nil, nil)
+	_, err := svc.CorrectResult(context.Background(), 10, ScoreUpdate{HomeScore: 2, AwayScore: 0, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if !errors.Is(err, apperrors.ErrValidation) {
 		t.Errorf("expected validation error for cancelled match, got %v", err)
 	}
@@ -532,7 +532,7 @@ func TestCorrectResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) 
 	scorer := &stubScorer{}
 	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
 
-	_, err := svc.CorrectResult(context.Background(), 11, 2, 1, nil, nil, nil, nil)
+	_, err := svc.CorrectResult(context.Background(), 11, ScoreUpdate{HomeScore: 2, AwayScore: 1, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
 		t.Fatalf("CorrectResult must succeed even when publish fails: %v", err)
 	}
@@ -548,7 +548,7 @@ func TestCorrectResult_WithWinMethod_IncludedInEvent(t *testing.T) {
 	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	wm := domain.WinMethodExtraTime
-	_, err := svc.CorrectResult(context.Background(), 12, 1, 0, &wm, nil, nil, nil)
+	_, err := svc.CorrectResult(context.Background(), 12, ScoreUpdate{HomeScore: 1, AwayScore: 0, WinMethod: &wm, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
 		t.Fatalf(fmtExpectNilErr, err)
 	}
