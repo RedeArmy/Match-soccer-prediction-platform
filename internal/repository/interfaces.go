@@ -131,6 +131,13 @@ type MatchRepository interface {
 	// included. Pass 0 to return all linked non-finished matches.
 	ListSyncCandidates(ctx context.Context, prematchWindowMin int) ([]*domain.Match, error)
 
+	// ListFinishedPenaltyMatchesMissingWinner returns finished matches whose
+	// win_method is "penalties" but penalty_winner is NULL. These matches were
+	// finalised before penalty data was available and are excluded from
+	// ListSyncCandidates; the daily sync uses this to drive a targeted repair
+	// sweep via CorrectResult.
+	ListFinishedPenaltyMatchesMissingWinner(ctx context.Context) ([]*domain.Match, error)
+
 	// UpdateSyncState persists the current external status observation by
 	// recording last_synced_at on the row. Called after every successful poll
 	// regardless of whether the local status changed.

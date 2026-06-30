@@ -213,6 +213,22 @@ func (r *PostgresMatchRepository) ListSyncCandidates(ctx context.Context, premat
 	return collectMatches(rows)
 }
 
+func (r *PostgresMatchRepository) ListFinishedPenaltyMatchesMissingWinner(ctx context.Context) ([]*domain.Match, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+matchReadColumns+matchFromStadium+
+			` WHERE m.status = 'finished'
+			   AND m.win_method = 'penalties'
+			   AND m.penalty_winner IS NULL
+			   AND m.external_match_id IS NOT NULL
+			 ORDER BY m.kickoff_at ASC`,
+	)
+	if err != nil {
+		return nil, apperrors.Internal(err)
+	}
+	defer rows.Close()
+	return collectMatches(rows)
+}
+
 func (r *PostgresMatchRepository) FindByTeams(ctx context.Context, homeTeam, awayTeam string) (*domain.Match, error) {
 	// Inline subqueries resolve each provider name through team_name_aliases.
 	// COALESCE falls back to the raw parameter when no alias row exists, so

@@ -197,6 +197,8 @@ interface ResultForm {
   homeScore: string;
   awayScore: string;
   winMethod: string;
+  penaltyHomeScore: string;
+  penaltyAwayScore: string;
 }
 
 interface ResultModalProps {
@@ -210,6 +212,16 @@ interface ResultModalProps {
   readonly mode: "result" | "correct";
 }
 
+function derivePenaltyWinner(
+  penHome: string,
+  penAway: string,
+): "home" | "away" | null {
+  const h = Number.parseInt(penHome, 10);
+  const a = Number.parseInt(penAway, 10);
+  if (Number.isNaN(h) || Number.isNaN(a) || h === a) return null;
+  return h > a ? "home" : "away";
+}
+
 function ResultModal({
   match,
   form,
@@ -221,6 +233,8 @@ function ResultModal({
   mode,
 }: ResultModalProps) {
   const isKnockout = match.phase && match.phase !== "group_stage";
+  const isPenalties = form.winMethod === "penalties";
+
   const homeInt = Number.parseInt(form.homeScore, 10);
   const awayInt = Number.parseInt(form.awayScore, 10);
   const scoresValid =
@@ -228,6 +242,12 @@ function ResultModal({
     !Number.isNaN(awayInt) &&
     homeInt >= 0 &&
     awayInt >= 0;
+
+  const penaltyWinner = isPenalties
+    ? derivePenaltyWinner(form.penaltyHomeScore, form.penaltyAwayScore)
+    : null;
+  const penaltiesValid = !isPenalties || penaltyWinner !== null;
+
   const modalTitle =
     mode === "correct" ? "Corregir Resultado" : "Actualizar Resultado";
 
@@ -243,6 +263,7 @@ function ResultModal({
         </span>
       </p>
 
+      {/* Regular score */}
       <div className="grid grid-cols-3 items-center gap-4">
         <div className="space-y-1.5">
           <label
@@ -297,7 +318,12 @@ function ResultModal({
             id="win-method"
             value={form.winMethod}
             onChange={(e) =>
-              onFormChange({ ...form, winMethod: e.target.value })
+              onFormChange({
+                ...form,
+                winMethod: e.target.value,
+                penaltyHomeScore: "",
+                penaltyAwayScore: "",
+              })
             }
             className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500/50"
           >
@@ -307,6 +333,73 @@ function ResultModal({
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* Penalty shootout inputs — only when "penalties" is selected */}
+      {isPenalties && (
+        <div className="space-y-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <p className="text-xs font-medium text-amber-300">
+            Tanda de penales
+          </p>
+          <div className="grid grid-cols-3 items-center gap-3">
+            <div className="space-y-1">
+              <label
+                htmlFor="pen-home"
+                className="block text-[11px] text-white/40 text-center"
+              >
+                {match.home_team}
+              </label>
+              <input
+                id="pen-home"
+                type="number"
+                min={0}
+                max={99}
+                value={form.penaltyHomeScore}
+                onChange={(e) =>
+                  onFormChange({ ...form, penaltyHomeScore: e.target.value })
+                }
+                placeholder="0"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-xl font-bold text-white text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+              />
+            </div>
+            <div className="text-center text-white/30 text-xl font-bold">
+              :
+            </div>
+            <div className="space-y-1">
+              <label
+                htmlFor="pen-away"
+                className="block text-[11px] text-white/40 text-center"
+              >
+                {match.away_team}
+              </label>
+              <input
+                id="pen-away"
+                type="number"
+                min={0}
+                max={99}
+                value={form.penaltyAwayScore}
+                onChange={(e) =>
+                  onFormChange({ ...form, penaltyAwayScore: e.target.value })
+                }
+                placeholder="0"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-xl font-bold text-white text-center focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+              />
+            </div>
+          </div>
+          {penaltyWinner ? (
+            <p className="text-xs text-amber-200 text-center">
+              Ganador:{" "}
+              <strong>
+                {penaltyWinner === "home" ? match.home_team : match.away_team}
+              </strong>{" "}
+              avanza
+            </p>
+          ) : (
+            <p className="text-xs text-amber-400/60 text-center">
+              Ingresa el marcador de la tanda para determinar el ganador
+            </p>
+          )}
         </div>
       )}
 
@@ -334,7 +427,7 @@ function ResultModal({
         <ModalCancelButton onClose={onClose} disabled={isBusy} />
         <button
           onClick={onSubmit}
-          disabled={isBusy || !scoresValid}
+          disabled={isBusy || !scoresValid || !penaltiesValid}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <CheckCircle className="h-4 w-4" />
@@ -998,12 +1091,37 @@ function BracketTab({ getToken }: BracketTabProps) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+type ResultPayload = {
+  home_score: number;
+  away_score: number;
+  win_method?: string;
+  penalty_winner?: string;
+  penalty_home_score?: number;
+  penalty_away_score?: number;
+};
+
 type ModalState =
   | { kind: "start"; match: MatchResponse }
   | { kind: "result"; match: MatchResponse }
   | { kind: "correct"; match: MatchResponse }
   | { kind: "cancel"; match: MatchResponse }
   | null;
+
+function buildResultForm(match: MatchResponse): ResultForm {
+  return {
+    homeScore: match.home_score == null ? "" : String(match.home_score),
+    awayScore: match.away_score == null ? "" : String(match.away_score),
+    winMethod: match.win_method ?? "",
+    penaltyHomeScore:
+      match.penalty_home_score == null
+        ? ""
+        : String(match.penalty_home_score),
+    penaltyAwayScore:
+      match.penalty_away_score == null
+        ? ""
+        : String(match.penalty_away_score),
+  };
+}
 
 export default function AdminMatchesPage() {
   const { getToken } = useAuth();
@@ -1024,6 +1142,8 @@ export default function AdminMatchesPage() {
     homeScore: "",
     awayScore: "",
     winMethod: "",
+    penaltyHomeScore: "",
+    penaltyAwayScore: "",
   });
   const [syncStartDate, setSyncStartDate] = useState("");
   const [syncEndDate, setSyncEndDate] = useState("");
@@ -1107,21 +1227,13 @@ export default function AdminMatchesPage() {
   function openResult(match: MatchResponse) {
     setModal({ kind: "result", match });
     setModalError("");
-    setResultForm({
-      homeScore: match.home_score === null ? "" : String(match.home_score),
-      awayScore: match.away_score === null ? "" : String(match.away_score),
-      winMethod: match.win_method ?? "",
-    });
+    setResultForm(buildResultForm(match));
   }
 
   function openCorrect(match: MatchResponse) {
     setModal({ kind: "correct", match });
     setModalError("");
-    setResultForm({
-      homeScore: match.home_score === null ? "" : String(match.home_score),
-      awayScore: match.away_score === null ? "" : String(match.away_score),
-      winMethod: match.win_method ?? "",
-    });
+    setResultForm(buildResultForm(match));
   }
 
   function openCancel(match: MatchResponse) {
@@ -1151,13 +1263,7 @@ export default function AdminMatchesPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: { home_score: number; away_score: number; win_method?: string };
-    }) => {
+    mutationFn: async ({ id, data }: { id: number; data: ResultPayload }) => {
       const token = await getToken();
       return api.adminUpdateMatchResult(token!, id, data);
     },
@@ -1174,13 +1280,7 @@ export default function AdminMatchesPage() {
   });
 
   const correctMutation = useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: number;
-      data: { home_score: number; away_score: number; win_method?: string };
-    }) => {
+    mutationFn: async ({ id, data }: { id: number; data: ResultPayload }) => {
       const token = await getToken();
       return api.adminCorrectMatchResult(token!, id, data);
     },
@@ -1264,11 +1364,33 @@ export default function AdminMatchesPage() {
       home_score: number;
       away_score: number;
       win_method?: string;
+      penalty_winner?: string;
+      penalty_home_score?: number;
+      penalty_away_score?: number;
     } = {
       home_score: home,
       away_score: away,
     };
     if (resultForm.winMethod) data.win_method = resultForm.winMethod;
+    if (resultForm.winMethod === "penalties") {
+      const penHome = Number.parseInt(resultForm.penaltyHomeScore, 10);
+      const penAway = Number.parseInt(resultForm.penaltyAwayScore, 10);
+      if (
+        Number.isNaN(penHome) ||
+        Number.isNaN(penAway) ||
+        penHome < 0 ||
+        penAway < 0 ||
+        penHome === penAway
+      ) {
+        setModalError(
+          "Ingresa el marcador de la tanda de penales. Los marcadores no pueden ser iguales.",
+        );
+        return;
+      }
+      data.penalty_home_score = penHome;
+      data.penalty_away_score = penAway;
+      data.penalty_winner = penHome > penAway ? "home" : "away";
+    }
     if (modal.kind === "correct") {
       correctMutation.mutate({ id: modal.match.id, data });
     } else {
