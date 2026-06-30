@@ -219,6 +219,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      packages: read  # required for GHCR image pulls
 
     steps:
       # fetch-depth: 0 is required by SonarCloud to attribute coverage data
@@ -337,18 +338,18 @@ jobs:
         run: ./node_modules/.bin/vitest run --coverage
         working-directory: frontend
 
-      # Authenticate to Docker Hub before the SonarCloud step so the scanner
-      # image pull is counted against the project account (200 pulls/6 h)
-      # rather than the runner's shared anonymous quota (100 pulls/6 h per IP).
-      # continue-on-error: true so that missing credentials degrade gracefully
-      # instead of blocking the job — the subsequent Sonar step will attempt
-      # an anonymous pull and succeed if the rate limit has not been reached.
-      - name: Log in to Docker Hub (prevent rate-limit on SonarCloud image pull)
+      # Authenticate to GHCR using the built-in GITHUB_TOKEN so that any step
+      # that pulls project images from ghcr.io (testcontainers, custom runners)
+      # is authenticated. No additional secrets required.
+      # Note: the SonarCloud scanner image (sonarsource/sonar-scanner-cli:11.1)
+      # comes from Docker Hub, not GHCR; its transient pull failures are handled
+      # by continue-on-error on the SonarCloud step below.
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
-        continue-on-error: true
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # continue-on-error: true because this step depends on Docker Hub
       # network reachability from the GitHub Actions runner. A TCP-level
