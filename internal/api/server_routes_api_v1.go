@@ -149,9 +149,17 @@ func (s *Server) registerTournamentRoutes(r chi.Router, d apiV1Deps) {
 // These endpoints manage the local session lifecycle independently of Clerk.
 // They require RequireAuth (already applied at the /api/v1 level) but do NOT
 // need ResolveUser because they operate on JWT claims only — no DB user lookup.
+//
+// A dedicated tight rate limit (5 req/min, burst 5) is applied independently
+// of the general /api/v1 limit. This prevents a user with a valid session from
+// bulk-inflating the revoked_sessions table by replaying logout requests with
+// different Clerk tokens (each call is idempotent on the same sid via ON CONFLICT
+// DO NOTHING, but distinct sids generate distinct rows).
 func (s *Server) registerAuthRoutes(r chi.Router, d apiV1Deps) {
+	logoutRateStore := middleware.NewLimiterStore(5.0/60.0, 5)
 	r.Route("/auth", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
+		r.Use(middleware.RateLimitByUserID(logoutRateStore, s.log))
 		r.Post("/logout", d.h.auth.Logout)
 		// Force-logout all devices for the authenticated account. Bulk-revokes
 		// every known session from session_starts plus the current session.

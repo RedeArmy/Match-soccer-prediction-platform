@@ -67,6 +67,12 @@ export function SessionGuard() {
   // SessionStartedAt for password / passkey / email-code flows. For OAuth /
   // social flows the backend derives the origin from session_starts; this timer
   // provides the same enforcement on the browser side.
+  //
+  // setTimeout is throttled by browsers (up to 1 h effective delay) when the
+  // tab is in the background, and is suspended entirely when the OS sleeps the
+  // process. visibilitychange and focus listeners re-arm the timer from the real
+  // current time whenever the tab returns to the foreground, ensuring that a
+  // session that expired during a laptop sleep is caught immediately on wake.
   useEffect(() => {
     if (!maxAgeMs) {
       if (process.env.NODE_ENV === "development") {
@@ -82,18 +88,37 @@ export function SessionGuard() {
     if (!session?.createdAt) return;
 
     const expiresAt = session.createdAt.getTime() + maxAgeMs;
-    const remaining = expiresAt - Date.now();
 
-    if (remaining <= 0) {
-      void signOut({ redirectUrl: "/sign-in" });
-      return;
-    }
+    // arm() schedules sign-out for the remaining window, or fires immediately
+    // if the session has already expired. Returns a cancel function.
+    const arm = (): (() => void) => {
+      const remaining = expiresAt - Date.now();
+      if (remaining <= 0) {
+        void signOut({ redirectUrl: "/sign-in" });
+        return () => {};
+      }
+      return clampedTimeout(() => void signOut({ redirectUrl: "/sign-in" }), remaining);
+    };
 
-    const cancel = clampedTimeout(() => {
-      void signOut({ redirectUrl: "/sign-in" });
-    }, remaining);
+    let cancel = arm();
 
-    return cancel;
+    // Re-arm whenever the tab becomes visible or the window regains focus.
+    // Skipping the "hidden" transition avoids cancelling a running timer
+    // unnecessarily when the user switches away from the tab.
+    const recheck = (): void => {
+      if (document.visibilityState === "hidden") return;
+      cancel();
+      cancel = arm();
+    };
+
+    document.addEventListener("visibilitychange", recheck);
+    window.addEventListener("focus", recheck);
+
+    return () => {
+      cancel();
+      document.removeEventListener("visibilitychange", recheck);
+      window.removeEventListener("focus", recheck);
+    };
   }, [session?.createdAt, signOut, maxAgeMs]);
 
   return null;

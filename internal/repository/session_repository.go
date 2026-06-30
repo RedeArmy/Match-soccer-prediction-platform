@@ -107,14 +107,16 @@ func NewPostgresSessionStartRepository(db *pgxpool.Pool) *PostgresSessionStartRe
 // the stored user_id unchanged so the original attribution is preserved.
 func (r *PostgresSessionStartRepository) UpsertSessionStart(ctx context.Context, sid, userID string) (time.Time, error) {
 	start := time.Now()
+	clientIP := nullStr(ClientIPFromContext(ctx))
+	userAgent := nullStr(UserAgentFromContext(ctx))
 	var t time.Time
 	err := r.db.QueryRow(ctx,
-		`INSERT INTO session_starts (sid, user_id, started_at)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO session_starts (sid, user_id, started_at, client_ip, user_agent)
+		 VALUES ($1, $2, $3, $4, $5)
 		 ON CONFLICT (sid) DO UPDATE
 		   SET started_at = session_starts.started_at
 		 RETURNING started_at`,
-		sid, userID, start,
+		sid, userID, start, clientIP, userAgent,
 	).Scan(&t)
 	if err != nil {
 		return time.Time{}, apperrors.Internal(err)
@@ -137,3 +139,12 @@ func (r *PostgresSessionStartRepository) PruneSessionStarts(ctx context.Context,
 }
 
 var _ SessionStartRepository = (*PostgresSessionStartRepository)(nil)
+
+// nullStr converts a non-empty string to a *string for nullable SQL columns.
+// An empty string (absent header or unauthenticated path) becomes nil → NULL.
+func nullStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

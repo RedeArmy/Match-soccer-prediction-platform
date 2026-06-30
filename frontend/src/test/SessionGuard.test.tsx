@@ -183,6 +183,108 @@ describe("SessionGuard – proactive timer (session.createdAt + maxAge)", () => 
   });
 });
 
+describe("SessionGuard – visibilitychange / focus recheck (VULN-008)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    fetchMock.mockRejectedValue(new Error("fetch disabled in tests"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    // Restore visibilityState to default for subsequent tests.
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
+  });
+
+  it("signs out immediately on visibilitychange when session expired during OS sleep", () => {
+    mockMaxAge(3600); // 1 h
+    // Session started 30 min ago; 30 min remaining at render time.
+    mockSession = { createdAt: new Date(Date.now() - 30 * 60 * 1000) };
+
+    render(<SessionGuard />);
+    expect(signOutMock).not.toHaveBeenCalled();
+
+    // Simulate 40 min passing without the timer firing (OS sleep / throttled tab).
+    vi.setSystemTime(Date.now() + 40 * 60 * 1000);
+
+    // Tab becomes visible again — recheck recalculates remaining (< 0) → signs out.
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+    });
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(signOutMock).toHaveBeenCalledOnce();
+    expect(signOutMock).toHaveBeenCalledWith({ redirectUrl: "/sign-in" });
+  });
+
+  it("does not cancel the running timer when the tab becomes hidden", () => {
+    mockMaxAge(3600);
+    // Session started 30 min ago; 30 min remaining.
+    mockSession = { createdAt: new Date(Date.now() - 30 * 60 * 1000) };
+
+    render(<SessionGuard />);
+
+    // Tab goes to background — recheck must be a no-op (visibilityState hidden).
+    Object.defineProperty(document, "visibilityState", {
+      value: "hidden",
+      configurable: true,
+    });
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    // Session not yet expired — no sign-out.
+    expect(signOutMock).not.toHaveBeenCalled();
+
+    // The original timer fires after the remaining 30+ min.
+    act(() => {
+      vi.advanceTimersByTime(31 * 60 * 1000);
+    });
+    expect(signOutMock).toHaveBeenCalledOnce();
+  });
+
+  it("signs out immediately on window focus when session expired while unfocused", () => {
+    mockMaxAge(3600);
+    mockSession = { createdAt: new Date(Date.now() - 30 * 60 * 1000) };
+
+    render(<SessionGuard />);
+    expect(signOutMock).not.toHaveBeenCalled();
+
+    // 40 min pass without the timer firing.
+    vi.setSystemTime(Date.now() + 40 * 60 * 1000);
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(signOutMock).toHaveBeenCalledOnce();
+    expect(signOutMock).toHaveBeenCalledWith({ redirectUrl: "/sign-in" });
+  });
+
+  it("removes visibilitychange and focus listeners on unmount", () => {
+    mockMaxAge(3600);
+    mockSession = { createdAt: new Date(Date.now() - 30 * 60 * 1000) };
+
+    const { unmount } = render(<SessionGuard />);
+    unmount();
+
+    // Advance clock past expiry and fire visibilitychange — no sign-out after unmount.
+    vi.setSystemTime(Date.now() + 40 * 60 * 1000);
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("SessionGuard – live session config fetch (DT-009)", () => {
   beforeEach(() => {
     vi.clearAllMocks();

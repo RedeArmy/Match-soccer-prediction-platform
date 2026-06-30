@@ -102,3 +102,20 @@ func StoreClientIP(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// maxUserAgentLen caps the stored User-Agent to prevent oversized writes.
+const maxUserAgentLen = 512
+
+// StoreUserAgent reads the User-Agent request header, truncates it to
+// maxUserAgentLen bytes, and stores it via repository.ContextWithUserAgent.
+// Must be placed in the root middleware chain so session-start writes have
+// access to the value for all authenticated endpoints.
+func StoreUserAgent(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ua := r.Header.Get("User-Agent")
+		if len(ua) > maxUserAgentLen {
+			ua = ua[:maxUserAgentLen]
+		}
+		next.ServeHTTP(w, r.WithContext(repository.ContextWithUserAgent(r.Context(), ua)))
+	})
+}
