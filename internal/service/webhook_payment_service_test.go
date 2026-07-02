@@ -328,6 +328,44 @@ func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_UserIDMismatch_W
 	}
 }
 
+func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_AmountMismatch_WritesAuditLog(t *testing.T) {
+	intent := &domain.PaymentIntent{ID: 1, UserID: 42, AmountCents: 500, Currency: "GTQ"}
+	audit := &multiSpyAuditLogger{}
+	svc := newWebhookPaymentSvcWithGateAndAudit(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{intent: intent}, nil, audit)
+
+	if err := svc.ResolveAndCreditRecurrenteIntent(context.Background(), "REF-AMOUNT-MISMATCH", 42, 99999, "GTQ"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for i, action := range audit.actions {
+		if action == domain.AuditActionWebhookAmountMismatch && audit.meta[i]["mismatch_field"] == "amount_cents" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected AuditActionWebhookAmountMismatch for amount_cents; got actions=%v meta=%v", audit.actions, audit.meta)
+	}
+}
+
+func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_CurrencyMismatch_WritesAuditLog(t *testing.T) {
+	intent := &domain.PaymentIntent{ID: 1, UserID: 42, AmountCents: 500, Currency: "GTQ"}
+	audit := &multiSpyAuditLogger{}
+	svc := newWebhookPaymentSvcWithGateAndAudit(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{intent: intent}, nil, audit)
+
+	if err := svc.ResolveAndCreditRecurrenteIntent(context.Background(), "REF-CURRENCY-MISMATCH", 42, 500, "USD"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for i, action := range audit.actions {
+		if action == domain.AuditActionWebhookAmountMismatch && audit.meta[i]["mismatch_field"] == "currency" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected AuditActionWebhookAmountMismatch for currency; got actions=%v meta=%v", audit.actions, audit.meta)
+	}
+}
+
 // ── KYC gate integration ──────────────────────────────────────────────────────
 
 // webhookKYCGateStub is a configurable KYCGate stub for webhook payment tests.
