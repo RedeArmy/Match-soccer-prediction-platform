@@ -133,55 +133,84 @@ func (r *PostgresKYCProfileRepository) UpdateStatusWithEvent(ctx context.Context
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 	return withTx(ctx, r.db, "KYCProfileRepository.UpdateStatusWithEvent", func(tx pgx.Tx) error {
-		rejectionReason := ""
-		if ev.NewStatus == domain.KYCStatusRejected {
-			rejectionReason = ev.Reason
-		}
-		var reviewer *int
-		if adminID != 0 {
-			reviewer = &adminID
-		}
-		var userID int
-		err := tx.QueryRow(ctx, `
-			UPDATE kyc_profiles
-			   SET status           = $2,
-			       reviewed_at      = NOW(),
-			       reviewed_by      = $3,
-			       rejection_reason = $4,
-			       updated_at       = NOW()
-			 WHERE id = $1
-			 RETURNING user_id
-		`, profileID, string(ev.NewStatus), reviewer, rejectionReason).Scan(&userID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return apperrors.NotFound(errKYCProfileNotFound)
-		}
+		userID, err := updateKYCProfileStatusTx(ctx, tx, profileID, adminID, ev)
 		if err != nil {
-			return apperrors.Internal(err)
+			return err
 		}
-
 		if ev.DowngradeTier != nil {
-			if _, err := tx.Exec(ctx, `
-				UPDATE kyc_profiles SET tier = $2, updated_at = NOW() WHERE id = $1
-			`, profileID, int(*ev.DowngradeTier)); err != nil {
-				return apperrors.Internal(err)
-			}
-			if _, err := tx.Exec(ctx, `
-				UPDATE users SET kyc_tier = $2, updated_at = NOW() WHERE id = $1
-			`, userID, int(*ev.DowngradeTier)); err != nil {
-				return apperrors.Internal(err)
+			if err := downgradeKYCTierTx(ctx, tx, profileID, userID, *ev.DowngradeTier); err != nil {
+				return err
 			}
 		}
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO kyc_events
-			      (profile_id, profile_type, event_type, actor_id, old_status, new_status, reason, trace_id)
-			VALUES ($1, 'user', $2, $3, $4, $5, $6, $7)
-		`, profileID, string(ev.EventType), reviewer, string(ev.OldStatus), string(ev.NewStatus), ev.Reason, ev.TraceID)
-		if err != nil {
-			return apperrors.Internal(err)
-		}
-		return nil
+		return insertKYCEventTx(ctx, tx, profileID, adminID, ev)
 	})
+}
+
+// updateKYCProfileStatusTx applies the status transition to kyc_profiles and
+// returns the profile's user_id, needed by the tier-downgrade step.
+func updateKYCProfileStatusTx(ctx context.Context, tx pgx.Tx, profileID, adminID int, ev KYCStatusEvent) (int, error) {
+	rejectionReason := ""
+	if ev.NewStatus == domain.KYCStatusRejected {
+		rejectionReason = ev.Reason
+	}
+	reviewer := reviewerPtr(adminID)
+	var userID int
+	err := tx.QueryRow(ctx, `
+		UPDATE kyc_profiles
+		   SET status           = $2,
+		       reviewed_at      = NOW(),
+		       reviewed_by      = $3,
+		       rejection_reason = $4,
+		       updated_at       = NOW()
+		 WHERE id = $1
+		 RETURNING user_id
+	`, profileID, string(ev.NewStatus), reviewer, rejectionReason).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, apperrors.NotFound(errKYCProfileNotFound)
+	}
+	if err != nil {
+		return 0, apperrors.Internal(err)
+	}
+	return userID, nil
+}
+
+// downgradeKYCTierTx applies a tier downgrade to both kyc_profiles and users
+// within the same transaction, keeping the two tier columns in sync.
+func downgradeKYCTierTx(ctx context.Context, tx pgx.Tx, profileID, userID int, tier domain.KYCTier) error {
+	if _, err := tx.Exec(ctx, `
+		UPDATE kyc_profiles SET tier = $2, updated_at = NOW() WHERE id = $1
+	`, profileID, int(tier)); err != nil {
+		return apperrors.Internal(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE users SET kyc_tier = $2, updated_at = NOW() WHERE id = $1
+	`, userID, int(tier)); err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
+// insertKYCEventTx appends the audit-trail row for this status transition.
+func insertKYCEventTx(ctx context.Context, tx pgx.Tx, profileID, adminID int, ev KYCStatusEvent) error {
+	reviewer := reviewerPtr(adminID)
+	_, err := tx.Exec(ctx, `
+		INSERT INTO kyc_events
+		      (profile_id, profile_type, event_type, actor_id, old_status, new_status, reason, trace_id)
+		VALUES ($1, 'user', $2, $3, $4, $5, $6, $7)
+	`, profileID, string(ev.EventType), reviewer, string(ev.OldStatus), string(ev.NewStatus), ev.Reason, ev.TraceID)
+	if err != nil {
+		return apperrors.Internal(err)
+	}
+	return nil
+}
+
+// reviewerPtr returns nil for the sentinel "no admin" value (0, used by
+// system-initiated transitions) or a pointer to adminID otherwise.
+func reviewerPtr(adminID int) *int {
+	if adminID == 0 {
+		return nil
+	}
+	return &adminID
 }
 
 // UpdateTier atomically updates tier on kyc_profiles and kyc_tier on users.

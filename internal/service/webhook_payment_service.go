@@ -107,48 +107,9 @@ func (s *webhookPaymentService) ResolveAndCreditRecurrenteIntent(ctx context.Con
 		return apperrors.NotFound("payment intent not found for reference")
 	}
 
-	if webhookUserID > 0 && webhookUserID != intent.UserID {
-		s.log.Warn("recurrente webhook: declared user_id differs from intent user_id",
-			append([]zap.Field{
-				zap.Int("webhook_user_id", webhookUserID),
-				zap.Int("intent_user_id", intent.UserID),
-				zap.String("reference", reference),
-			}, tracing.LogFields(ctx)...)...)
-		s.recordAmountMismatch(ctx, intent.UserID, "recurrente", map[string]any{
-			"mismatch_field":  "user_id",
-			"webhook_user_id": webhookUserID,
-			"intent_user_id":  intent.UserID,
-			"reference":       reference,
-		})
-	}
-	if webhookAmountCents > 0 && webhookAmountCents != intent.AmountCents {
-		s.log.Warn("recurrente webhook: declared amount differs from intent amount",
-			append([]zap.Field{
-				zap.Int("webhook_amount_cents", webhookAmountCents),
-				zap.Int("intent_amount_cents", intent.AmountCents),
-				zap.String("reference", reference),
-			}, tracing.LogFields(ctx)...)...)
-		s.recordAmountMismatch(ctx, intent.UserID, "recurrente", map[string]any{
-			"mismatch_field":       "amount_cents",
-			"webhook_amount_cents": webhookAmountCents,
-			"intent_amount_cents":  intent.AmountCents,
-			"reference":            reference,
-		})
-	}
-	if webhookCurrency != "" && webhookCurrency != intent.Currency {
-		s.log.Warn("recurrente webhook: declared currency differs from intent currency",
-			append([]zap.Field{
-				zap.String("webhook_currency", webhookCurrency),
-				zap.String("intent_currency", intent.Currency),
-				zap.String("reference", reference),
-			}, tracing.LogFields(ctx)...)...)
-		s.recordAmountMismatch(ctx, intent.UserID, "recurrente", map[string]any{
-			"mismatch_field":   "currency",
-			"webhook_currency": webhookCurrency,
-			"intent_currency":  intent.Currency,
-			"reference":        reference,
-		})
-	}
+	s.checkUserIDMismatch(ctx, intent, reference, webhookUserID)
+	s.checkAmountMismatch(ctx, intent, reference, webhookAmountCents)
+	s.checkCurrencyMismatch(ctx, intent, reference, webhookCurrency)
 
 	userID := intent.UserID
 	amountCents := intent.AmountCents
@@ -168,13 +129,8 @@ func (s *webhookPaymentService) ResolveAndCreditRecurrenteIntent(ctx context.Con
 		opts.sourceAmountCents = amountCents
 	}
 
-	if s.kycGate != nil {
-		if err := s.kycGate.CheckDeposit(ctx, userID, amountCents); err != nil {
-			return err
-		}
-		if err := s.kycGate.CheckDepositVelocity(ctx, userID, amountCents); err != nil {
-			return err
-		}
+	if err := s.checkRecurrenteKYC(ctx, userID, amountCents); err != nil {
+		return err
 	}
 	if err := s.creditDirect(ctx, userID, amountCents, currency, reference, opts); err != nil {
 		return err
@@ -191,6 +147,82 @@ func (s *webhookPaymentService) ResolveAndCreditRecurrenteIntent(ctx context.Con
 	}
 	s.recordAMLIfNeeded(ctx, userID, amountCents)
 	return nil
+}
+
+// checkRecurrenteKYC runs the deposit and deposit-velocity KYC gate checks for
+// a Recurrente credit. No-op when kycGate is not wired (tests without a DB,
+// or the KYC module disabled).
+func (s *webhookPaymentService) checkRecurrenteKYC(ctx context.Context, userID, amountCents int) error {
+	if s.kycGate == nil {
+		return nil
+	}
+	if err := s.kycGate.CheckDeposit(ctx, userID, amountCents); err != nil {
+		return err
+	}
+	return s.kycGate.CheckDepositVelocity(ctx, userID, amountCents)
+}
+
+// checkUserIDMismatch logs and audits when the webhook-declared user_id
+// differs from the server-authoritative intent's user_id. Never blocks the
+// credit — the intent's own value is always used for crediting.
+func (s *webhookPaymentService) checkUserIDMismatch(ctx context.Context, intent *domain.PaymentIntent, reference string, webhookUserID int) {
+	if webhookUserID <= 0 || webhookUserID == intent.UserID {
+		return
+	}
+	s.log.Warn("recurrente webhook: declared user_id differs from intent user_id",
+		append([]zap.Field{
+			zap.Int("webhook_user_id", webhookUserID),
+			zap.Int("intent_user_id", intent.UserID),
+			zap.String("reference", reference),
+		}, tracing.LogFields(ctx)...)...)
+	s.recordAmountMismatch(ctx, intent.UserID, "recurrente", map[string]any{
+		"mismatch_field":  "user_id",
+		"webhook_user_id": webhookUserID,
+		"intent_user_id":  intent.UserID,
+		"reference":       reference,
+	})
+}
+
+// checkAmountMismatch logs and audits when the webhook-declared amount_cents
+// differs from the server-authoritative intent's amount. Never blocks the
+// credit — the intent's own value is always used for crediting.
+func (s *webhookPaymentService) checkAmountMismatch(ctx context.Context, intent *domain.PaymentIntent, reference string, webhookAmountCents int) {
+	if webhookAmountCents <= 0 || webhookAmountCents == intent.AmountCents {
+		return
+	}
+	s.log.Warn("recurrente webhook: declared amount differs from intent amount",
+		append([]zap.Field{
+			zap.Int("webhook_amount_cents", webhookAmountCents),
+			zap.Int("intent_amount_cents", intent.AmountCents),
+			zap.String("reference", reference),
+		}, tracing.LogFields(ctx)...)...)
+	s.recordAmountMismatch(ctx, intent.UserID, "recurrente", map[string]any{
+		"mismatch_field":       "amount_cents",
+		"webhook_amount_cents": webhookAmountCents,
+		"intent_amount_cents":  intent.AmountCents,
+		"reference":            reference,
+	})
+}
+
+// checkCurrencyMismatch logs and audits when the webhook-declared currency
+// differs from the server-authoritative intent's currency. Never blocks the
+// credit — the intent's own value is always used for crediting.
+func (s *webhookPaymentService) checkCurrencyMismatch(ctx context.Context, intent *domain.PaymentIntent, reference string, webhookCurrency string) {
+	if webhookCurrency == "" || webhookCurrency == intent.Currency {
+		return
+	}
+	s.log.Warn("recurrente webhook: declared currency differs from intent currency",
+		append([]zap.Field{
+			zap.String("webhook_currency", webhookCurrency),
+			zap.String("intent_currency", intent.Currency),
+			zap.String("reference", reference),
+		}, tracing.LogFields(ctx)...)...)
+	s.recordAmountMismatch(ctx, intent.UserID, "recurrente", map[string]any{
+		"mismatch_field":   "currency",
+		"webhook_currency": webhookCurrency,
+		"intent_currency":  intent.Currency,
+		"reference":        reference,
+	})
 }
 
 // creditDirectOpts groups the per-call metadata for creditDirect, keeping its
