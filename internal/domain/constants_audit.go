@@ -44,6 +44,13 @@ const (
 	AuditActionWithdrawalRejected   = "withdrawal.rejected"
 	AuditActionWithdrawalProcessed  = "withdrawal.processed"
 	AuditActionWebhookPaymentCredit = "webhook.payment_credited"
+	// AuditActionWebhookAmountMismatch is written when a payment webhook's
+	// declared amount/user/currency differs from the server-authoritative
+	// payment_intents row. The credit itself always uses the intent's own
+	// values (never the webhook's), so this is not a financial-integrity
+	// event — it is a signal worth an operator's attention, since it can
+	// indicate a forged or replayed webhook payload.
+	AuditActionWebhookAmountMismatch = "webhook.amount_mismatch"
 
 	// Exchange rate actions.
 	AuditActionFXRateOverride = "fx_rate.override"

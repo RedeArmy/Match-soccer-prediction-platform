@@ -77,7 +77,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		s.registerPublicRoutes(r)
 		r.Route("/api/v1", func(r chi.Router) {
 			r.Use(middleware.RequestBodyLimit(domain.DefaultAPIBodySizeLimitBytes))
-			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log), s.log))
+			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log, s.jwksIssuerOpt()...), s.log))
 			dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
 				middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
 			}
@@ -181,7 +181,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		paramSvc.GetInt(ctx, domain.ParamKeyIPRateLimitWebhookBurst, domain.DefaultIPRateLimitWebhookBurst),
 	)
 	ipLimiter := middleware.NewIPRateLimiter(ipGlobalStore, ipWebhookStore, meter, s.log)
-	s.recordIPRateStoreMode(ctx, meter)
+	s.recordRateStoreMode(ctx, meter, "ip")
 	// L1 is registered on the root router so it covers every route: /health,
 	// /webhooks/*, static assets, and all /api/v1/* endpoints.  TrustedClientIP
 	// must run first (registered above) to normalise r.RemoteAddr before this
@@ -328,13 +328,13 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// When Redis is not configured the persister is omitted — the provider falls
 	// back to in-memory only, which already covers transient Clerk outages that
 	// do not require a process restart.
-	jwksOpts := []auth.Option{
+	jwksOpts := append([]auth.Option{
 		auth.WithOnDegraded(func(reqCtx context.Context) {
 			if jwksDegradedCtr != nil {
 				jwksDegradedCtr.Add(reqCtx, 1)
 			}
 		}),
-	}
+	}, s.jwksIssuerOpt()...)
 	if s.redisClient != nil {
 		jwksOpts = append(jwksOpts,
 			auth.WithKeysetPersister(cache.NewJWKSKeysetCache(s.redisClient), 15*time.Minute),
@@ -350,13 +350,25 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		maxAgeSecs := paramSvc.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
 		sessionStarter = middleware.NewRedisSessionStartCache(sessionStartRepo, s.redisClient, maxAgeSecs, s.log)
 	}
+	var revocationDegradedCtr metric.Int64Counter
+	if c, err := meter.Int64Counter("wcq_auth_revocation_check_fail_open_total",
+		metric.WithDescription("Requests served without a revocation check because the blocklist DB read failed and the session had no cached verdict"),
+	); err == nil {
+		revocationDegradedCtr = c
+	}
 	sessionProvider := middleware.NewPolicyProvider(clerkProvider, repos.session, paramSvc, s.log,
 		middleware.WithSessionStarter(sessionStarter),
+		middleware.WithOnRevocationDegraded(func(reqCtx context.Context) {
+			if revocationDegradedCtr != nil {
+				revocationDegradedCtr.Add(reqCtx, 1)
+			}
+		}),
 	)
 
 	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))
 	rateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst)
 	userRateStore := s.buildUserRateStore(meter, ratePerSec, rateBurst)
+	s.recordRateStoreMode(ctx, meter, "user")
 
 	// Admin-panel rate limit: a separate, tighter in-process token bucket for
 	// /api/v1/admin so a single admin cannot hammer expensive bulk endpoints
@@ -416,6 +428,16 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	)
 }
 
+// jwksIssuerOpt returns a single-element auth.Option slice applying
+// auth.WithIssuer when s.cfg.Clerk.Issuer is configured, or an empty slice
+// when it is not (issuer validation stays opt-in — see ClerkConfig.Issuer).
+func (s *Server) jwksIssuerOpt() []auth.Option {
+	if s.cfg.Clerk.Issuer == "" {
+		return nil
+	}
+	return []auth.Option{auth.WithIssuer(s.cfg.Clerk.Issuer)}
+}
+
 // buildUserRateStore returns the effective per-user rate-limit store for the
 // /api/v1 subrouter. Selection priority:
 //
@@ -441,30 +463,35 @@ func (s *Server) buildUserRateStore(meter metric.Meter, ratePerSec float64, rate
 	return middleware.NewLimiterStore(ratePerSec, rateBurst)
 }
 
-// recordIPRateStoreMode emits a startup gauge that records which IP rate-limit
-// store is active. mode=redis means cluster-wide limits are enforced via Redis;
-// mode=local means per-replica in-process buckets are used (Redis not configured).
+// recordRateStoreMode emits a startup gauge recording which store backs the
+// named rate limiter ("ip" or "user"). mode=redis means cluster-wide limits
+// are enforced via Redis; mode=local means per-replica in-process buckets are
+// used (Redis not configured) — every replica enforces an independent quota,
+// so the effective cluster-wide limit becomes replica_count × per-replica
+// burst without any single component seeing the full picture.
 //
-// The metric enables a Prometheus alert when the local fallback is active in
-// a multi-replica deployment, where each replica enforces independent limits
-// and the effective cluster burst is replica_count × per-replica burst.
+// Both the IP limiter (buildIPRateStore) and the per-user limiter
+// (buildUserRateStore) key off the same s.redisClient field today, so their
+// mode cannot currently diverge — but recording each separately, labelled by
+// limiter, keeps the signal correct if that ever changes (e.g. a future
+// per-limiter Redis override) instead of silently going stale.
 // See docs/adr/0013-ip-rate-limiter-fail-open-policy.md for the decision record.
-func (s *Server) recordIPRateStoreMode(ctx context.Context, meter metric.Meter) {
+func (s *Server) recordRateStoreMode(ctx context.Context, meter metric.Meter, limiter string) {
 	mode := "redis"
 	if s.redisClient == nil {
 		mode = "local"
 	}
 	g, err := meter.Int64Gauge(
-		"wcq_ip_ratelimit_store_mode",
-		metric.WithDescription("Active IP rate-limit store: 1 for mode=redis (cluster-wide) "+
+		"wcq_ratelimit_store_mode",
+		metric.WithDescription("Active rate-limit store per limiter: 1 for mode=redis (cluster-wide) "+
 			"or mode=local (per-replica fallback). Alert on mode=local when replica_count > 1."),
 		metric.WithUnit("{mode}"),
 	)
 	if err != nil {
-		s.log.Warn("wcq_ip_ratelimit_store_mode: failed to register gauge", zap.Error(err))
+		s.log.Warn("wcq_ratelimit_store_mode: failed to register gauge", zap.String("limiter", limiter), zap.Error(err))
 		return
 	}
-	g.Record(ctx, 1, metric.WithAttributes(attribute.String("mode", mode)))
+	g.Record(ctx, 1, metric.WithAttributes(attribute.String("mode", mode), attribute.String("limiter", limiter)))
 }
 
 // buildIPRateStore returns the effective per-IP rate-limit store for L1 (global)

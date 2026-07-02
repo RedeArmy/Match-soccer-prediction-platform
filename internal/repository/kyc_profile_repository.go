@@ -124,9 +124,11 @@ func (r *PostgresKYCProfileRepository) UpdateStatus(ctx context.Context, profile
 	return nil
 }
 
-// UpdateStatusWithEvent atomically transitions the profile's status and inserts
-// a kyc_events audit row, ensuring no crash between the two writes leaves a
-// compliance gap. oldStatus is the pre-transition value, already read by the caller.
+// UpdateStatusWithEvent atomically transitions the profile's status, optionally
+// downgrades the tier (see KYCStatusEvent.DowngradeTier), and inserts a
+// kyc_events audit row, ensuring no crash between the writes leaves a partial
+// state or a compliance gap. oldStatus is the pre-transition value, already
+// read by the caller.
 func (r *PostgresKYCProfileRepository) UpdateStatusWithEvent(ctx context.Context, profileID, adminID int, ev KYCStatusEvent) error {
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
@@ -139,7 +141,8 @@ func (r *PostgresKYCProfileRepository) UpdateStatusWithEvent(ctx context.Context
 		if adminID != 0 {
 			reviewer = &adminID
 		}
-		tag, err := tx.Exec(ctx, `
+		var userID int
+		err := tx.QueryRow(ctx, `
 			UPDATE kyc_profiles
 			   SET status           = $2,
 			       reviewed_at      = NOW(),
@@ -147,13 +150,28 @@ func (r *PostgresKYCProfileRepository) UpdateStatusWithEvent(ctx context.Context
 			       rejection_reason = $4,
 			       updated_at       = NOW()
 			 WHERE id = $1
-		`, profileID, string(ev.NewStatus), reviewer, rejectionReason)
+			 RETURNING user_id
+		`, profileID, string(ev.NewStatus), reviewer, rejectionReason).Scan(&userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperrors.NotFound(errKYCProfileNotFound)
+		}
 		if err != nil {
 			return apperrors.Internal(err)
 		}
-		if tag.RowsAffected() == 0 {
-			return apperrors.NotFound(errKYCProfileNotFound)
+
+		if ev.DowngradeTier != nil {
+			if _, err := tx.Exec(ctx, `
+				UPDATE kyc_profiles SET tier = $2, updated_at = NOW() WHERE id = $1
+			`, profileID, int(*ev.DowngradeTier)); err != nil {
+				return apperrors.Internal(err)
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE users SET kyc_tier = $2, updated_at = NOW() WHERE id = $1
+			`, userID, int(*ev.DowngradeTier)); err != nil {
+				return apperrors.Internal(err)
+			}
 		}
+
 		_, err = tx.Exec(ctx, `
 			INSERT INTO kyc_events
 			      (profile_id, profile_type, event_type, actor_id, old_status, new_status, reason, trace_id)

@@ -90,6 +90,57 @@ func TestParsePaginationParams_NegativeOffset_ClampsToZero(t *testing.T) {
 	}
 }
 
+func TestParsePaginationParams_OffsetExceedsMax_CapsAtMax(t *testing.T) {
+	req := &http.Request{URL: &url.URL{RawQuery: "limit=10&offset=999999999"}}
+	_, offset := parsePaginationParams(req)
+
+	if offset != domain.DefaultPaginationMaxOffset {
+		t.Errorf("over-max offset: expected %d, got %d", domain.DefaultPaginationMaxOffset, offset)
+	}
+}
+
+// ── parsePagination (?page=) ──────────────────────────────────────────────────
+
+func TestParsePagination_DefaultPage_ZeroOffset(t *testing.T) {
+	req := &http.Request{URL: &url.URL{RawQuery: "limit=10"}}
+	p := parsePagination(req)
+
+	if p.Offset != 0 {
+		t.Errorf("offset: expected 0, got %d", p.Offset)
+	}
+}
+
+func TestParsePagination_Page3_ComputesOffset(t *testing.T) {
+	req := &http.Request{URL: &url.URL{RawQuery: "limit=10&page=3"}}
+	p := parsePagination(req)
+
+	if p.Offset != 20 {
+		t.Errorf("offset: expected 20, got %d", p.Offset)
+	}
+}
+
+func TestParsePagination_HugePage_ClampsOffsetToMax(t *testing.T) {
+	req := &http.Request{URL: &url.URL{RawQuery: "limit=50&page=999999999"}}
+	p := parsePagination(req)
+
+	if p.Offset > domain.DefaultPaginationMaxOffset {
+		t.Errorf("offset %d exceeds DefaultPaginationMaxOffset %d", p.Offset, domain.DefaultPaginationMaxOffset)
+	}
+}
+
+// TestParsePagination_OverflowPage_DoesNotWrapNegative guards against int
+// overflow from (page-1)*limit when Atoi saturates page to math.MaxInt on an
+// unparsable/out-of-range ?page value — the resulting offset must stay a
+// small, positive, capped number rather than wrapping around to garbage.
+func TestParsePagination_OverflowPage_DoesNotWrapNegative(t *testing.T) {
+	req := &http.Request{URL: &url.URL{RawQuery: "limit=50&page=99999999999999999999999999999999"}}
+	p := parsePagination(req)
+
+	if p.Offset < 0 || p.Offset > domain.DefaultPaginationMaxOffset {
+		t.Errorf("offset out of bounds: got %d, want in [0, %d]", p.Offset, domain.DefaultPaginationMaxOffset)
+	}
+}
+
 func TestApplySlicePagination_UnboundedLimit_ReturnsAllFromOffset(t *testing.T) {
 	items := []int{1, 2, 3, 4, 5}
 	result := applySlicePagination(items, 0, 2)

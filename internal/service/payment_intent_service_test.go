@@ -10,6 +10,7 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
+	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // ── stub ──────────────────────────────────────────────────────────────────────
@@ -222,6 +223,28 @@ func TestPaymentIntentService_CreateForRecurrente_EmptyReferenceReturnsValidatio
 	}
 }
 
+// TestPaymentIntentService_CreateForRecurrente_AmountAtMaxAllowed and
+// TestPaymentIntentService_CreateForRecurrente_AmountOverMaxReturnsValidation
+// are the regression tests for the missing deposit cap: Recurrente checkouts
+// must respect payment.intent_max_cents exactly like the PayPal path (Create)
+// already does, so a user cannot bypass the configured deposit limit simply by
+// choosing Recurrente as the payment method.
+func TestPaymentIntentService_CreateForRecurrente_AmountAtMaxAllowed(t *testing.T) {
+	svc := newIntentSvc(&stubIntentRepo{})
+	_, err := svc.CreateForRecurrente(context.Background(), 1, domain.DefaultPaymentIntentMaxCents, "GTQ", "ref-max")
+	if err != nil {
+		t.Fatalf("amount at max should be accepted, got %v", err)
+	}
+}
+
+func TestPaymentIntentService_CreateForRecurrente_AmountOverMaxReturnsValidation(t *testing.T) {
+	svc := newIntentSvc(&stubIntentRepo{})
+	_, err := svc.CreateForRecurrente(context.Background(), 1, domain.DefaultPaymentIntentMaxCents+1, "GTQ", "ref-over-max")
+	if err == nil {
+		t.Fatal("expected validation error for amount above max, got nil")
+	}
+}
+
 func TestPaymentIntentService_CreateForRecurrente_DefaultCurrency(t *testing.T) {
 	svc := newIntentSvc(&stubIntentRepo{})
 	intent, err := svc.CreateForRecurrente(context.Background(), 1, 1000, "", "ref-xyz")
@@ -272,7 +295,7 @@ func TestPaymentIntentService_ListMyAll_ReturnsEmpty(t *testing.T) {
 func TestPaymentIntentService_SetComprobanteByToken_TokenNotFound_Returns404(t *testing.T) {
 	// stubIntentRepo.GetByToken returns (nil, nil) by default.
 	svc := newIntentSvc(&stubIntentRepo{})
-	err := svc.SetComprobanteByToken(context.Background(), "missing-tok", "key", "image/jpeg", 1024)
+	err := svc.SetComprobanteByToken(context.Background(), 3, "missing-tok", "key", "image/jpeg", 1024)
 	if err == nil {
 		t.Fatal("expected not-found error, got nil")
 	}
@@ -283,8 +306,24 @@ func TestPaymentIntentService_SetComprobanteByToken_HappyPath(t *testing.T) {
 		intent: &domain.PaymentIntent{ID: 9, Token: "tok-ok", UserID: 3},
 	}
 	svc := NewPaymentIntentService(repo, &noopSystemParamService{}, zap.NewNop())
-	if err := svc.SetComprobanteByToken(context.Background(), "tok-ok", "some/key.jpg", "image/jpeg", 2048); err != nil {
+	if err := svc.SetComprobanteByToken(context.Background(), 3, "tok-ok", "some/key.jpg", "image/jpeg", 2048); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestPaymentIntentService_SetComprobanteByToken_OtherUsersToken_Returns404 is
+// the regression test for the IDOR finding: a caller who somehow obtains
+// another user's intent token (e.g. a future caller that does not replicate
+// the handler's ListMyPending prefilter) must not be able to attach a
+// comprobante to it.
+func TestPaymentIntentService_SetComprobanteByToken_OtherUsersToken_Returns404(t *testing.T) {
+	repo := &stubIntentRepoWithGetByToken{
+		intent: &domain.PaymentIntent{ID: 9, Token: "tok-ok", UserID: 3},
+	}
+	svc := NewPaymentIntentService(repo, &noopSystemParamService{}, zap.NewNop())
+	err := svc.SetComprobanteByToken(context.Background(), 999, "tok-ok", "some/key.jpg", "image/jpeg", 2048)
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("expected NotFound for a token owned by a different user, got %v", err)
 	}
 }
 

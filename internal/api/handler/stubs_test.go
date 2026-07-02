@@ -432,7 +432,7 @@ type stubWebhookPaymentSvc struct {
 	err error
 }
 
-func (s *stubWebhookPaymentSvc) CreditFromRecurrente(_ context.Context, _ int, _ int, _, _ string) error {
+func (s *stubWebhookPaymentSvc) ResolveAndCreditRecurrenteIntent(_ context.Context, _ string, _, _ int, _ string) error {
 	return s.err
 }
 func (s *stubWebhookPaymentSvc) ResolveAndCreditPayPalIntent(_ context.Context, _, _ string, _ int) error {

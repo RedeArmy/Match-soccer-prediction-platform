@@ -21,14 +21,16 @@ import (
 // ── stubs ─────────────────────────────────────────────────────────────────────
 
 type kycProfileRepoStub struct {
-	profile         *domain.KYCProfile
-	profiles        []*domain.KYCProfile
-	frozen          []*domain.FrozenBalanceSummary
-	dupExists       bool
-	err             error
-	updateStatusErr error // overrides err for UpdateStatus only
-	getByUserIDErr  error // overrides err for GetByUserID only
-	releaseErr      error // overrides err for ReleaseAndCreditFrozen only
+	profile              *domain.KYCProfile
+	profiles             []*domain.KYCProfile
+	frozen               []*domain.FrozenBalanceSummary
+	dupExists            bool
+	err                  error
+	updateStatusErr      error // overrides err for UpdateStatus only
+	getByUserIDErr       error // overrides err for GetByUserID only
+	releaseErr           error // overrides err for ReleaseAndCreditFrozen only
+	lastStatusEvent      repository.KYCStatusEvent
+	lastStatusEventCalls int
 }
 
 func (r *kycProfileRepoStub) Upsert(_ context.Context, p *domain.KYCProfile) error {
@@ -100,7 +102,9 @@ func (r *kycProfileRepoStub) FreezeAtomic(_ context.Context, _ int, _ int, _ str
 func (r *kycProfileRepoStub) FreezeAtomicWithTxHook(_ context.Context, _ int, _ int, _ string, _ string, _ func(context.Context, pgx.Tx) error) error {
 	return r.err
 }
-func (r *kycProfileRepoStub) UpdateStatusWithEvent(_ context.Context, _, _ int, _ repository.KYCStatusEvent) error {
+func (r *kycProfileRepoStub) UpdateStatusWithEvent(_ context.Context, _, _ int, ev repository.KYCStatusEvent) error {
+	r.lastStatusEvent = ev
+	r.lastStatusEventCalls++
 	if r.updateStatusErr != nil {
 		return r.updateStatusErr
 	}
@@ -358,6 +362,28 @@ func TestKYCService_Reject_EmptyReason_Validation(t *testing.T) {
 	}
 }
 
+// TestKYCService_Reject_DowngradesTierToUnverified is the regression test for
+// the KYC tier bypass: a profile previously approved to Tier 2+ must lose that
+// tier the moment it is rejected, otherwise the user keeps Tier 2+ withdrawal
+// limits indefinitely despite having a rejected identity on file.
+func TestKYCService_Reject_DowngradesTierToUnverified(t *testing.T) {
+	existing := &domain.KYCProfile{ID: 1, UserID: 5, Status: domain.KYCStatusApproved, Tier: domain.KYCTierTwo}
+	repo := &kycProfileRepoStub{profile: existing}
+	svc := newKYCSvc(repo, &kycDocRepoStub{}, &kycEventRepoStub{})
+	if err := svc.Reject(context.Background(), 1, 99, "fraudulent document"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.lastStatusEventCalls != 1 {
+		t.Fatalf("expected UpdateStatusWithEvent to be called once, got %d", repo.lastStatusEventCalls)
+	}
+	if repo.lastStatusEvent.DowngradeTier == nil {
+		t.Fatal("expected DowngradeTier to be set on reject, got nil")
+	}
+	if *repo.lastStatusEvent.DowngradeTier != domain.KYCTierUnverified {
+		t.Errorf("DowngradeTier: got %d, want KYCTierUnverified", *repo.lastStatusEvent.DowngradeTier)
+	}
+}
+
 // ── Escalate ──────────────────────────────────────────────────────────────────
 
 func TestKYCService_Escalate_HappyPath(t *testing.T) {
@@ -365,6 +391,25 @@ func TestKYCService_Escalate_HappyPath(t *testing.T) {
 	svc := newKYCSvc(&kycProfileRepoStub{profile: existing}, &kycDocRepoStub{}, &kycEventRepoStub{})
 	if err := svc.Escalate(context.Background(), 1, 99, "suspicious"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestKYCService_Escalate_DowngradesTierToUnverified verifies that escalating a
+// profile for senior compliance review also suspends the tier back to
+// Unverified, so money-movement limits reflect the profile being under active
+// suspicion rather than the last tier that happened to be approved.
+func TestKYCService_Escalate_DowngradesTierToUnverified(t *testing.T) {
+	existing := &domain.KYCProfile{ID: 1, UserID: 5, Status: domain.KYCStatusApproved, Tier: domain.KYCTierThree}
+	repo := &kycProfileRepoStub{profile: existing}
+	svc := newKYCSvc(repo, &kycDocRepoStub{}, &kycEventRepoStub{})
+	if err := svc.Escalate(context.Background(), 1, 99, "suspicious deposit pattern"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if repo.lastStatusEvent.DowngradeTier == nil {
+		t.Fatal("expected DowngradeTier to be set on escalate, got nil")
+	}
+	if *repo.lastStatusEvent.DowngradeTier != domain.KYCTierUnverified {
+		t.Errorf("DowngradeTier: got %d, want KYCTierUnverified", *repo.lastStatusEvent.DowngradeTier)
 	}
 }
 

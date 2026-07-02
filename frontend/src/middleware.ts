@@ -50,6 +50,9 @@ function clerkFrontendApiOrigin(): string {
 }
 
 // buildCSP constructs the Content-Security-Policy header value for a given nonce.
+// This is only ever called in production (see the NODE_ENV check below) —
+// Turbopack's dev-mode HMR requires 'unsafe-eval', which is why development
+// skips CSP entirely instead of enforcing a policy that would need to allow it.
 //
 // script-src strategy:
 //   'nonce-{nonce}' + 'strict-dynamic' — the root layout passes the nonce to
@@ -57,7 +60,9 @@ function clerkFrontendApiOrigin(): string {
 //   via the x-nonce request header. 'strict-dynamic' trusts scripts dynamically
 //   loaded by those nonce-carrying scripts (Next.js chunks, Clerk sub-resources).
 //   'unsafe-inline' is a fallback for pre-CSP3 browsers; CSP3 browsers ignore
-//   it when 'strict-dynamic' is present.
+//   it when 'strict-dynamic' is present. 'unsafe-eval' is deliberately absent:
+//   the Next.js production build does not use eval()-based code generation,
+//   and neither Clerk nor the PayPal JS SDK require it at runtime.
 //
 // style-src retains 'unsafe-inline' because the root layout injects a
 // <style> block for CSS custom properties that cannot carry a nonce.
@@ -66,7 +71,7 @@ function buildCSP(nonce: string): string {
   const clerkApiEntry = clerkApi ? ` ${clerkApi}` : "";
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://www.paypalobjects.com${clerkApiEntry}`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-inline' https://clerk.com https://*.clerk.com https://*.clerk.accounts.dev https://*.paypal.com https://www.paypalobjects.com${clerkApiEntry}`,
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "img-src 'self' data: blob: https:",
     "font-src 'self' https://fonts.gstatic.com",

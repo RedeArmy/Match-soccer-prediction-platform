@@ -26,18 +26,6 @@ func (s *ledgerSumStub) Credit(_ context.Context, _ int, _ int, _ domain.Balance
 func (s *ledgerSumStub) CreditIdempotent(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ string, _ string, _ int) (bool, error) {
 	return true, nil
 }
-func (s *ledgerSumStub) Debit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
-	return nil
-}
-func (s *ledgerSumStub) Reserve(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return nil
-}
-func (s *ledgerSumStub) ReleaseReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return nil
-}
-func (s *ledgerSumStub) CommitReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return nil
-}
 func (s *ledgerSumStub) ListByUser(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
 	return nil, nil
 }

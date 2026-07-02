@@ -50,7 +50,9 @@ func (h *AdminKYCHandler) ListQueue(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := make([]KYCProfileResponse, 0, len(profiles))
 	for _, p := range profiles {
-		resp = append(resp, kycProfileToResponse(p))
+		item := kycProfileToResponse(p)
+		item.DocumentNumber = maskDocumentNumber(item.DocumentNumber)
+		resp = append(resp, item)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

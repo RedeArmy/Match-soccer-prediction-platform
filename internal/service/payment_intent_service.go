@@ -29,8 +29,10 @@ type PaymentIntentCreator interface {
 	// Used on the balance page to show the full payment history.
 	ListMyAll(ctx context.Context, userID int) ([]*domain.PaymentIntent, error)
 	// SetComprobanteByToken stores the comprobante file metadata on the intent
-	// identified by token.
-	SetComprobanteByToken(ctx context.Context, token, key, contentType string, fileSize int) error
+	// identified by token. userID is validated against the intent so a caller
+	// cannot attach a comprobante to another user's payment intent. Returns
+	// apperrors.NotFound when the token is unknown or owned by a different user.
+	SetComprobanteByToken(ctx context.Context, userID int, token, key, contentType string, fileSize int) error
 	// ResubmitForReview transitions a rejected intent to under_review, records
 	// user_notes, and optionally replaces the comprobante. The userID is validated
 	// against the intent so a user cannot submit on behalf of another.
@@ -101,6 +103,10 @@ func (s *paymentIntentService) CreateForRecurrente(ctx context.Context, userID, 
 	if reference == "" {
 		return nil, apperrors.Validation("reference is required")
 	}
+	maxCents := s.params.GetInt(ctx, domain.ParamKeyPaymentIntentMaxCents, domain.DefaultPaymentIntentMaxCents)
+	if amountCents > maxCents {
+		return nil, apperrors.Validation(fmt.Sprintf("amount_cents exceeds maximum of %d", maxCents))
+	}
 	if currency == "" {
 		currency = "GTQ"
 	}
@@ -139,13 +145,16 @@ func (s *paymentIntentService) ListMyAll(ctx context.Context, userID int) ([]*do
 	return s.intentRepo.ListAllByUser(ctx, userID)
 }
 
-// SetComprobanteByToken looks up the intent by token and delegates to the repo.
-func (s *paymentIntentService) SetComprobanteByToken(ctx context.Context, token, key, contentType string, fileSize int) error {
+// SetComprobanteByToken looks up the intent by token, validates ownership,
+// and delegates to the repo. Returning NotFound (rather than Forbidden) for an
+// owned-by-someone-else token avoids confirming to the caller that the token
+// exists at all — the same convention ResubmitForReview and CancelIntent use.
+func (s *paymentIntentService) SetComprobanteByToken(ctx context.Context, userID int, token, key, contentType string, fileSize int) error {
 	intent, err := s.intentRepo.GetByToken(ctx, token)
 	if err != nil {
 		return err
 	}
-	if intent == nil {
+	if intent == nil || intent.UserID != userID {
 		return apperrors.NotFound("payment intent not found")
 	}
 	return s.intentRepo.SetComprobante(ctx, intent.ID, key, contentType, fileSize)

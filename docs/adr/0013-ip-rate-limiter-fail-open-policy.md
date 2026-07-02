@@ -57,20 +57,32 @@ financial transactions.
 ## Observability requirement
 
 Because the fail-open behaviour is silent without instrumentation, two signals
-are wired:
+are wired — one for the *transient* case (Redis configured but temporarily
+unreachable) and one for the *steady-state* case (Redis never configured):
 
 1. **`wcq_rate_limit_fail_open_total`** (counter, `internal/middleware/rate_limit_redis.go`)
    Incremented on every request that bypasses Redis due to a connectivity error.
-   Alert: `rate(wcq_rate_limit_fail_open_total[5m]) > 0`.
+   Shared by both the IP and per-user limiters (not distinguished by label —
+   either one being degraded is actionable the same way).
+   Alert: `WCQRateLimitDegraded` — `increase(wcq_rate_limit_fail_open_total[5m]) > 0`.
 
-2. **`wcq_ip_ratelimit_store_mode{mode="local"}`** (gauge, `internal/api/server_routes.go`)
-   Set to 1 at startup when Redis is not configured and the in-process store is
-   used. Alert: `wcq_ip_ratelimit_store_mode{mode="local"} == 1`.
-   Complement: `wcq_ip_ratelimit_store_mode{mode="redis"} == 1` confirms the
+2. **`wcq_ratelimit_store_mode{limiter="ip"|"user", mode="redis"|"local"}`**
+   (gauge, `internal/api/server_routes.go`, `recordRateStoreMode`)
+   Set to 1 at startup for each limiter when Redis is not configured and the
+   in-process store is used instead. Recorded separately per limiter (`ip`,
+   `user`) even though both key off the same `WCQ_REDIS_ADDR` today, so the
+   signal stays correct if that ever changes.
+   Alert: `WCQRateLimitLocalMode` — `max by (limiter) (wcq_ratelimit_store_mode{mode="local"}) == 1`
+   for 5m. This is the alert that catches "Redis was simply never configured"
+   in a multi-replica deployment — a case `WCQRateLimitDegraded` cannot catch,
+   since there is no Redis connectivity error to count.
+   Complement: `wcq_ratelimit_store_mode{mode="redis"} == 1` confirms the
    preferred path is active after a Redis recovery + process restart.
 
 Both metrics are registered at startup; a no-op provider silently discards
-them when `WCQ_METRICS_ENABLED=false` (development default).
+them when `WCQ_METRICS_ENABLED=false` (development default). Both alerts are
+wired in `observability/prometheus/rules/alerting_rules.yml` (group
+`wcq.alerts.rate_limit`).
 
 ---
 
@@ -95,5 +107,6 @@ replica count at runtime, (b) the risk delta is small at quiniela scale,
 ## Implementation
 
 - `internal/middleware/rate_limit_redis.go` — `wcq_rate_limit_fail_open_total`
-- `internal/api/server_routes.go` — `recordIPRateStoreMode`, `buildIPRateStore`
+- `internal/api/server_routes.go` — `recordRateStoreMode`, `buildIPRateStore`, `buildUserRateStore`
+- `observability/prometheus/rules/alerting_rules.yml` — `WCQRateLimitDegraded`, `WCQRateLimitLocalMode`
 - `docs/adr/0012-rate-limiter-architecture.md` — per-user limiter architecture

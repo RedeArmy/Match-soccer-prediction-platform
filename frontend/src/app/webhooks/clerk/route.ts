@@ -5,6 +5,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { relayWebhook } from "@/lib/webhook-relay";
 
+const SVIX_HEADERS = ["svix-id", "svix-timestamp", "svix-signature"];
+
 export function POST(req: NextRequest): Promise<NextResponse> {
-  return relayWebhook(req, "/webhooks/clerk", "webhook relay");
+  return relayWebhook(req, "/webhooks/clerk", "webhook relay", SVIX_HEADERS);
 }

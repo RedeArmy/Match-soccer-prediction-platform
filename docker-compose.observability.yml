@@ -14,15 +14,25 @@
 #   docker compose -f docker-compose.observability.yml up -d
 #
 # Required env vars in /opt/wcq/.env (production) or .env (dev):
-#   GRAFANA_ADMIN_PASSWORD   — Grafana admin password   (default: admin)
+#   GRAFANA_ADMIN_PASSWORD   — Grafana admin password    — REQUIRED, no default
 #   GRAFANA_ROOT_URL         — public Grafana URL        (default: http://localhost:3001)
-#   N8N_ENCRYPTION_KEY       — n8n credential encryption key
+#   N8N_ENCRYPTION_KEY       — n8n credential encryption key — REQUIRED, no default
 #   N8N_BASIC_AUTH_USER      — n8n UI username           (default: admin)
-#   N8N_BASIC_AUTH_PASS      — n8n UI password           (default: changeme)
+#   N8N_BASIC_AUTH_PASS      — n8n UI password           — REQUIRED, no default
 #   N8N_WEBHOOK_URL          — public n8n webhook URL    (default: http://localhost:5678/)
 #   N8N_PROTOCOL             — http or https             (default: http)
 #   PROMETHEUS_CONFIG        — prometheus config filename (default: prometheus.yml)
 #                              Set to prometheus.prod.yml in production.
+#
+# GRAFANA_ADMIN_PASSWORD, N8N_BASIC_AUTH_PASS, and N8N_ENCRYPTION_KEY have no
+# fallback value: this file is deployed as-is in both dev and production
+# (see server/deploy.sh, server/setup.sh) with no separate prod variant, so a
+# baked-in default like "admin"/"changeme" would be a real production
+# credential, not just a dev convenience. Set them in your local .env too —
+# the compose CLI substitutes an empty string with a warning if unset, it
+# does not fail the deployment, so an operator who forgets these still gets
+# a running (mis-secured) stack rather than a hard stop. Same convention as
+# docker-compose.prod.yml, which never defaults a secret.
 
 services:
   prometheus:
@@ -49,7 +59,7 @@ services:
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER:      admin
-      GF_SECURITY_ADMIN_PASSWORD:  ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD:  ${GRAFANA_ADMIN_PASSWORD}
       # In production GRAFANA_ROOT_URL should be the public HTTPS URL, e.g.
       # https://grafana.example.com — used for redirect URIs and panel links.
       GF_SERVER_ROOT_URL:          ${GRAFANA_ROOT_URL:-http://localhost:3001}
@@ -140,8 +150,8 @@ services:
       N8N_OWNER_USER_ID:       ${N8N_OWNER_USER_ID}
       N8N_BASIC_AUTH_ACTIVE:   "true"
       N8N_BASIC_AUTH_USER:     ${N8N_BASIC_AUTH_USER:-admin}
-      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASS:-changeme}
-      N8N_ENCRYPTION_KEY:      ${N8N_ENCRYPTION_KEY:-dev-encryption-key-change-in-prod}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASS}
+      N8N_ENCRYPTION_KEY:      ${N8N_ENCRYPTION_KEY}
       N8N_HOST:                n8n
       N8N_PORT:                "5678"
       N8N_PROTOCOL:            ${N8N_PROTOCOL:-http}
@@ -149,6 +159,12 @@ services:
       # webhook URLs in the UI. In production set to the public HTTPS domain.
       WEBHOOK_URL:             ${N8N_WEBHOOK_URL:-http://localhost:5678/}
       N8N_LOG_LEVEL:           info
+      # Code nodes are sandboxed and cannot `require()` built-in Node modules
+      # unless explicitly allow-listed. "crypto" is required by the
+      # "Verify Signature" node present in every backend-triggered webhook
+      # workflow — it computes the HMAC-SHA256 check against X-Signature
+      # before any KYC/payout notification action is taken.
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
       # ── SMTP (used by emailSend nodes in all notification workflows) ──────
       # n8n self-hosted exposes process.env.* to Code nodes and $env.* to
       # workflow expressions, so these env vars are usable in all 15 workflows.
