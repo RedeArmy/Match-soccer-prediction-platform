@@ -146,7 +146,24 @@ func (h *PaymentWebhookHandler) HandleRecurrente(w http.ResponseWriter, r *http.
 	}
 
 	start := time.Now()
-	if err := h.svc.CreditFromRecurrente(r.Context(), userID, amountCents, currency, reference); err != nil {
+	if err := h.svc.ResolveAndCreditRecurrenteIntent(r.Context(), reference, userID, amountCents, currency); err != nil {
+		// A NotFound error means the reference does not match any payment intent
+		// created by CreateForRecurrente — either a forged/replayed payload or an
+		// intent that was never persisted. Returning a non-2xx here causes
+		// Recurrente to retry indefinitely, which cannot resolve the situation.
+		// Acknowledge with 204 to stop the retry loop and emit a warning so the
+		// payment can be investigated/credited manually if it was legitimate.
+		if errors.Is(err, apperrors.ErrNotFound) {
+			h.log.Warn("recurrente webhook: no matching payment intent for reference — acknowledging to stop retries; manual review may be required",
+				zap.String("reference", reference),
+				zap.Int("user_id", userID),
+				zap.Error(err),
+			)
+			h.notifyPaymentError(r.Context(), "recurrente", "intent_not_found", strconv.Itoa(userID), amountCents)
+			h.recordPayment(r.Context(), "recurrente", "expired", time.Since(start))
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		h.log.Error("recurrente webhook: failed to credit balance",
 			zap.String("reference", reference),
 			zap.Int("user_id", userID),
@@ -340,7 +357,7 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 		if errors.Is(err, apperrors.ErrNotFound) {
 			h.log.Warn("paypal webhook: intent expired or not found — acknowledging to stop retries; manual credit may be required",
 				zap.String("capture_id", captureID),
-				zap.String("intent_token", intentToken),
+				zap.String("intent_token", maskIntentToken(intentToken)),
 				zap.Error(err),
 			)
 			h.notifyPaymentError(r.Context(), "paypal", "intent_expired", "", webhookAmountCents)
@@ -350,7 +367,7 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 		}
 		h.log.Error("paypal webhook: failed to resolve intent and credit balance",
 			zap.String("capture_id", captureID),
-			zap.String("intent_token", intentToken),
+			zap.String("intent_token", maskIntentToken(intentToken)),
 			zap.Error(err),
 		)
 		h.notifyPaymentError(r.Context(), "paypal", err.Error(), "", webhookAmountCents)
@@ -364,6 +381,21 @@ func (h *PaymentWebhookHandler) HandlePayPal(w http.ResponseWriter, r *http.Requ
 		h.notifier.NotifyBalanceCredited(r.Context(), 0, webhookAmountCents, "paypal")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// maskIntentToken truncates a payment intent token for logging. The full
+// token is a 256-bit unguessable capability credential (see
+// generateIntentToken) — whoever holds it can act as the intent owner (e.g.
+// upload a comprobante) until it expires. Logs are a lower-trust surface than
+// the database (broader read access, longer retention, external aggregators),
+// so only a short prefix is emitted — enough to correlate log lines with a
+// specific intent without reproducing the credential itself.
+func maskIntentToken(token string) string {
+	const visible = 8
+	if len(token) <= visible {
+		return token
+	}
+	return token[:visible] + "…"
 }
 
 // notifyPaymentError calls NotifyPaymentError on the notifier if one is wired.

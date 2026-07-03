@@ -68,25 +68,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	r.Use(middleware.NewMetrics(otel.GetMeterProvider().Meter("wcq")))
 
 	if s.db == nil {
-		// When the database is unavailable, register health and a catch-all 503
-		// stub for the API surface. Infrastructure endpoints remain reachable so
-		// load-balancer health checks work; IP rate limiting is not applied in
-		// degraded mode (no business logic runs, so the risk is acceptable).
-		// Wildcard coverage means new routes added to the happy path are
-		// automatically covered without a second edit here.
-		s.registerPublicRoutes(r)
-		r.Route("/api/v1", func(r chi.Router) {
-			r.Use(middleware.RequestBodyLimit(domain.DefaultAPIBodySizeLimitBytes))
-			r.Use(middleware.RequireAuth(auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log), s.log))
-			dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
-				middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
-			}
-			r.HandleFunc("/*", dbUnavailable)
-			r.HandleFunc("/", dbUnavailable)
-		})
-		return otelhttp.NewHandler(r, "world-cup-quiniela.api",
-			otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
-		)
+		return s.degradedRoutes(ctx, r)
 	}
 
 	// Construct repository instances once and share them across the event bus,
@@ -181,7 +163,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		paramSvc.GetInt(ctx, domain.ParamKeyIPRateLimitWebhookBurst, domain.DefaultIPRateLimitWebhookBurst),
 	)
 	ipLimiter := middleware.NewIPRateLimiter(ipGlobalStore, ipWebhookStore, meter, s.log)
-	s.recordIPRateStoreMode(ctx, meter)
+	s.recordRateStoreMode(ctx, meter, "ip")
 	// L1 is registered on the root router so it covers every route: /health,
 	// /webhooks/*, static assets, and all /api/v1/* endpoints.  TrustedClientIP
 	// must run first (registered above) to normalise r.RemoteAddr before this
@@ -297,16 +279,8 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	idemTTL := time.Duration(paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyTTLHours, domain.DefaultAPIIdempotencyTTLHours)) * time.Hour
 	idemKeyMaxLen := paramSvc.GetInt(ctx, domain.ParamKeyAPIIdempotencyKeyMaxLen, domain.DefaultAPIIdempotencyKeyMaxLen)
 
-	// ensureIdempotencyStore returns true when it fell back to MemoryStore.
-	// Emit the degraded counter once at startup so WCQIdempotencyDegraded
-	// (for:0m, severity:critical) fires immediately; the per-request counter
-	// in the Idempotency middleware only fires on Redis errors, not on permanent
-	// MemoryStore use. The fail-open decision is documented in ADR 0014.
-	if s.ensureIdempotencyStore() {
-		if c, err := meter.Int64Counter("wcq_idempotency_degraded_total"); err == nil {
-			c.Add(ctx, 1)
-		}
-	}
+	// The fail-open decision for a MemoryStore fallback is documented in ADR 0014.
+	s.recordIdempotencyDegradedIfNeeded(ctx, meter)
 	idem := middleware.Idempotency(s.idemStore, meter, s.log, idemTTL, idemKeyMaxLen)
 
 	// Versioned API surface with Clerk JWT authentication + local session policy.
@@ -318,45 +292,13 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	//   2. Local revocation blocklist (POST /api/v1/auth/logout writes here).
 	// This gives the system session-lifetime control and logout independent of
 	// Clerk's plan-gated session management features.
-	var jwksDegradedCtr metric.Int64Counter
-	if c, err := meter.Int64Counter("wcq_jwks_degraded_validations_total",
-		metric.WithDescription("JWT validations served from the stale in-memory JWKS fallback (Clerk endpoint unreachable)"),
-	); err == nil {
-		jwksDegradedCtr = c
-	}
-	// JWKS persister: Redis-backed cross-restart fallback (TTL 15 min).
-	// When Redis is not configured the persister is omitted — the provider falls
-	// back to in-memory only, which already covers transient Clerk outages that
-	// do not require a process restart.
-	jwksOpts := []auth.Option{
-		auth.WithOnDegraded(func(reqCtx context.Context) {
-			if jwksDegradedCtr != nil {
-				jwksDegradedCtr.Add(reqCtx, 1)
-			}
-		}),
-	}
-	if s.redisClient != nil {
-		jwksOpts = append(jwksOpts,
-			auth.WithKeysetPersister(cache.NewJWKSKeysetCache(s.redisClient), 15*time.Minute),
-		)
-	}
-	clerkProvider := auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, authWarmup, s.log, jwksOpts...)
-	sessionStartRepo := repository.NewPostgresSessionStartRepository(s.db)
-	if err := sessionStartRepo.RegisterSessionStartMetrics(meter); err != nil {
-		s.log.Warn("sessionStartRepo: RegisterSessionStartMetrics failed", zap.Error(err))
-	}
-	var sessionStarter middleware.SessionStarter = sessionStartRepo
-	if s.redisClient != nil {
-		maxAgeSecs := paramSvc.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
-		sessionStarter = middleware.NewRedisSessionStartCache(sessionStartRepo, s.redisClient, maxAgeSecs, s.log)
-	}
-	sessionProvider := middleware.NewPolicyProvider(clerkProvider, repos.session, paramSvc, s.log,
-		middleware.WithSessionStarter(sessionStarter),
-	)
+	clerkProvider := s.buildJWKSAuthProvider(ctx, meter, authWarmup)
+	sessionProvider := s.buildSessionAuthProvider(ctx, meter, paramSvc, repos.session, clerkProvider)
 
 	ratePerSec := float64(paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitRatePerSec, domain.DefaultAPIRateLimitRatePerSec))
 	rateBurst := paramSvc.GetInt(ctx, domain.ParamKeyAPIRateLimitBurst, domain.DefaultAPIRateLimitBurst)
 	userRateStore := s.buildUserRateStore(meter, ratePerSec, rateBurst)
+	s.recordRateStoreMode(ctx, meter, "user")
 
 	// Admin-panel rate limit: a separate, tighter in-process token bucket for
 	// /api/v1/admin so a single admin cannot hammer expensive bulk endpoints
@@ -416,6 +358,118 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	)
 }
 
+// degradedRoutes registers health and a catch-all 503 stub for the API
+// surface when the database is unavailable at startup. Infrastructure
+// endpoints remain reachable so load-balancer health checks work; IP rate
+// limiting is not applied in degraded mode (no business logic runs, so the
+// risk is acceptable). Wildcard coverage means new routes added to the happy
+// path are automatically covered without a second edit here.
+func (s *Server) degradedRoutes(ctx context.Context, r chi.Router) http.Handler {
+	s.registerPublicRoutes(r)
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(middleware.RequestBodyLimit(domain.DefaultAPIBodySizeLimitBytes))
+		r.Use(middleware.RequireAuth(auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, auth.DefaultWarmupTimeout, s.log, s.jwksIssuerOpt()...), s.log))
+		dbUnavailable := func(w http.ResponseWriter, req *http.Request) {
+			middleware.WriteError(w, req, s.log, apperrors.Internal(fmt.Errorf("database unavailable")))
+		}
+		r.HandleFunc("/*", dbUnavailable)
+		r.HandleFunc("/", dbUnavailable)
+	})
+	return otelhttp.NewHandler(r, "world-cup-quiniela.api",
+		otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
+	)
+}
+
+// jwksIssuerOpt returns a single-element auth.Option slice applying
+// auth.WithIssuer when s.cfg.Clerk.Issuer is configured, or an empty slice
+// when it is not (issuer validation stays opt-in — see ClerkConfig.Issuer).
+func (s *Server) jwksIssuerOpt() []auth.Option {
+	if s.cfg.Clerk.Issuer == "" {
+		return nil
+	}
+	return []auth.Option{auth.WithIssuer(s.cfg.Clerk.Issuer)}
+}
+
+// recordIdempotencyDegradedIfNeeded emits wcq_idempotency_degraded_total once
+// at startup when ensureIdempotencyStore fell back to MemoryStore, so
+// WCQIdempotencyDegraded (for:0m, severity:critical) fires immediately — the
+// per-request counter in the Idempotency middleware only fires on Redis
+// errors, not on permanent MemoryStore use.
+func (s *Server) recordIdempotencyDegradedIfNeeded(ctx context.Context, meter metric.Meter) {
+	if !s.ensureIdempotencyStore() {
+		return
+	}
+	if c, err := meter.Int64Counter("wcq_idempotency_degraded_total"); err == nil {
+		c.Add(ctx, 1)
+	}
+}
+
+// buildJWKSAuthProvider constructs the Clerk JWKS-backed identity provider,
+// wiring a degraded-validation counter and, when Redis is configured, a
+// cross-restart keyset persister (TTL 15 min) so a process restart during a
+// transient Clerk outage does not force a full JWKS re-fetch.
+func (s *Server) buildJWKSAuthProvider(ctx context.Context, meter metric.Meter, warmup time.Duration) auth.IdentityProvider {
+	var jwksDegradedCtr metric.Int64Counter
+	if c, err := meter.Int64Counter("wcq_jwks_degraded_validations_total",
+		metric.WithDescription("JWT validations served from the stale in-memory JWKS fallback (Clerk endpoint unreachable)"),
+	); err == nil {
+		jwksDegradedCtr = c
+	}
+	// JWKS persister: Redis-backed cross-restart fallback (TTL 15 min).
+	// When Redis is not configured the persister is omitted — the provider falls
+	// back to in-memory only, which already covers transient Clerk outages that
+	// do not require a process restart.
+	jwksOpts := append([]auth.Option{
+		auth.WithOnDegraded(func(reqCtx context.Context) {
+			if jwksDegradedCtr != nil {
+				jwksDegradedCtr.Add(reqCtx, 1)
+			}
+		}),
+	}, s.jwksIssuerOpt()...)
+	if s.redisClient != nil {
+		jwksOpts = append(jwksOpts,
+			auth.WithKeysetPersister(cache.NewJWKSKeysetCache(s.redisClient), 15*time.Minute),
+		)
+	}
+	return auth.NewJWKSProvider(ctx, s.cfg.Clerk.JWKSURL, warmup, s.log, jwksOpts...)
+}
+
+// buildSessionAuthProvider wraps clerkProvider with the two local
+// session-policy enforcement layers (iat-based max-age and the revocation
+// blocklist), giving the system session-lifetime control and logout
+// independent of Clerk's plan-gated session management features.
+func (s *Server) buildSessionAuthProvider(
+	ctx context.Context,
+	meter metric.Meter,
+	paramSvc service.SystemParamService,
+	sessionRepo repository.SessionRepository,
+	clerkProvider auth.IdentityProvider,
+) auth.IdentityProvider {
+	sessionStartRepo := repository.NewPostgresSessionStartRepository(s.db)
+	if err := sessionStartRepo.RegisterSessionStartMetrics(meter); err != nil {
+		s.log.Warn("sessionStartRepo: RegisterSessionStartMetrics failed", zap.Error(err))
+	}
+	var sessionStarter middleware.SessionStarter = sessionStartRepo
+	if s.redisClient != nil {
+		maxAgeSecs := paramSvc.GetInt(ctx, domain.ParamKeyAuthSessionMaxAgeSecs, domain.DefaultAuthSessionMaxAgeSecs)
+		sessionStarter = middleware.NewRedisSessionStartCache(sessionStartRepo, s.redisClient, maxAgeSecs, s.log)
+	}
+	var revocationDegradedCtr metric.Int64Counter
+	if c, err := meter.Int64Counter("wcq_auth_revocation_check_fail_open_total",
+		metric.WithDescription("Requests served without a revocation check because the blocklist DB read failed and the session had no cached verdict"),
+	); err == nil {
+		revocationDegradedCtr = c
+	}
+	return middleware.NewPolicyProvider(clerkProvider, sessionRepo, paramSvc, s.log,
+		middleware.WithSessionStarter(sessionStarter),
+		middleware.WithOnRevocationDegraded(func(reqCtx context.Context) {
+			if revocationDegradedCtr != nil {
+				revocationDegradedCtr.Add(reqCtx, 1)
+			}
+		}),
+	)
+}
+
 // buildUserRateStore returns the effective per-user rate-limit store for the
 // /api/v1 subrouter. Selection priority:
 //
@@ -441,30 +495,35 @@ func (s *Server) buildUserRateStore(meter metric.Meter, ratePerSec float64, rate
 	return middleware.NewLimiterStore(ratePerSec, rateBurst)
 }
 
-// recordIPRateStoreMode emits a startup gauge that records which IP rate-limit
-// store is active. mode=redis means cluster-wide limits are enforced via Redis;
-// mode=local means per-replica in-process buckets are used (Redis not configured).
+// recordRateStoreMode emits a startup gauge recording which store backs the
+// named rate limiter ("ip" or "user"). mode=redis means cluster-wide limits
+// are enforced via Redis; mode=local means per-replica in-process buckets are
+// used (Redis not configured) — every replica enforces an independent quota,
+// so the effective cluster-wide limit becomes replica_count × per-replica
+// burst without any single component seeing the full picture.
 //
-// The metric enables a Prometheus alert when the local fallback is active in
-// a multi-replica deployment, where each replica enforces independent limits
-// and the effective cluster burst is replica_count × per-replica burst.
+// Both the IP limiter (buildIPRateStore) and the per-user limiter
+// (buildUserRateStore) key off the same s.redisClient field today, so their
+// mode cannot currently diverge — but recording each separately, labelled by
+// limiter, keeps the signal correct if that ever changes (e.g. a future
+// per-limiter Redis override) instead of silently going stale.
 // See docs/adr/0013-ip-rate-limiter-fail-open-policy.md for the decision record.
-func (s *Server) recordIPRateStoreMode(ctx context.Context, meter metric.Meter) {
+func (s *Server) recordRateStoreMode(ctx context.Context, meter metric.Meter, limiter string) {
 	mode := "redis"
 	if s.redisClient == nil {
 		mode = "local"
 	}
 	g, err := meter.Int64Gauge(
-		"wcq_ip_ratelimit_store_mode",
-		metric.WithDescription("Active IP rate-limit store: 1 for mode=redis (cluster-wide) "+
+		"wcq_ratelimit_store_mode",
+		metric.WithDescription("Active rate-limit store per limiter: 1 for mode=redis (cluster-wide) "+
 			"or mode=local (per-replica fallback). Alert on mode=local when replica_count > 1."),
 		metric.WithUnit("{mode}"),
 	)
 	if err != nil {
-		s.log.Warn("wcq_ip_ratelimit_store_mode: failed to register gauge", zap.Error(err))
+		s.log.Warn("wcq_ratelimit_store_mode: failed to register gauge", zap.String("limiter", limiter), zap.Error(err))
 		return
 	}
-	g.Record(ctx, 1, metric.WithAttributes(attribute.String("mode", mode)))
+	g.Record(ctx, 1, metric.WithAttributes(attribute.String("mode", mode), attribute.String("limiter", limiter)))
 }
 
 // buildIPRateStore returns the effective per-IP rate-limit store for L1 (global)

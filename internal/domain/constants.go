@@ -135,6 +135,14 @@ const (
 	// Pagination
 	DefaultPaginationDefaultLimit = 50  // pagination.default_limit
 	DefaultPaginationMaxLimit     = 200 // pagination.max_limit
+	// DefaultPaginationMaxOffset caps how deep any ?page=/?offset= query can
+	// reach into a result set (100 000 rows ≈ 500 pages at the max limit).
+	// There is no legitimate admin workflow that pages that far by hand;
+	// without this cap an arbitrarily large page number turns into an
+	// arbitrarily expensive Postgres OFFSET scan for one request. Not a
+	// system_param (no ParamKey pair): a fixed safety valve, not a tunable
+	// business rule.
+	DefaultPaginationMaxOffset = 100_000
 
 	// Admin bulk operations
 	DefaultAdminBulkMaxItems = 1000 // admin.bulk_max_items

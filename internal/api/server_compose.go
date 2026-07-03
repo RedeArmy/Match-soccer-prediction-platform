@@ -295,6 +295,8 @@ func (s *Server) buildHandlers(
 			Hub:               s.notifHub,
 			Params:            params,
 			UnsubscribeSecret: s.cfg.Email.UnsubscribeSecret,
+			UserRepo:          repos.user,
+			SessionRepo:       repos.session,
 			Log:               s.log,
 		}),
 		match:              handler.NewMatchHandler(matchSvc, s.log),

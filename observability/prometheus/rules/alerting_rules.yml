@@ -13,7 +13,8 @@
 #   kyc_aml_threshold_hit_total           Int64Counter  (UAF reportable transactions)
 #   prize_distribution_failures_total     Int64Counter
 #   wcq_ip_rate_limit_blocked_total       Int64Counter  (labels: layer=global|webhook)
-#   wcq_rate_limit_fail_open_total        Int64Counter  (per-user Redis rate limiter)
+#   wcq_rate_limit_fail_open_total        Int64Counter  (transient Redis errors; both IP and per-user limiters share this counter)
+#   wcq_ratelimit_store_mode              Int64ObservableGauge  (labels: limiter=ip|user, mode=redis|local; recorded once at startup)
 #   wcq_idempotency_degraded_total        Int64Counter  (idempotency Redis store degraded)
 #   wcq_balance_ledger_row_count          Int64ObservableGauge  (estimated balance_ledger rows)
 #   wcq_scheduler_job_overdue             Int64ObservableGauge  (label: job_name; 1=overdue 0=ok)
@@ -301,7 +302,9 @@ groups:
   #   wcq_rate_limit_fail_open_total increments whenever the Redis-backed rate
   #   limiter falls back to fail-open due to a Redis connectivity error.  Any
   #   non-zero increase means rate limiting is degraded: limits are not shared
-  #   across replicas and traffic may be under-throttled.
+  #   across replicas and traffic may be under-throttled.  This fires on a
+  #   *transient* Redis outage; see WCQRateLimitLocalMode below for the
+  #   steady-state case where Redis was never configured at all.
   # ---------------------------------------------------------------------------
   - name: wcq.alerts.rate_limit
     interval: 30s
@@ -321,6 +324,30 @@ groups:
             last 5 minutes.  The in-process fallback is active: per-replica limits
             apply but cross-replica enforcement is disabled.  Multi-replica
             deployments may be under-throttled.  Investigate Redis connectivity.
+
+      # wcq_ratelimit_store_mode is recorded once at startup per limiter (ip,
+      # user). mode=local means Redis was never configured (WCQ_REDIS_ADDR
+      # unset) — unlike WCQRateLimitDegraded above, this is a *permanent*
+      # configuration state, not a transient error, so it would never trigger
+      # the counter-based alert: there is no Redis to fail against. Every
+      # replica enforces its own independent quota, silently multiplying the
+      # effective cluster-wide limit by the replica count. See
+      # docs/adr/0013-ip-rate-limiter-fail-open-policy.md.
+      - alert: WCQRateLimitLocalMode
+        expr: max by (limiter) (wcq_ratelimit_store_mode{mode="local"}) == 1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          runbook_url: "https://github.com/RedeArmy/match-soccer-prediction-platform/blob/main/docs/runbook.md#wcqratelimitlocalmode"
+          summary: "{{ $labels.limiter }} rate limiter running without Redis — per-replica quotas only"
+          description: >
+            The {{ $labels.limiter }} rate limiter has been using the in-process
+            fallback store for at least 5 minutes. Set WCQ_REDIS_ADDR so limits
+            are enforced cluster-wide instead of per-replica; this is a no-op in
+            a single-replica deployment but silently multiplies the effective
+            limit by the replica count in a multi-replica one.
 
   # ---------------------------------------------------------------------------
   # Idempotency degradation

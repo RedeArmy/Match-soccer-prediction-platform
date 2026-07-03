@@ -335,6 +335,65 @@ func TestJWKSProvider_ValidToken_ReturnsSubjectAndSessionID(t *testing.T) {
 	}
 }
 
+// ── WithIssuer ─────────────────────────────────────────────────────────────
+
+// TestJWKSProvider_WithIssuer_MatchingIssuer_Accepted verifies that a token
+// carrying the expected "iss" claim validates successfully when WithIssuer is set.
+func TestJWKSProvider_WithIssuer_MatchingIssuer_Accepted(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t),
+		auth.WithIssuer("https://correct-tenant.clerk.accounts.dev"),
+	)
+
+	raw := kp.sign(t, "user_abc", "", time.Now(), map[string]interface{}{
+		"iss": "https://correct-tenant.clerk.accounts.dev",
+	})
+
+	if _, err := p.ValidateToken(context.Background(), raw); err != nil {
+		t.Fatalf("expected token with matching issuer to be accepted, got: %v", err)
+	}
+}
+
+// TestJWKSProvider_WithIssuer_MismatchedIssuer_Rejected verifies that a token
+// signed by the same JWKS instance but carrying a different "iss" claim (e.g. a
+// sibling Clerk "application" sharing the instance) is rejected once WithIssuer
+// is configured — this is the regression test for the audit finding.
+func TestJWKSProvider_WithIssuer_MismatchedIssuer_Rejected(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t),
+		auth.WithIssuer("https://correct-tenant.clerk.accounts.dev"),
+	)
+
+	raw := kp.sign(t, "user_abc", "", time.Now(), map[string]interface{}{
+		"iss": "https://other-tenant.clerk.accounts.dev",
+	})
+
+	if _, err := p.ValidateToken(context.Background(), raw); !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("expected ErrInvalidToken for mismatched issuer, got: %v", err)
+	}
+}
+
+// TestJWKSProvider_WithoutIssuer_AnyIssuerAccepted verifies that issuer
+// validation stays opt-in: without WithIssuer, a token with no "iss" claim at
+// all (Clerk's default session token shape, exercised throughout the rest of
+// this suite) continues to validate exactly as before this option existed.
+func TestJWKSProvider_WithoutIssuer_AnyIssuerAccepted(t *testing.T) {
+	kp := newTestKeyPair(t)
+	srv := newJWKSServer(t, kp.jwksJSON)
+
+	p := auth.NewJWKSProvider(context.Background(), srv.URL, auth.DefaultWarmupTimeout, zaptest.NewLogger(t))
+
+	raw := kp.sign(t, "user_abc", "", time.Now(), nil)
+
+	if _, err := p.ValidateToken(context.Background(), raw); err != nil {
+		t.Fatalf("expected token with no issuer claim to be accepted when WithIssuer is unset, got: %v", err)
+	}
+}
+
 // TestJWKSProvider_ValidToken_FvaFirstFactor_ExtractsSessionStartedAt verifies
 // that fva[0] is parsed and converted to a stable SessionStartedAt timestamp.
 func TestJWKSProvider_ValidToken_FvaFirstFactor_ExtractsSessionStartedAt(t *testing.T) {

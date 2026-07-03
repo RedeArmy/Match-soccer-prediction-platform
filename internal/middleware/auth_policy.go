@@ -87,6 +87,12 @@ type PolicyProvider struct {
 	sessionStarts SessionStarter // nil disables DB-backed session-start tracking
 	params        GetInter
 	log           *zap.Logger
+	// onRevocationDegraded, when set, is called every time checkRevocation
+	// falls back to fail-open because the blocklist check failed and sid had
+	// no cached verdict. Wired to an OTel counter so operators can see how
+	// often and for how long this fail-open path is exercised — see
+	// WithOnRevocationDegraded.
+	onRevocationDegraded func(ctx context.Context)
 
 	// startCache is a write-once-per-sid, read-many in-process cache for OAuth
 	// session origins (sid → startCacheEntry). It avoids a DB round-trip on every
@@ -154,6 +160,17 @@ func WithSessionStarter(ss SessionStarter) PolicyOption {
 	return func(p *PolicyProvider) {
 		p.sessionStarts = ss
 	}
+}
+
+// WithOnRevocationDegraded registers a hook invoked each time checkRevocation
+// serves a request fail-open because the blocklist DB check failed and the
+// session had no prior cached verdict (neither confirmed-revoked nor
+// recently-confirmed-valid). This is intentionally still fail-open — see the
+// checkRevocation doc comment for why fail-closed here would log out every
+// active user during a transient DB blip — but callers should observe how
+// often it happens (e.g. an OTel counter) so a real outage is visible.
+func WithOnRevocationDegraded(fn func(ctx context.Context)) PolicyOption {
+	return func(p *PolicyProvider) { p.onRevocationDegraded = fn }
 }
 
 // ValidateToken delegates cryptographic validation to the inner provider, then
@@ -252,6 +269,9 @@ func (p *PolicyProvider) checkRevocation(ctx context.Context, sid string) error 
 			zap.String("sid", truncateSID(sid)),
 			zap.Error(checkErr),
 		)
+		if p.onRevocationDegraded != nil {
+			p.onRevocationDegraded(ctx)
+		}
 		return nil
 	}
 	if revoked {

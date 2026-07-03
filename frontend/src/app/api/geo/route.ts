@@ -20,6 +20,12 @@ const PRIVATE_PREFIXES = [
   "172.30.",
   "172.31.",
   "192.168.",
+  // Link-local — includes 169.254.169.254, the cloud provider metadata IP
+  // (AWS/GCP/Azure). Not currently reachable via this code path (ip is only
+  // read from x-forwarded-for and used to skip/select a geo lookup, never as
+  // a fetch destination), but excluding it keeps the private-range check
+  // complete rather than accidentally SSRF-safe only by the caller's luck.
+  "169.254.",
   "::1",
   "fc",
   "fd",

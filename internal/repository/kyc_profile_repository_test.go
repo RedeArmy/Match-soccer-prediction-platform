@@ -760,6 +760,94 @@ func TestKYCProfileRepository_UpdateStatusWithEvent_RejectionWritesReason(t *tes
 	}
 }
 
+func TestKYCProfileRepository_UpdateStatusWithEvent_DowngradesTierAndPropagatesToUser(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	admin := seedUser(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	// Approve to Tier 2 first, mirroring a user who was previously verified...
+	err := repo.ApproveAndSetTier(context.Background(), p.ID, admin.ID, repository.KYCApprovalParams{
+		Tier:       domain.KYCTierTwo,
+		NextReview: time.Now().Add(365 * 24 * time.Hour),
+		OldStatus:  domain.KYCStatusPending,
+	})
+	if err != nil {
+		t.Fatalf("ApproveAndSetTier: %v", err)
+	}
+
+	// ...then rejected after a compliance finding. DowngradeTier must reset both
+	// kyc_profiles.tier and the denormalised users.kyc_tier back to Unverified
+	// in the same transaction as the status change.
+	downgrade := domain.KYCTierUnverified
+	err = repo.UpdateStatusWithEvent(
+		context.Background(),
+		p.ID, admin.ID,
+		repository.KYCStatusEvent{
+			OldStatus:     domain.KYCStatusApproved,
+			NewStatus:     domain.KYCStatusRejected,
+			EventType:     domain.KYCEventRejected,
+			Reason:        "fraudulent document",
+			TraceID:       "trace-004",
+			DowngradeTier: &downgrade,
+		},
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, _ := repo.GetByID(context.Background(), p.ID)
+	if got.Status != domain.KYCStatusRejected {
+		t.Errorf("status: got %q, want rejected", got.Status)
+	}
+	if got.Tier != domain.KYCTierUnverified {
+		t.Errorf("kyc_profiles.tier: got %d, want KYCTierUnverified", got.Tier)
+	}
+
+	userRepo := repository.NewPostgresUserRepository(testDB)
+	usr, _ := userRepo.GetByID(context.Background(), u.ID)
+	if usr.KYCTier != domain.KYCTierUnverified {
+		t.Errorf("users.kyc_tier: got %d, want KYCTierUnverified", usr.KYCTier)
+	}
+}
+
+func TestKYCProfileRepository_UpdateStatusWithEvent_NilDowngradeTier_LeavesTierUnchanged(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	p := seedKYCProfile(t, u.ID)
+	admin := seedUser(t)
+	repo := repository.NewPostgresKYCProfileRepository(testDB)
+
+	err := repo.ApproveAndSetTier(context.Background(), p.ID, admin.ID, repository.KYCApprovalParams{
+		Tier:       domain.KYCTierTwo,
+		NextReview: time.Now().Add(365 * 24 * time.Hour),
+		OldStatus:  domain.KYCStatusPending,
+	})
+	if err != nil {
+		t.Fatalf("ApproveAndSetTier: %v", err)
+	}
+
+	// A status-only transition (e.g. under_review) must not touch the tier.
+	err = repo.UpdateStatusWithEvent(
+		context.Background(),
+		p.ID, admin.ID,
+		repository.KYCStatusEvent{
+			OldStatus: domain.KYCStatusApproved,
+			NewStatus: domain.KYCStatusUnderReview,
+			EventType: domain.KYCEventUnderReview,
+		},
+	)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, _ := repo.GetByID(context.Background(), p.ID)
+	if got.Tier != domain.KYCTierTwo {
+		t.Errorf("tier: got %d, want unchanged KYCTierTwo", got.Tier)
+	}
+}
+
 func TestKYCProfileRepository_UpdateStatusWithEvent_NotFound_ReturnsError(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresKYCProfileRepository(testDB)

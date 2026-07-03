@@ -938,10 +938,14 @@ type ScoringRuleRepository interface {
 	Update(ctx context.Context, rule *domain.ScoringRule) (*domain.ScoringRule, error)
 }
 
-// BalanceLedgerRepository owns all balance mutations for the users table and
-// the corresponding immutable balance_ledger audit rows.  Every method
-// executes atomically: it updates users.balance_cents / users.reserved_cents
-// AND inserts a balance_ledger row inside a single database transaction.
+// BalanceLedgerRepository owns balance credits for the users table and the
+// corresponding immutable balance_ledger audit rows.  Every method executes
+// atomically: it updates users.balance_cents AND inserts a balance_ledger row
+// inside a single database transaction.  Debits (withdrawals, group entry
+// fees) are owned by WithdrawalRequestRepository and GroupMembershipRepository
+// respectively, since each needs the balance mutation atomic with its own
+// domain-table write (withdrawal_requests / quiniela_round_entries), not just
+// with the ledger row.
 //
 // creatorID is the internal user ID of the admin or system actor responsible
 // for the mutation; 0 is stored as NULL (system/webhook origin).
@@ -960,18 +964,6 @@ type BalanceLedgerRepository interface {
 	// sourceCurrency and sourceAmountCents preserve the original payment
 	// currency/amount for non-GTQ deposits (e.g. USD); pass "" and 0 for GTQ.
 	CreditIdempotent(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, reference, sourceCurrency string, sourceAmountCents int) (bool, error)
-	// Debit subtracts deltaCents from available balance
-	// (balance_cents - reserved_cents).  Returns Conflict when insufficient.
-	Debit(ctx context.Context, userID, deltaCents int, kind domain.BalanceLedgerKind, refID int64, refType string, creatorID int) error
-	// Reserve moves amountCents from available to reserved_cents.  Used when a
-	// withdrawal request is created.  Returns Conflict when insufficient.
-	Reserve(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error
-	// ReleaseReservation decrements reserved_cents.  Used when a withdrawal is
-	// rejected.  Returns Conflict when reserved_cents < amountCents.
-	ReleaseReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error
-	// CommitReservation decrements both balance_cents and reserved_cents.  Used
-	// when a withdrawal is processed.  Returns Conflict when reserved_cents < amountCents.
-	CommitReservation(ctx context.Context, userID, amountCents int, refID int64, refType string, creatorID int) error
 	// ListByUser returns ledger entries for userID ordered by created_at DESC.
 	ListByUser(ctx context.Context, userID int, p Pagination) ([]*domain.BalanceLedger, error)
 	// SumTransactionsByUserAndPeriod returns the total absolute value of ledger
@@ -1052,6 +1044,13 @@ type KYCStatusEvent struct {
 	EventType domain.KYCEventType
 	Reason    string
 	TraceID   string
+	// DowngradeTier, when non-nil, atomically sets kyc_profiles.tier and the
+	// denormalised users.kyc_tier to this value in the same transaction as the
+	// status transition. Reject and Escalate set this to KYCTierUnverified so a
+	// user who loses their approved/pending status also immediately loses the
+	// money-movement limits tied to the tier they previously held, instead of
+	// keeping a stale elevated tier until some later, unrelated tier write.
+	DowngradeTier *domain.KYCTier
 }
 
 // KYCApprovalParams bundles the fields required by ApproveAndSetTier into a
@@ -1086,9 +1085,11 @@ type KYCProfileRepository interface {
 	// reviewedBy may be 0 (stored as NULL) for system-initiated transitions.
 	// Returns apperrors.NotFound when the profile does not exist.
 	UpdateStatus(ctx context.Context, profileID int, newStatus domain.KYCStatus, reviewedBy int, rejectionReason string) error
-	// UpdateStatusWithEvent atomically updates kyc_profiles.status and inserts a
-	// kyc_events audit row in a single transaction, closing the window where a
-	// crash between the two writes leaves the status changed but no audit trail.
+	// UpdateStatusWithEvent atomically updates kyc_profiles.status, optionally
+	// downgrades kyc_profiles.tier and users.kyc_tier (see KYCStatusEvent.DowngradeTier),
+	// and inserts a kyc_events audit row — all in a single transaction, closing
+	// the window where a crash between the writes leaves a partial state (e.g.
+	// status changed but tier still elevated, or no audit trail).
 	// oldStatus is the status before the transition (passed by the caller who
 	// already read the profile); traceID may be empty.
 	UpdateStatusWithEvent(ctx context.Context, profileID, adminID int, ev KYCStatusEvent) error

@@ -148,6 +148,62 @@ func TestPolicyProvider_BlocklistError_FailsOpen(t *testing.T) {
 	}
 }
 
+// TestPolicyProvider_BlocklistError_CallsOnRevocationDegraded verifies the
+// observability hook added alongside the fail-open behaviour: an uncached
+// blocklist failure must still pass the request (fail-open, unchanged) but
+// must invoke the configured hook exactly once so operators can alert on a
+// sustained blocklist outage instead of it being silently invisible.
+func TestPolicyProvider_BlocklistError_CallsOnRevocationDegraded(t *testing.T) {
+	claims := auth.Claims{
+		Subject:   "user_abc",
+		IssuedAt:  time.Now(),
+		SessionID: "sid_1",
+	}
+	bl := &stubBlocklist{revoked: false, err: errors.New("redis: connection refused")}
+	var calls int
+	p := middleware.NewPolicyProvider(&stubProvider{claims: claims}, bl, &stubParams{maxAge: 3600}, zap.NewNop(),
+		middleware.WithOnRevocationDegraded(func(_ context.Context) { calls++ }),
+	)
+
+	if _, err := p.ValidateToken(context.Background(), "any"); err != nil {
+		t.Fatalf("expected fail-open on blocklist error, got %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected OnRevocationDegraded to be called once, got %d", calls)
+	}
+}
+
+// TestPolicyProvider_RevokedCache_HitDoesNotCallOnRevocationDegraded verifies
+// the hook fires only for the true fail-open path, not for the fail-closed
+// (previously-confirmed-revoked) path — those are different outcomes and
+// conflating them in the same metric would make it useless for alerting.
+func TestPolicyProvider_RevokedCache_HitDoesNotCallOnRevocationDegraded(t *testing.T) {
+	claims := auth.Claims{
+		Subject:   "user_abc",
+		IssuedAt:  time.Now(),
+		SessionID: "sid_revoked",
+	}
+	// First call: DB confirms revoked, populating the in-process cache.
+	bl := &stubBlocklist{revoked: true}
+	var calls int
+	p := middleware.NewPolicyProvider(&stubProvider{claims: claims}, bl, &stubParams{maxAge: 3600}, zap.NewNop(),
+		middleware.WithOnRevocationDegraded(func(_ context.Context) { calls++ }),
+	)
+	if _, err := p.ValidateToken(context.Background(), "any"); err == nil {
+		t.Fatal("expected SessionRevoked on first call")
+	}
+
+	// Second call: DB now fails, but the cache already knows this sid is revoked
+	// — fail-closed, not fail-open, so the degraded hook must not fire.
+	bl.err = errors.New("redis: connection refused")
+	if _, err := p.ValidateToken(context.Background(), "any"); err == nil {
+		t.Fatal("expected SessionRevoked from the fail-closed cache during the outage")
+	}
+	if calls != 0 {
+		t.Errorf("expected OnRevocationDegraded not to fire for the fail-closed cache path, got %d calls", calls)
+	}
+}
+
 func TestPolicyProvider_NilBlocklist_Passes(t *testing.T) {
 	claims := auth.Claims{
 		Subject:   "user_abc",

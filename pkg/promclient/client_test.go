@@ -242,3 +242,29 @@ func TestAllSamples_InvalidJSON(t *testing.T) {
 		t.Error("expected error on malformed sample JSON")
 	}
 }
+
+// TestQuery_ResponseBodyOverLimit verifies the client stops reading a
+// Prometheus response after maxResponseBytes rather than buffering an
+// unbounded body — a misconfigured or compromised Prometheus backend
+// (its URL is operator-supplied config) must not be able to exhaust memory.
+func TestQuery_ResponseBodyOverLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// Whitespace padding past the 10 MiB cap, followed by a well-formed
+		// body the client should never reach.
+		pad := make([]byte, 10<<20+1024)
+		for i := range pad {
+			pad[i] = ' '
+		}
+		w.Write(pad)
+		w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+	}))
+	defer srv.Close()
+
+	c := promclient.New(srv.URL)
+	_, err := c.Query(context.Background(), "up")
+	if err == nil {
+		t.Error("expected decode error when response body exceeds the size cap")
+	}
+}

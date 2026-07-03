@@ -467,12 +467,18 @@ func (s *kycService) Reject(ctx context.Context, profileID, adminID int, reason 
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
+	// A rejected profile no longer has a verified identity on file, so the tier
+	// must drop back to Unverified in the same transaction as the status change.
+	// Without this, a user approved to Tier 2+ in the past keeps that tier
+	// (and its withdrawal/deposit limits) indefinitely after being rejected.
+	downgrade := domain.KYCTierUnverified
 	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID, repository.KYCStatusEvent{
-		OldStatus: profile.Status,
-		NewStatus: domain.KYCStatusRejected,
-		EventType: domain.KYCEventRejected,
-		Reason:    reason,
-		TraceID:   traceIDFromCtx(ctx),
+		OldStatus:     profile.Status,
+		NewStatus:     domain.KYCStatusRejected,
+		EventType:     domain.KYCEventRejected,
+		Reason:        reason,
+		TraceID:       traceIDFromCtx(ctx),
+		DowngradeTier: &downgrade,
 	}); err != nil {
 		return err
 	}
@@ -498,12 +504,20 @@ func (s *kycService) Escalate(ctx context.Context, profileID, adminID int, reaso
 	if profile == nil {
 		return apperrors.NotFound(errKYCProfileNotFound)
 	}
+	// Escalation means a senior reviewer must act before the profile can be
+	// approved or rejected — typically triggered by a fraud/compliance concern.
+	// The tier is suspended back to Unverified for the duration of that review
+	// so money-movement limits reflect "under active suspicion", not the last
+	// tier that happened to be approved. Approve() restores whichever tier the
+	// senior reviewer grants once the review concludes.
+	downgrade := domain.KYCTierUnverified
 	if err := s.profileRepo.UpdateStatusWithEvent(ctx, profileID, adminID, repository.KYCStatusEvent{
-		OldStatus: profile.Status,
-		NewStatus: domain.KYCStatusEscalated,
-		EventType: domain.KYCEventEscalated,
-		Reason:    reason,
-		TraceID:   traceIDFromCtx(ctx),
+		OldStatus:     profile.Status,
+		NewStatus:     domain.KYCStatusEscalated,
+		EventType:     domain.KYCEventEscalated,
+		Reason:        reason,
+		TraceID:       traceIDFromCtx(ctx),
+		DowngradeTier: &downgrade,
 	}); err != nil {
 		return err
 	}

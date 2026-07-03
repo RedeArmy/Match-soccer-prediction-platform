@@ -406,6 +406,30 @@ func TestUserRepository_ListFiltered_FilterBySearch(t *testing.T) {
 	}
 }
 
+// TestUserRepository_ListFiltered_SearchWithLiteralWildcard verifies that a
+// search term containing a literal '%' is matched literally rather than as a
+// SQL LIKE wildcard — a bare "%" must not match every user, and it must only
+// match names/emails that actually contain a '%' character.
+func TestUserRepository_ListFiltered_SearchWithLiteralWildcard(t *testing.T) {
+	cleanTables(t)
+	repo := repository.NewPostgresUserRepository(testDB)
+	if err := repo.Create(context.Background(), &domain.User{Name: "50% off", Email: "promo@example.com", Role: domain.RoleUser}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+	if err := repo.Create(context.Background(), &domain.User{Name: "alice", Email: "alice@example.com", Role: domain.RoleUser}); err != nil {
+		t.Fatalf(fmtCreateErr, err)
+	}
+
+	search := "%"
+	results, _, err := repo.ListFiltered(context.Background(), repository.UserFilters{Search: &search}, repository.CursorPage{Limit: 1000})
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if len(results) != 1 || results[0].Name != "50% off" {
+		t.Errorf("expected only the user whose name contains a literal '%%', got %d results", len(results))
+	}
+}
+
 func TestUserRepository_ListFiltered_CursorPagination(t *testing.T) {
 	cleanTables(t)
 	seedUser(t)

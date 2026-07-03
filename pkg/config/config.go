@@ -400,6 +400,16 @@ type ClerkConfig struct {
 	// warning is logged - acceptable for local development only. Startup
 	// validation must reject this configuration outside development.
 	WebhookSecret string `mapstructure:"webhookSecret"`
+	// Issuer, when set, is compared against the "iss" claim of every incoming
+	// JWT (Clerk's Frontend API origin, e.g. "https://your-app.clerk.accounts.dev").
+	// This is defence-in-depth: a JWKS endpoint is already specific to one Clerk
+	// instance, but if that instance is shared by more than one Clerk
+	// "application" (a supported Clerk multi-tenancy setup), a token issued for
+	// a sibling application would otherwise validate here too. Optional and
+	// unset by default so upgrading does not require immediate reconfiguration;
+	// set WCQ_CLERK_ISSUER to close the gap. Find the value in the Clerk
+	// dashboard under API Keys -> Advanced -> Issuer.
+	Issuer string `mapstructure:"issuer"`
 }
 
 // PaymentConfig holds configuration for payment provider webhook integrations.

@@ -247,3 +247,29 @@ func TestRiskDashboardToResponse_EmptyTierDistribution(t *testing.T) {
 		t.Errorf("expected empty tier distribution, got %v", r.TierDistribution)
 	}
 }
+
+// ── maskDocumentNumber ────────────────────────────────────────────────────────
+
+func TestMaskDocumentNumber_LongNumber_KeepsLast4(t *testing.T) {
+	got := maskDocumentNumber("3001987654321")
+	want := "*********4321"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestMaskDocumentNumber_ShorterThanOrEqualToVisibleWindow_Unchanged(t *testing.T) {
+	for _, v := range []string{"", "1", "12", "1234"} {
+		if got := maskDocumentNumber(v); got != v {
+			t.Errorf("maskDocumentNumber(%q) = %q, want unchanged", v, got)
+		}
+	}
+}
+
+func TestMaskDocumentNumber_OneCharOverWindow_MasksFirstChar(t *testing.T) {
+	got := maskDocumentNumber("12345")
+	want := "*2345"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

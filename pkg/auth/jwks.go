@@ -57,6 +57,17 @@ func WithKeysetPersister(p KeysetPersister, ttl time.Duration) Option {
 	}
 }
 
+// WithIssuer requires every validated JWT to carry an "iss" claim equal to
+// issuer. Pass an empty string (or omit the option) to skip issuer validation
+// entirely — the zero value is a no-op, matching the default behaviour before
+// this option existed. Use this when a single JWKS endpoint could ever be
+// shared by more than one Clerk "application"; otherwise a token issued for a
+// sibling application would validate here as long as it comes from the same
+// JWKS instance.
+func WithIssuer(issuer string) Option {
+	return func(j *JWKSProvider) { j.issuer = issuer }
+}
+
 // JWKSProvider validates RS256-signed JWTs against public keys fetched from a
 // JWKS endpoint. It is compatible with any OIDC-compliant identity provider
 // that publishes a JWKS URL: Clerk, Auth0, AWS Cognito, and Google Identity
@@ -80,6 +91,7 @@ type JWKSProvider struct {
 	onDegraded   func(ctx context.Context) // optional; called when using the fallback keyset
 	persister    KeysetPersister           // optional; nil means no cross-restart persistence
 	persisterTTL time.Duration
+	issuer       string // optional; empty skips "iss" claim validation
 }
 
 // NewJWKSProvider constructs a JWKSProvider and eagerly warms the JWKS cache.
@@ -173,12 +185,15 @@ func (p *JWKSProvider) ValidateToken(ctx context.Context, rawToken string) (Clai
 	// WithAcceptableSkew tolerates up to 10 s of clock drift between the host
 	// and Clerk's token-signing servers, matching the clockSkewInMs: 10_000
 	// configured in the Next.js Clerk middleware.
-	token, err := jwt.Parse(
-		[]byte(rawToken),
+	parseOpts := []jwt.ParseOption{
 		jwt.WithKeySet(keySet),
 		jwt.WithValidate(true),
-		jwt.WithAcceptableSkew(10*time.Second),
-	)
+		jwt.WithAcceptableSkew(10 * time.Second),
+	}
+	if p.issuer != "" {
+		parseOpts = append(parseOpts, jwt.WithIssuer(p.issuer))
+	}
+	token, err := jwt.Parse([]byte(rawToken), parseOpts...)
 	if err != nil {
 		return Claims{}, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}

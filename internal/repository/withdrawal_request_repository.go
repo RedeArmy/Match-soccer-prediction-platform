@@ -242,7 +242,11 @@ func (r *PostgresWithdrawalRequestRepository) ApproveAndDebit(ctx context.Contex
 	ctx, cancel := context.WithTimeout(ctx, dbWriteTimeout)
 	defer cancel()
 	var result *domain.WithdrawalRequest
-	err := withTx(ctx, r.db, "WithdrawalRequestRepository.ApproveAndDebit", func(tx pgx.Tx) error {
+	// withRetryTx: this debits real money on approval, so a transient
+	// serialization failure/deadlock should be retried rather than surfaced to
+	// the admin as a spurious 500 — same resilience policy already applied to
+	// BalanceLedgerRepository.Credit for deposits (ATD-002).
+	err := withRetryTx(ctx, r.db, "WithdrawalRequestRepository.ApproveAndDebit", func(tx pgx.Tx) error {
 		w, err := r.scanWithdrawalMutationTx(ctx, tx, `
 			UPDATE withdrawal_requests
 			   SET status      = 'approved',

@@ -69,6 +69,38 @@ Changing a `webhookId` requires a matching update in the notifier constants.
 | `prometheus-alert-relay.json` | Prometheus Alert Relay | `prometheus-alert-relay` | Generic Alertmanager webhook receiver |
 | `sanctions-flag-alert.json` | KYC Sanctions Flag | `sanctions-flag` | Sanctions screening hit |
 
+## Webhook signature verification
+
+All webhooks listed above **except** `circuit-breaker-alert.json`,
+`payment-error-escalation.json`, and `prometheus-alert-relay.json` (which are
+called by Prometheus Alertmanager — see `observability/alertmanager.yml` —
+and therefore cannot carry our HMAC signature) start with:
+
+`Webhook Trigger (Raw Body enabled) → Verify Signature (code) → ...`
+
+`Verify Signature` recomputes `HMAC-SHA256(secret, raw_body)` using
+`process.env.N8N_WEBHOOK_SECRET` and compares it, in constant time, against the
+`X-Signature: sha256=<hex>` header the Go backend stamps on every call
+(`internal/observability/notifier.go`, `internal/notification/dispatcher/admin.go`).
+A missing or mismatched signature throws, which stops the workflow before any
+email/alert node runs. Without this check, anyone able to reach the webhook
+path — e.g. a compromised sibling container on the internal Docker network,
+since the public Caddy vhost already gates the n8n domain behind basic auth —
+could forge events like `kyc-approved` (phishing a user) or `payout-approved`
+(social-engineering an operator into a fraudulent manual transfer).
+
+Requirements this depends on:
+- `N8N_WEBHOOK_SECRET` set on the n8n container (already wired in
+  `docker-compose.observability.yml`, must match `WCQ_N8N_WEBHOOKSECRET` on
+  the backend).
+- `NODE_FUNCTION_ALLOW_BUILTIN: crypto` set on the n8n container, so the Code
+  node sandbox is allowed to `require('crypto')`.
+
+When adding a new backend-triggered workflow, copy the `Verify Signature` node
+and its wiring from an existing workflow (e.g. `kyc-approved-user-notify.json`)
+verbatim — the CI validator (below) rejects any backend-triggered webhook
+workflow that omits it.
+
 ## CI validation
 
 The test job in `.github/workflows/deploy.yml` runs
@@ -79,6 +111,9 @@ on every PR and push. The validator checks:
 - Trigger node presence (webhook or schedule)
 - Webhook path uniqueness across all workflows
 - Connection graph integrity
+- Every backend-triggered webhook (see "Webhook signature verification" above)
+  has Raw Body enabled and feeds a `Verify Signature` node immediately after
+  the trigger
 
 ## Modifying workflows
 
@@ -88,7 +123,13 @@ on every PR and push. The validator checks:
 4. Set `"active": true` in the JSON (required for auto-activation on deploy).
 5. If the n8n version changed, update `"meta": {"n8n_version": "<new-version>"}`.
 6. Run the validator locally: `python3 scripts/validate-n8n-workflows.py`
-7. Commit. The next deploy will update the workflow on the server automatically.
+7. If the workflow is backend-triggered, send a real signed request (e.g. via
+   the actual backend action, or `curl` with a manually computed
+   `X-Signature: sha256=$(openssl dgst -sha256 -hmac "$N8N_WEBHOOK_SECRET" -r <<< "$BODY" | cut -d' ' -f1)`)
+   against the staging n8n instance and confirm the notification is delivered,
+   then retry with a wrong secret and confirm the execution fails at
+   `Verify Signature` instead of sending anything.
+8. Commit. The next deploy will update the workflow on the server automatically.
 
 ## Version upgrade procedure
 

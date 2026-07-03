@@ -5,17 +5,22 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.uber.org/zap/zaptest"
 
 	"github.com/rede/world-cup-quiniela/internal/middleware"
+	"github.com/rede/world-cup-quiniela/pkg/config"
 )
 
 // errFailMeter is a noop Meter that forces Int64Counter to return an error.
@@ -76,6 +81,111 @@ func TestBuildIPRateStore_WithRedis_RegisterMetricsError_StillReturnsStore(t *te
 	}
 	if _, ok := store.(*middleware.RedisRateStore); !ok {
 		t.Errorf("expected *middleware.RedisRateStore despite metric error, got %T", store)
+	}
+}
+
+// ── recordRateStoreMode ───────────────────────────────────────────────────────
+
+// errFailGaugeMeter is a noop Meter that forces Int64Gauge to return an
+// error, exercising the failed-registration branch in recordRateStoreMode.
+type errFailGaugeMeter struct{ metricnoop.Meter }
+
+var errForcedGauge = errors.New("injected gauge failure")
+
+func (errFailGaugeMeter) Int64Gauge(_ string, _ ...metric.Int64GaugeOption) (metric.Int64Gauge, error) {
+	return nil, errForcedGauge
+}
+
+// TestRecordRateStoreMode_GaugeRegistrationError_DoesNotPanic exercises the
+// fail-soft branch: when gauge registration fails, recordRateStoreMode logs a
+// warning and returns without recording anything, rather than panicking or
+// propagating the error (there's nothing more useful a caller could do with
+// it — this metric is best-effort observability, not load-bearing).
+func TestRecordRateStoreMode_GaugeRegistrationError_DoesNotPanic(t *testing.T) {
+	s := &Server{log: zaptest.NewLogger(t)}
+	s.recordRateStoreMode(context.Background(), errFailGaugeMeter{}, "ip")
+}
+
+// TestRecordRateStoreMode_NoRedis_RecordsLocalMode verifies that with no Redis
+// client configured, the gauge is recorded with mode=local for the given
+// limiter label.
+func TestRecordRateStoreMode_NoRedis_RecordsLocalMode(t *testing.T) {
+	s := &Server{log: zaptest.NewLogger(t)} // redisClient == nil
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+	s.recordRateStoreMode(context.Background(), mp.Meter("test"), "user")
+
+	mode, limiter := collectRateStoreModeAttrs(t, reader)
+	if mode != "local" || limiter != "user" {
+		t.Errorf("expected mode=local limiter=user, got mode=%s limiter=%s", mode, limiter)
+	}
+}
+
+// TestRecordRateStoreMode_WithRedis_RecordsRedisMode verifies that with a
+// Redis client configured, the gauge is recorded with mode=redis.
+func TestRecordRateStoreMode_WithRedis_RecordsRedisMode(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rc := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rc.Close() })
+
+	s := &Server{log: zaptest.NewLogger(t), redisClient: rc}
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+
+	s.recordRateStoreMode(context.Background(), mp.Meter("test"), "ip")
+
+	mode, limiter := collectRateStoreModeAttrs(t, reader)
+	if mode != "redis" || limiter != "ip" {
+		t.Errorf("expected mode=redis limiter=ip, got mode=%s limiter=%s", mode, limiter)
+	}
+}
+
+// collectRateStoreModeAttrs reads the "mode" and "limiter" attributes off the
+// single data point of the wcq_ratelimit_store_mode gauge.
+func collectRateStoreModeAttrs(t *testing.T, reader *sdkmetric.ManualReader) (mode, limiter string) {
+	t.Helper()
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("collect: %v", err)
+	}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != "wcq_ratelimit_store_mode" {
+				continue
+			}
+			g, ok := m.Data.(metricdata.Gauge[int64])
+			if !ok || len(g.DataPoints) == 0 {
+				t.Fatalf("metric %q found but has unexpected data type or no data points", m.Name)
+			}
+			attrs := g.DataPoints[0].Attributes
+			modeVal, _ := attrs.Value(attribute.Key("mode"))
+			limiterVal, _ := attrs.Value(attribute.Key("limiter"))
+			return modeVal.AsString(), limiterVal.AsString()
+		}
+	}
+	t.Fatalf("metric wcq_ratelimit_store_mode not found")
+	return "", ""
+}
+
+// ── jwksIssuerOpt ──────────────────────────────────────────────────────────────
+
+// TestJWKSIssuerOpt_NoIssuerConfigured_ReturnsNil verifies that issuer
+// validation stays opt-in when WCQ_CLERK_ISSUER is not set.
+func TestJWKSIssuerOpt_NoIssuerConfigured_ReturnsNil(t *testing.T) {
+	s := &Server{cfg: &config.Config{}}
+	if opts := s.jwksIssuerOpt(); opts != nil {
+		t.Errorf("expected nil options when issuer is not configured, got %v", opts)
+	}
+}
+
+// TestJWKSIssuerOpt_IssuerConfigured_ReturnsOneOption verifies that a single
+// auth.WithIssuer option is returned when an issuer is configured.
+func TestJWKSIssuerOpt_IssuerConfigured_ReturnsOneOption(t *testing.T) {
+	s := &Server{cfg: &config.Config{Clerk: config.ClerkConfig{Issuer: "https://clerk.example.com"}}}
+	opts := s.jwksIssuerOpt()
+	if len(opts) != 1 {
+		t.Fatalf("expected exactly 1 option when issuer is configured, got %d", len(opts))
 	}
 }
 

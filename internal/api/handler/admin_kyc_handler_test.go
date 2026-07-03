@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -67,6 +68,37 @@ func TestAdminKYCHandler_ListQueue_SvcError_Returns500(t *testing.T) {
 	}
 }
 
+// TestAdminKYCHandler_ListQueue_MasksDocumentNumber is the regression test for
+// the KYC PII exposure finding: the bulk review-queue endpoint returns many
+// users' identity documents in a single response, so document_number must be
+// redacted there even though the single-profile GetProfile endpoint (used
+// while actively reviewing one case) still returns it in full.
+func TestAdminKYCHandler_ListQueue_MasksDocumentNumber(t *testing.T) {
+	profile := &domain.KYCProfile{
+		ID: 1, UserID: 10, Status: domain.KYCStatusPending,
+		DocumentNumber: "3001987654321",
+		CreatedAt:      time.Now(), UpdatedAt: time.Now(),
+	}
+	svc := &stubKYCSvc{profiles: []*domain.KYCProfile{profile}}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/queue", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf(fmtExpect200, w.Code)
+	}
+	var resp []handler.KYCProfileResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 profile, got %d", len(resp))
+	}
+	if resp[0].DocumentNumber == "3001987654321" {
+		t.Error("document_number must be masked in the queue list response")
+	}
+	if got := resp[0].DocumentNumber; got != "*********4321" {
+		t.Errorf("document_number: got %q, want masked with last 4 digits visible", got)
+	}
+}
+
 // ── GetProfile ────────────────────────────────────────────────────────────────
 
 func TestAdminKYCHandler_GetProfile_Found_Returns200(t *testing.T) {
@@ -74,6 +106,30 @@ func TestAdminKYCHandler_GetProfile_Found_Returns200(t *testing.T) {
 	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/profiles/1", "")
 	if w.Code != http.StatusOK {
 		t.Errorf(fmtExpect200, w.Code)
+	}
+}
+
+// TestAdminKYCHandler_GetProfile_ReturnsFullDocumentNumber verifies the
+// counterpart of the masking fix: the single-profile detail view (used while
+// an admin actively reviews one case against the uploaded document photo)
+// must NOT mask document_number — only the bulk queue list does.
+func TestAdminKYCHandler_GetProfile_ReturnsFullDocumentNumber(t *testing.T) {
+	profile := &domain.KYCProfile{
+		ID: 1, UserID: 10, Status: domain.KYCStatusPending,
+		DocumentNumber: "3001987654321",
+		CreatedAt:      time.Now(), UpdatedAt: time.Now(),
+	}
+	svc := &stubKYCSvc{profile: profile}
+	w := do(newAdminKYCRouter(svc), http.MethodGet, "/kyc/profiles/1", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf(fmtExpect200, w.Code)
+	}
+	var resp handler.KYCProfileResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.DocumentNumber != "3001987654321" {
+		t.Errorf("document_number: got %q, want full number on single-profile detail view", resp.DocumentNumber)
 	}
 }
 

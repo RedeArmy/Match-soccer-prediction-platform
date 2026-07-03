@@ -106,11 +106,13 @@ func queryBalance(t *testing.T, userID int) int {
 //
 // Exercises the complete Recurrente payment ingestion path end-to-end:
 //
-//  1. POST /webhooks/recurrente with a correctly HMAC-SHA256-signed body.
-//  2. RecurrenteWebhookAuth middleware verifies the signature (real secret, no bypass).
-//  3. PaymentWebhookHandler parses the payload and calls CreditFromRecurrente.
-//  4. webhookPaymentService calls CreditIdempotent on BalanceLedgerRepository.
-//  5. CreditIdempotent credits users.balance_cents atomically.
+//  1. Seed a pending payment_intent (as CreateForRecurrente would at checkout time).
+//  2. POST /webhooks/recurrente with a correctly HMAC-SHA256-signed body.
+//  3. RecurrenteWebhookAuth middleware verifies the signature (real secret, no bypass).
+//  4. PaymentWebhookHandler parses the payload and calls ResolveAndCreditRecurrenteIntent.
+//  5. webhookPaymentService resolves the intent by reference and calls CreditIdempotent
+//     on BalanceLedgerRepository using the intent's own user/amount, not the webhook's.
+//  6. CreditIdempotent credits users.balance_cents atomically.
 //
 // This is the gap identified in P1-001: handler-level unit tests stub the
 // service layer and never touch the DB, so a bug in CreditIdempotent's
@@ -127,6 +129,7 @@ func TestE2E_RecurrenteWebhook_CreditsBalance(t *testing.T) {
 	h := newE2EServerWithRecurrente(t, jwksURL, testSecret).Routes(context.Background())
 
 	userID := seedE2EUser(t, "rw@e2e.test", "e2e-rw-user", domain.RoleUser)
+	seedE2EPaymentIntent(t, userID, amountCents, "GTQ", reference)
 
 	payload := map[string]any{
 		"event_type": "payment.confirmed",
@@ -158,9 +161,9 @@ func TestE2E_RecurrenteWebhook_CreditsBalance(t *testing.T) {
 // CreditIdempotent's ON CONFLICT DO NOTHING branch — the second delivery returns
 // 204 but the balance is unchanged.
 //
-// This is the exact failure scenario from P1-001: a refactor of CreditFromRecurrente
-// that breaks the idempotency branch would pass all unit tests (stubbed) but
-// double-credit users in production.
+// This is the exact failure scenario from P1-001: a refactor of
+// ResolveAndCreditRecurrenteIntent that breaks the idempotency branch would
+// pass all unit tests (stubbed) but double-credit users in production.
 func TestE2E_RecurrenteWebhook_IdempotentOnDuplicate(t *testing.T) {
 	skipIfNoE2EDB(t)
 	cleanE2ETables(t)
@@ -173,6 +176,7 @@ func TestE2E_RecurrenteWebhook_IdempotentOnDuplicate(t *testing.T) {
 	h := newE2EServerWithRecurrente(t, jwksURL, testSecret).Routes(context.Background())
 
 	userID := seedE2EUser(t, "idem@e2e.test", "e2e-idem-user", domain.RoleUser)
+	seedE2EPaymentIntent(t, userID, amountCents, "GTQ", reference)
 
 	payload := map[string]any{
 		"event_type": "payment.confirmed",
