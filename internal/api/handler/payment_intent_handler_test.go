@@ -189,7 +189,7 @@ func (s *stubPaymentIntentSvc) ListMyPending(_ context.Context, _ int) ([]*domai
 func (s *stubPaymentIntentSvc) ListMyAll(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
 	return nil, nil
 }
-func (s *stubPaymentIntentSvc) SetComprobanteByToken(_ context.Context, _, _, _ string, _ int) error {
+func (s *stubPaymentIntentSvc) SetComprobanteByToken(_ context.Context, _ int, _, _, _ string, _ int) error {
 	return nil
 }
 func (s *stubPaymentIntentSvc) ResubmitForReview(_ context.Context, _ int, _ string, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {
@@ -282,7 +282,7 @@ func (s *stubUploadSvc) ListMyPending(_ context.Context, _ int) ([]*domain.Payme
 func (s *stubUploadSvc) ListMyAll(_ context.Context, _ int) ([]*domain.PaymentIntent, error) {
 	return s.all, s.allErr
 }
-func (s *stubUploadSvc) SetComprobanteByToken(_ context.Context, _, _, _ string, _ int) error {
+func (s *stubUploadSvc) SetComprobanteByToken(_ context.Context, _ int, _, _, _ string, _ int) error {
 	return s.uploadErr
 }
 func (s *stubUploadSvc) ResubmitForReview(_ context.Context, _ int, _ string, _, _ *string, _ *int, _ string) (*domain.PaymentIntent, error) {

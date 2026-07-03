@@ -276,7 +276,7 @@ func (h *PaymentIntentHandler) UploadComprobante(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if err := h.svc.SetComprobanteByToken(r.Context(), token, storageKey, contentType, len(full)); err != nil {
+	if err := h.svc.SetComprobanteByToken(r.Context(), caller.ID, token, storageKey, contentType, len(full)); err != nil {
 		_ = h.fileStore.Delete(r.Context(), storageKey) // best-effort cleanup
 		writeError(w, r, h.log, err)
 		return

@@ -7,7 +7,10 @@
         "httpMethod": "POST",
         "path": "kyc-queue-overflow",
         "responseMode": "onReceived",
-        "responseCode": 200
+        "responseCode": 200,
+        "options": {
+          "rawBody": true
+        }
       },
       "id": "kyc-qo-webhook",
       "name": "Webhook Trigger",
@@ -18,6 +21,19 @@
         300
       ],
       "webhookId": "kyc-queue-overflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\n// Verifies the HMAC-SHA256 signature the Go backend stamps into X-Signature\n// (internal/observability/notifier.go, internal/notification/dispatcher/admin.go)\n// before any downstream node acts on the payload. Without this check, anyone\n// who can reach this webhook path (e.g. from a compromised sibling container\n// on the internal network) could forge KYC/payout events and trigger phishing\n// emails or fraudulent manual-transfer instructions to operators.\nconst item = $input.first();\nconst headers = (item.json && item.json.headers) || {};\nconst sigHeader = String(headers['x-signature'] || '').trim();\nconst secret = process.env.N8N_WEBHOOK_SECRET || '';\n\nif (!secret) {\n  throw new Error('N8N_WEBHOOK_SECRET is not configured on this n8n instance \\u2014 refusing to process an unverifiable webhook call');\n}\n\nconst rawBase64 = item.binary && item.binary.data && item.binary.data.data;\nif (!rawBase64) {\n  throw new Error('Raw request body not available \\u2014 the Webhook Trigger node must have \"Raw Body\" enabled');\n}\nconst rawBuffer = Buffer.from(rawBase64, 'base64');\n\nconst expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBuffer).digest('hex');\nconst expectedBuf = Buffer.from(expected);\nconst gotBuf = Buffer.from(sigHeader);\nconst valid = expectedBuf.length === gotBuf.length && crypto.timingSafeEqual(expectedBuf, gotBuf);\n\nif (!valid) {\n  throw new Error('Invalid or missing X-Signature header \\u2014 request rejected before any notification action was taken');\n}\n\nlet parsedBody = {};\nif (rawBuffer.length) {\n  try {\n    parsedBody = JSON.parse(rawBuffer.toString('utf8'));\n  } catch (e) {\n    throw new Error('Signed body is not valid JSON: ' + e.message);\n  }\n}\n\n// Reconstruct the same { headers, params, query, body } shape n8n produces\n// without Raw Body enabled, so every downstream node's existing\n// `$input.first().json.body ?? $input.first().json` access keeps working\n// unchanged.\nreturn [{ json: { headers, params: item.json.params || {}, query: item.json.query || {}, body: parsedBody } }];"
+      },
+      "id": "verify-signature",
+      "name": "Verify Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ]
     },
     {
       "parameters": {
@@ -61,7 +77,7 @@
       "main": [
         [
           {
-            "node": "Format Alert",
+            "node": "Verify Signature",
             "type": "main",
             "index": 0
           }
@@ -73,6 +89,17 @@
         [
           {
             "node": "Send Ops Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Signature": {
+      "main": [
+        [
+          {
+            "node": "Format Alert",
             "type": "main",
             "index": 0
           }

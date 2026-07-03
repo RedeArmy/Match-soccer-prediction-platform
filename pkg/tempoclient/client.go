@@ -6,11 +6,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
+
+// maxResponseBytes bounds how much of a Tempo response body this client will
+// read. 10 MiB is generous for a search-result JSON payload; the cap exists
+// so a compromised or misconfigured Tempo (its URL comes from operator-
+// supplied config, WCQ_OBSERVABILITY_TEMPOURL) can't make an admin request
+// consume unbounded memory by streaming an endless body.
+const maxResponseBytes = 10 << 20
 
 // Client queries a Grafana Tempo HTTP API.
 type Client struct {
@@ -73,7 +81,7 @@ func (c *Client) Search(ctx context.Context, tags string, since time.Time, limit
 	}
 
 	var sr SearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&sr); err != nil {
 		return nil, fmt.Errorf("tempoclient: decode: %w", err)
 	}
 	if nameFilter == "" {

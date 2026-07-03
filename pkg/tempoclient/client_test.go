@@ -204,3 +204,27 @@ func TestSearch_NameFilterNoMatch(t *testing.T) {
 		t.Errorf("expected 0 traces when filter matches nothing, got %d", len(resp.Traces))
 	}
 }
+
+// TestSearch_ResponseBodyOverLimit verifies the client stops reading a Tempo
+// response after maxResponseBytes rather than buffering an unbounded body —
+// a misconfigured or compromised Tempo backend (its URL is operator-supplied
+// config) must not be able to exhaust memory.
+func TestSearch_ResponseBodyOverLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		pad := make([]byte, 10<<20+1024)
+		for i := range pad {
+			pad[i] = ' '
+		}
+		w.Write(pad)
+		w.Write([]byte(`{"traces":[]}`))
+	}))
+	defer srv.Close()
+
+	c := tempoclient.New(srv.URL)
+	_, err := c.SearchErrors(context.Background(), time.Now().Add(-time.Hour), 50)
+	if err == nil {
+		t.Error("expected decode error when response body exceeds the size cap")
+	}
+}

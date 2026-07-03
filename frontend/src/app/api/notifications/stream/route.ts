@@ -3,11 +3,11 @@
 // the response body before returning, which breaks streaming.
 // The Clerk JWT is injected server-side via the Authorization header.
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND = process.env.BACKEND_INTERNAL_URL!;
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   const { getToken } = await auth();
   const token = await getToken();
 
@@ -34,10 +34,24 @@ export async function GET(): Promise<NextResponse> {
         "X-Accel-Buffering": "no",
       },
       cache: "no-store",
+      // Tear down the upstream connection to the Go backend the moment the
+      // client disconnects (closes the tab, navigates away, loses network).
+      // Without this, the fetch has no way to know the client is gone and the
+      // backend SSE connection stays open until its own heartbeat/idle logic
+      // eventually notices — leaking one long-lived backend connection per
+      // abandoned client for that entire window.
+      signal: request.signal,
       // @ts-expect-error — duplex required for streaming in some runtimes
       duplex: "half",
     });
   } catch (err) {
+    if (request.signal.aborted) {
+      // Client already disconnected before the upstream connection was
+      // established — nothing to return a response to. Returning normally
+      // (rather than logging an "error") avoids noisy false-alarm logs for
+      // what is routine client behaviour (closed tab, fast navigation).
+      return new NextResponse(null, { status: 499 });
+    }
     console.error("[SSE proxy] backend unreachable", err);
     return NextResponse.json(
       {

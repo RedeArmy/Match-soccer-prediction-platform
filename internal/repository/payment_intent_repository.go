@@ -495,40 +495,27 @@ func (r *PostgresPaymentIntentRepository) ListForAdmin(ctx context.Context, f Pa
 	ctx, cancel := context.WithTimeout(ctx, dbReadTimeout)
 	defer cancel()
 
-	var (
-		conds []string
-		args  []any
-		n     = 1
-	)
-	add := func(expr string, v any) {
-		conds = append(conds, fmt.Sprintf(expr, n))
-		args = append(args, v)
-		n++
-	}
+	wb := newWhereBuilder()
 	if f.Provider != nil {
-		add("provider = $%d", *f.Provider)
+		wb.add("provider = $%d", *f.Provider)
 	}
 	if f.Status != nil {
-		add("status = $%d", string(*f.Status))
+		wb.add("status = $%d", string(*f.Status))
 	}
-
-	where := buildWhere(conds)
 
 	var total int
 	if err := r.db.QueryRow(ctx,
-		`SELECT COUNT(*) FROM payment_intents`+where, args...,
+		`SELECT COUNT(*) FROM payment_intents`+wb.clause(), wb.args...,
 	).Scan(&total); err != nil {
 		return nil, 0, apperrors.Internal(err)
 	}
 
-	pagedArgs := append(args, p.Limit, p.Offset) //nolint:gocritic
-	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT `+intentColumns+`
-		  FROM payment_intents
-		  %s
-		 ORDER BY created_at DESC
-		 LIMIT $%d OFFSET $%d
-	`, where, n, n+1), pagedArgs...)
+	q := `SELECT ` + intentColumns + ` FROM payment_intents` + wb.clause() + ` ORDER BY created_at DESC`
+	q, pagedArgs, _, err := applyPagination(q, wb.args, wb.next(), p)
+	if err != nil {
+		return nil, 0, apperrors.BadRequest(err.Error())
+	}
+	rows, err := r.db.Query(ctx, q, pagedArgs...)
 	if err != nil {
 		return nil, 0, apperrors.Internal(err)
 	}
@@ -573,22 +560,6 @@ func (r *PostgresPaymentIntentRepository) ListByUserPending(ctx context.Context,
 		out = append(out, i)
 	}
 	return out, rows.Err()
-}
-
-// buildWhere returns a SQL WHERE clause (including the "WHERE" keyword) from a
-// list of already-numbered conditions. Returns empty string when conds is nil.
-func buildWhere(conds []string) string {
-	if len(conds) == 0 {
-		return ""
-	}
-	w := " WHERE "
-	for i, c := range conds {
-		if i > 0 {
-			w += " AND "
-		}
-		w += c
-	}
-	return w
 }
 
 // CancelByToken transitions a pending intent owned by userID to cancelled.

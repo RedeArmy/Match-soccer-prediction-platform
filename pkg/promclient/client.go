@@ -6,11 +6,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
+
+// maxResponseBytes bounds how much of a Prometheus response body this client
+// will read. 10 MiB is generous for an instant-query JSON payload; the cap
+// exists so a compromised or misconfigured Prometheus (its URL comes from
+// operator-supplied config, WCQ_OBSERVABILITY_PROMETHEUSURL) can't make an
+// admin request consume unbounded memory by streaming an endless body.
+const maxResponseBytes = 10 << 20
 
 // Client queries a Prometheus HTTP API.
 type Client struct {
@@ -67,7 +75,7 @@ func (c *Client) Query(ctx context.Context, query string) (*QueryResponse, error
 	}
 
 	var qr QueryResponse
-	if err := json.NewDecoder(resp.Body).Decode(&qr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBytes)).Decode(&qr); err != nil {
 		return nil, fmt.Errorf("promclient: decode: %w", err)
 	}
 	if qr.Status != "success" {

@@ -58,6 +58,14 @@ const (
 	LedgerKindBankTransfer      BalanceLedgerKind = "bank_transfer"
 	LedgerKindEntryFee          BalanceLedgerKind = "entry_fee"
 	LedgerKindPrize             BalanceLedgerKind = "prize"
+	// LedgerKindWithdrawalReserve and LedgerKindWithdrawalRelease are part of a
+	// balance-hold model that is not currently wired into the withdrawal flow
+	// (see the WithdrawalRequest doc comment above) — no Go code writes these
+	// kinds today. They remain defined because both the balance_ledger.kind
+	// CHECK constraint (migrations/000069) and the frontend ledger renderer
+	// (frontend/src/lib/utils.ts, isVisibleLedgerKind/ledgerKindKey) already
+	// treat them as valid values; removing them here would desync the enum
+	// from schema/frontend without actually removing the feature anywhere.
 	LedgerKindWithdrawalReserve BalanceLedgerKind = "withdrawal_reserve"
 	LedgerKindWithdrawalRelease BalanceLedgerKind = "withdrawal_release"
 	LedgerKindWithdrawalDeduct  BalanceLedgerKind = "withdrawal_deduct"
@@ -142,14 +150,29 @@ const (
 
 // WithdrawalRequest is a user-initiated payout request.
 //
-// On creation: GTQReservedCents is moved from balance_cents to reserved_cents.
-// On approval: reserved_cents is committed (balance_cents permanently reduced).
-// On rejection: reserved_cents is released back to available balance.
+// No persistent balance hold is placed between creation and approval/rejection
+// — GTQReservedCents is never written to users.reserved_cents (that column,
+// and BalanceLedgerRepository.Reserve/ReleaseReservation/CommitReservation,
+// are unused by this flow). Instead, availability is checked twice:
+//
+//   - On creation: PostgresWithdrawalRequestRepository.Create verifies
+//     balance_cents - reserved_cents >= GTQReservedCents. This is advisory —
+//     it prevents an obviously-unaffordable request from being filed, but does
+//     not hold the funds.
+//   - On approval: ApproveAndDebit re-checks the same condition atomically as
+//     part of the same UPDATE that debits balance_cents, and returns Conflict
+//     if the user's balance dropped below GTQReservedCents in the meantime
+//     (e.g. they spent it on a group entry fee while the request was pending).
+//     This guard — not a reservation — is what actually prevents overdraft.
+//
+// On rejection, nothing is released because nothing was held. A double
+// pending request per user is prevented separately, by a unique constraint
+// on withdrawal_requests (one pending row per user_id).
 //
 // AmountCents is the user-facing requested amount in the specified Currency
 // (e.g. USD cents for PayPal withdrawals). GTQReservedCents is the GTQ
-// centavos held in the balance reservation — always equal to AmountCents for
-// GTQ requests and computed via payment.usd_gtq_rate for USD requests.
+// centavos used for the balance checks above — always equal to AmountCents
+// for GTQ requests and computed via payment.usd_gtq_rate for USD requests.
 //
 // PayoutDetails holds method-specific fields:
 //   - bank_gt : {"account_number":"…","bank_name":"…"}

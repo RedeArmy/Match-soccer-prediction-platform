@@ -30,18 +30,6 @@ func (s *prizeLedgerStub) Credit(_ context.Context, _ int, amount int, _ domain.
 func (s *prizeLedgerStub) CreditIdempotent(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ string, _ string, _ int) (bool, error) {
 	return false, nil
 }
-func (s *prizeLedgerStub) Debit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
-	return nil
-}
-func (s *prizeLedgerStub) Reserve(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return nil
-}
-func (s *prizeLedgerStub) ReleaseReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return nil
-}
-func (s *prizeLedgerStub) CommitReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return nil
-}
 func (s *prizeLedgerStub) ListByUser(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
 	return nil, nil
 }

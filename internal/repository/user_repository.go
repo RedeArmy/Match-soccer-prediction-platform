@@ -326,7 +326,7 @@ func (r *PostgresUserRepository) ListFiltered(ctx context.Context, f UserFilters
 		wb.add("role = $%d", string(*f.Role))
 	}
 	if f.Search != nil && *f.Search != "" {
-		wb.addDual("(name ILIKE $%d OR email ILIKE $%d)", "%"+*f.Search+"%")
+		wb.addDual("(name ILIKE $%d OR email ILIKE $%d)", "%"+escapeLikePattern(*f.Search)+"%")
 	}
 
 	args := wb.args

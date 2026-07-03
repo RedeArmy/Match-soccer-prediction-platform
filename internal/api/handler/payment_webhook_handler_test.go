@@ -246,6 +246,39 @@ func TestWebhookHandler_Recurrente_ServiceError_Returns500(t *testing.T) {
 	}
 }
 
+// TestWebhookHandler_Recurrente_NotFoundIntent_Returns204 covers the branch
+// added when HandleRecurrente started resolving through payment_intents: a
+// NotFound from the service (reference doesn't match any known intent — a
+// forged/replayed payload, or an intent that was never persisted) must still
+// ack with 204 so Recurrente stops retrying, rather than surfacing a 500.
+func TestWebhookHandler_Recurrente_NotFoundIntent_Returns204(t *testing.T) {
+	router := webhookRouter(t, &stubWebhookPaymentSvc{err: apperrors.NotFound("payment intent not found for reference")})
+	payload := map[string]any{
+		"event_type": "payment.confirmed",
+		"data":       map[string]any{"reference": "REF-NOT-FOUND", "amount_cents": 5000, "currency": "GTQ", "user_id": 42},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204 for not-found intent (stop Recurrente retry loop), got %d", rec.Code)
+	}
+}
+
+func TestWebhookHandler_Recurrente_WithNotifier_NotifiesOnNotFoundIntent(t *testing.T) {
+	notif := &stubNotifier{}
+	router := webhookRouterWithNotifier(t, &stubWebhookPaymentSvc{err: apperrors.NotFound("payment intent not found for reference")}, notif)
+	payload := map[string]any{
+		"event_type": "payment.confirmed",
+		"data":       map[string]any{"reference": "REF-NOTIF-404", "amount_cents": 5000, "currency": "GTQ", "user_id": 42},
+	}
+	rec := postJSON(t, router, "/webhooks/recurrente", payload)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d", rec.Code)
+	}
+	if len(notif.paymentErrors) != 1 || notif.paymentErrors[0] != "intent_not_found" {
+		t.Errorf("expected NotifyPaymentError(\"intent_not_found\") once, got %v", notif.paymentErrors)
+	}
+}
+
 func TestWebhookHandler_Recurrente_MissingVerifiedBody_Returns401(t *testing.T) {
 	h := handler.NewPaymentWebhookHandler(&stubWebhookPaymentSvc{}, zaptest.NewLogger(t))
 	rec := httptest.NewRecorder()

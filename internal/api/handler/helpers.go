@@ -143,6 +143,10 @@ func parseCursorPage(r *http.Request) repository.CursorPage {
 
 // parsePagination reads ?limit and ?page from the request and returns a
 // Pagination value. Defaults: limit=50, page=1. Max limit is capped at 200.
+// page is capped so the resulting offset never exceeds DefaultPaginationMaxOffset
+// — computing the cap on page (rather than clamping the offset after
+// multiplying) avoids overflow from a pathological ?page value, since Atoi
+// silently saturates to math.MaxInt on unparsable/out-of-range input.
 func parsePagination(r *http.Request) repository.Pagination {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
@@ -154,6 +158,9 @@ func parsePagination(r *http.Request) repository.Pagination {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page < 1 {
 		page = 1
+	}
+	if maxPage := domain.DefaultPaginationMaxOffset/limit + 1; page > maxPage {
+		page = maxPage
 	}
 
 	return repository.Pagination{
@@ -179,7 +186,8 @@ func parseOptionalInt(r *http.Request, name string) *int {
 // parsePaginationParams reads optional ?limit and ?offset query parameters.
 // When limit is absent or non-positive, it defaults to DefaultPaginationDefaultLimit.
 // When limit exceeds DefaultPaginationMaxLimit it is capped to that value.
-// When offset is absent or negative, it defaults to 0.
+// When offset is absent or negative, it defaults to 0; when it exceeds
+// DefaultPaginationMaxOffset it is capped to that value (see parsePagination).
 func parsePaginationParams(r *http.Request) (limit, offset int) {
 	limit, _ = strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ = strconv.Atoi(r.URL.Query().Get("offset"))
@@ -190,6 +198,8 @@ func parsePaginationParams(r *http.Request) (limit, offset int) {
 	}
 	if offset < 0 {
 		offset = 0
+	} else if offset > domain.DefaultPaginationMaxOffset {
+		offset = domain.DefaultPaginationMaxOffset
 	}
 	return limit, offset
 }

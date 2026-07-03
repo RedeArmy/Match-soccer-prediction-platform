@@ -2,14 +2,12 @@ package repository_test
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
-	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
 // seedUserWithBalance creates a user and sets their balance_cents directly.
@@ -76,141 +74,6 @@ func TestBalanceLedgerRepository_Credit_UserNotFound(t *testing.T) {
 	err := repo.Credit(context.Background(), 999999, 1000, domain.LedgerKindBankTransfer, 0, "", 0)
 	if !isNotFound(err) {
 		t.Errorf("expected not-found error, got %v", err)
-	}
-}
-
-func TestBalanceLedgerRepository_Debit_DecreasesBalance(t *testing.T) {
-	cleanTables(t)
-	u := seedUserWithBalance(t, 10000)
-	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
-
-	if err := repo.Debit(context.Background(), u.ID, 3000, domain.LedgerKindEntryFee, 0, "", 0); err != nil {
-		t.Fatalf(fmtUnexpectedErr, err)
-	}
-
-	userRepo := repository.NewPostgresUserRepository(testDB)
-	bal, _, err := userRepo.GetBalance(context.Background(), u.ID)
-	if err != nil {
-		t.Fatalf("GetBalance: %v", err)
-	}
-	if bal != 7000 {
-		t.Errorf("balance: got %d, want 7000", bal)
-	}
-}
-
-func TestBalanceLedgerRepository_Debit_InsufficientBalance(t *testing.T) {
-	cleanTables(t)
-	u := seedUserWithBalance(t, 1000)
-	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
-
-	err := repo.Debit(context.Background(), u.ID, 5000, domain.LedgerKindEntryFee, 0, "", 0)
-	if err == nil {
-		t.Fatal("expected conflict error for insufficient balance, got nil")
-	}
-	if !errors.Is(err, apperrors.ErrConflict) {
-		t.Errorf("expected conflict error, got %v", err)
-	}
-}
-
-func TestBalanceLedgerRepository_Debit_UserNotFound(t *testing.T) {
-	cleanTables(t)
-	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
-
-	err := repo.Debit(context.Background(), 999999, 100, domain.LedgerKindEntryFee, 0, "", 0)
-	if !isNotFound(err) {
-		t.Errorf("expected not-found error, got %v", err)
-	}
-}
-
-func TestBalanceLedgerRepository_Reserve_MovesToReserved(t *testing.T) {
-	cleanTables(t)
-	u := seedUserWithBalance(t, 8000)
-	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
-
-	if err := repo.Reserve(context.Background(), u.ID, 3000, 1, "withdrawal_request", 0); err != nil {
-		t.Fatalf(fmtUnexpectedErr, err)
-	}
-
-	userRepo := repository.NewPostgresUserRepository(testDB)
-	bal, reserved, err := userRepo.GetBalance(context.Background(), u.ID)
-	if err != nil {
-		t.Fatalf("GetBalance: %v", err)
-	}
-	if bal != 8000 {
-		t.Errorf("balance_cents unchanged: got %d, want 8000", bal)
-	}
-	if reserved != 3000 {
-		t.Errorf("reserved_cents: got %d, want 3000", reserved)
-	}
-}
-
-func TestBalanceLedgerRepository_Reserve_InsufficientBalance(t *testing.T) {
-	cleanTables(t)
-	u := seedUserWithBalance(t, 1000)
-	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
-
-	err := repo.Reserve(context.Background(), u.ID, 5000, 1, "withdrawal_request", 0)
-	if !errors.Is(err, apperrors.ErrConflict) {
-		t.Errorf("expected conflict, got %v", err)
-	}
-}
-
-func TestBalanceLedgerRepository_ReleaseReservation_FreesReserved(t *testing.T) {
-	cleanTables(t)
-	u := seedUserWithBalance(t, 8000)
-	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
-
-	// First reserve, then release.
-	if err := repo.Reserve(context.Background(), u.ID, 3000, 1, "withdrawal_request", 0); err != nil {
-		t.Fatalf("Reserve: %v", err)
-	}
-	if err := repo.ReleaseReservation(context.Background(), u.ID, 3000, 1, "withdrawal_request", 0); err != nil {
-		t.Fatalf(fmtUnexpectedErr, err)
-	}
-
-	userRepo := repository.NewPostgresUserRepository(testDB)
-	_, reserved, err := userRepo.GetBalance(context.Background(), u.ID)
-	if err != nil {
-		t.Fatalf("GetBalance: %v", err)
-	}
-	if reserved != 0 {
-		t.Errorf("reserved_cents after release: got %d, want 0", reserved)
-	}
-}
-
-func TestBalanceLedgerRepository_CommitReservation_DeductsBalance(t *testing.T) {
-	cleanTables(t)
-	u := seedUserWithBalance(t, 8000)
-	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
-
-	if err := repo.Reserve(context.Background(), u.ID, 3000, 1, "withdrawal_request", 0); err != nil {
-		t.Fatalf("Reserve: %v", err)
-	}
-	if err := repo.CommitReservation(context.Background(), u.ID, 3000, 1, "withdrawal_request", 0); err != nil {
-		t.Fatalf(fmtUnexpectedErr, err)
-	}
-
-	userRepo := repository.NewPostgresUserRepository(testDB)
-	bal, reserved, err := userRepo.GetBalance(context.Background(), u.ID)
-	if err != nil {
-		t.Fatalf("GetBalance: %v", err)
-	}
-	if bal != 5000 {
-		t.Errorf("balance_cents after commit: got %d, want 5000", bal)
-	}
-	if reserved != 0 {
-		t.Errorf("reserved_cents after commit: got %d, want 0", reserved)
-	}
-}
-
-func TestBalanceLedgerRepository_CommitReservation_InsufficientReserved(t *testing.T) {
-	cleanTables(t)
-	u := seedUserWithBalance(t, 8000)
-	repo := repository.NewPostgresBalanceLedgerRepository(testDB)
-
-	err := repo.CommitReservation(context.Background(), u.ID, 5000, 1, "withdrawal_request", 0)
-	if !errors.Is(err, apperrors.ErrConflict) {
-		t.Errorf("expected conflict for no reserved balance, got %v", err)
 	}
 }
 
@@ -374,7 +237,10 @@ func TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_FiltersKind(t *t
 		t.Fatalf("credit prize: %v", err)
 	}
 	// Debit 1 000 via entry_fee — must be excluded from the deposit-kinds query.
-	if err := repo.Debit(ctx, u.ID, 1_000, domain.LedgerKindEntryFee, 0, "", 0); err != nil {
+	// Credit with a negative delta is used here purely as a ledger-row fixture;
+	// the real entry-fee debit path (GroupMembershipRepository) additionally
+	// guards against insufficient balance, which is irrelevant to this test.
+	if err := repo.Credit(ctx, u.ID, -1_000, domain.LedgerKindEntryFee, 0, "", 0); err != nil {
 		t.Fatalf("debit entry_fee: %v", err)
 	}
 
@@ -490,6 +356,10 @@ func TestBalanceLedgerRepository_SumTransactionsByUserAndPeriod_IsolatesUser(t *
 	}
 }
 
+// TestBalanceLedgerRepository_ConcurrentCreditAndDebit exercises Credit's
+// atomic UPDATE under concurrent, opposite-signed calls — a debit is just a
+// Credit with a negative delta (the same path GroupMembershipRepository and
+// WithdrawalRequestRepository use for their own atomic debit UPDATEs).
 func TestBalanceLedgerRepository_ConcurrentCreditAndDebit(t *testing.T) {
 	if testDB == nil {
 		t.Skip("integration test: no test database available")
@@ -515,7 +385,7 @@ func TestBalanceLedgerRepository_ConcurrentCreditAndDebit(t *testing.T) {
 		}(i)
 		go func(i int) {
 			defer wg.Done()
-			if err := repo.Debit(context.Background(), u.ID, amountCents, domain.LedgerKindEntryFee, int64(i), "concurrent_debit", 0); err != nil {
+			if err := repo.Credit(context.Background(), u.ID, -amountCents, domain.LedgerKindEntryFee, int64(i), "concurrent_debit", 0); err != nil {
 				t.Errorf("Debit[%d]: %v", i, err)
 			}
 		}(i)

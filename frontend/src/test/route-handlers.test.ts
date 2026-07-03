@@ -275,10 +275,10 @@ describe("clerk webhook relay – happy path", () => {
   });
 });
 
-describe("clerk webhook relay – hop-by-hop header stripping in request", () => {
+describe("clerk webhook relay – forwards only the allowlisted headers", () => {
   beforeEach(() => mockFetch.mockReset());
 
-  it("strips hop-by-hop headers from forwarded request", async () => {
+  it("forwards content-type and svix-* but drops everything else, including hop-by-hop", async () => {
     mockFetch.mockResolvedValueOnce(new Response("{}", { status: 200 }));
     const { POST } = await import("@/app/webhooks/clerk/route");
     const req = makeReq("http://localhost/webhooks/clerk", {
@@ -286,14 +286,26 @@ describe("clerk webhook relay – hop-by-hop header stripping in request", () =>
       body: "{}",
       headers: {
         connection: "keep-alive",
-        "x-custom-header": "preserved",
+        "content-type": "application/json",
+        "svix-id": "msg_abc",
+        "svix-timestamp": "1234567890",
+        "svix-signature": "v1,abc123",
+        "x-custom-header": "should-not-be-forwarded",
+        authorization: "Bearer should-not-be-forwarded",
+        cookie: "session=should-not-be-forwarded",
       },
     });
     await POST(req);
     const [, init] = mockFetch.mock.calls[0];
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers["connection"]).toBeUndefined();
-    expect(headers["x-custom-header"]).toBe("preserved");
+    expect(headers["x-custom-header"]).toBeUndefined();
+    expect(headers["authorization"]).toBeUndefined();
+    expect(headers["cookie"]).toBeUndefined();
+    expect(headers["content-type"]).toBe("application/json");
+    expect(headers["svix-id"]).toBe("msg_abc");
+    expect(headers["svix-timestamp"]).toBe("1234567890");
+    expect(headers["svix-signature"]).toBe("v1,abc123");
   });
 });
 
@@ -338,6 +350,38 @@ describe("paypal webhook relay – happy path", () => {
     expect(mockFetch).toHaveBeenCalledOnce();
     const [url] = mockFetch.mock.calls[0];
     expect(String(url)).toContain("/webhooks/paypal");
+  });
+});
+
+describe("paypal webhook relay – forwards only the allowlisted headers", () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it("forwards content-type and PAYPAL-* signature headers but drops everything else", async () => {
+    process.env.BACKEND_INTERNAL_URL = "http://backend:8080";
+    mockFetch.mockResolvedValueOnce(new Response("{}", { status: 200 }));
+    const { POST } = await import("@/app/webhooks/paypal/route");
+    const req = makeReq("http://localhost/webhooks/paypal", {
+      method: "POST",
+      body: "{}",
+      headers: {
+        "content-type": "application/json",
+        "paypal-transmission-id": "txn_abc",
+        "paypal-transmission-time": "2026-07-02T00:00:00Z",
+        "paypal-cert-url": "https://api.paypal.com/cert.pem",
+        "paypal-transmission-sig": "sigvalue",
+        "paypal-auth-algo": "SHA256withRSA",
+        cookie: "session=should-not-be-forwarded",
+        "x-custom-header": "should-not-be-forwarded",
+      },
+    });
+    await POST(req);
+    const [, init] = mockFetch.mock.calls[0];
+    const headers = (init as RequestInit).headers as Record<string, string>;
+    expect(headers["cookie"]).toBeUndefined();
+    expect(headers["x-custom-header"]).toBeUndefined();
+    expect(headers["content-type"]).toBe("application/json");
+    expect(headers["paypal-transmission-id"]).toBe("txn_abc");
+    expect(headers["paypal-transmission-sig"]).toBe("sigvalue");
   });
 });
 
@@ -391,7 +435,7 @@ describe("SSE stream proxy – no token", () => {
 
   it("returns 401", async () => {
     const { GET } = await import("@/app/api/notifications/stream/route");
-    const res = await GET();
+    const res = await GET(makeReq("http://localhost/api/notifications/stream"));
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error.code).toBe("ERR_UNAUTHORISED");
@@ -409,10 +453,26 @@ describe("SSE stream proxy – upstream throws", () => {
   it("returns 502", async () => {
     mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
     const { GET } = await import("@/app/api/notifications/stream/route");
-    const res = await GET();
+    const res = await GET(makeReq("http://localhost/api/notifications/stream"));
     expect(res.status).toBe(502);
     const body = await res.json();
     expect(body.error.code).toBe("ERR_UPSTREAM");
+  });
+
+  it("returns 499 without an error body when the client already disconnected", async () => {
+    // Regression test: the fetch to the backend is aborted (client gone), so
+    // there is no one to receive an error response — the handler must not
+    // treat this the same as a genuine "backend unreachable" failure.
+    const controller = new AbortController();
+    controller.abort();
+    mockFetch.mockRejectedValueOnce(new DOMException("aborted", "AbortError"));
+    const { GET } = await import("@/app/api/notifications/stream/route");
+    const res = await GET(
+      makeReq("http://localhost/api/notifications/stream", {
+        signal: controller.signal,
+      }),
+    );
+    expect(res.status).toBe(499);
   });
 });
 
@@ -433,9 +493,25 @@ describe("SSE stream proxy – upstream responds", () => {
     });
     mockFetch.mockResolvedValueOnce(new Response(stream, { status: 200 }));
     const { GET } = await import("@/app/api/notifications/stream/route");
-    const res = await GET();
+    const res = await GET(makeReq("http://localhost/api/notifications/stream"));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/event-stream");
+  });
+
+  it("forwards the incoming request's abort signal to the upstream fetch", async () => {
+    // Regression test for the connection-leak fix: without this, closing the
+    // client tab never tears down the corresponding backend SSE connection.
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.close();
+      },
+    });
+    mockFetch.mockResolvedValueOnce(new Response(stream, { status: 200 }));
+    const { GET } = await import("@/app/api/notifications/stream/route");
+    const req = makeReq("http://localhost/api/notifications/stream");
+    await GET(req);
+    const [, init] = mockFetch.mock.calls[0];
+    expect((init as RequestInit).signal).toBe(req.signal);
   });
 });
 

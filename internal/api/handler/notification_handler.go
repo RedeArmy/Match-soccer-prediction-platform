@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,14 @@ import (
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 )
 
+// banChecker is the narrow UserRepository surface GetStream needs to
+// periodically re-check whether the connected user has been banned or
+// deleted since the SSE connection was opened. PostgresUserRepository
+// satisfies this.
+type banChecker interface {
+	GetByID(ctx context.Context, id int) (*domain.User, error)
+}
+
 // NotificationHandler serves the notification inbox, SSE stream, mark-read,
 // preference management, Web Push subscribe/unsubscribe, and one-click email
 // unsubscribe endpoints.
@@ -28,7 +37,9 @@ type NotificationHandler struct {
 	pushRepo          repository.PushSubscriptionRepository
 	hub               *hub.Hub
 	params            service.SystemParamService
-	unsubscribeSecret string // WCQ_EMAIL_UNSUBSCRIBESECRET; empty disables Unsubscribe endpoint
+	unsubscribeSecret string               // WCQ_EMAIL_UNSUBSCRIBESECRET; empty disables Unsubscribe endpoint
+	userRepo          banChecker           // optional; nil disables the ban re-check in GetStream
+	sessionRepo       middleware.IsRevoker // optional; nil disables the revocation re-check in GetStream
 	log               *zap.Logger
 }
 
@@ -40,7 +51,14 @@ type NotificationHandlerConfig struct {
 	Hub               *hub.Hub
 	Params            service.SystemParamService
 	UnsubscribeSecret string // WCQ_EMAIL_UNSUBSCRIBESECRET; empty disables Unsubscribe
-	Log               *zap.Logger
+	// UserRepo and SessionRepo are optional. When set, GetStream closes the SSE
+	// connection on the next heartbeat tick after the user is banned/deleted or
+	// their session revoked, instead of continuing to deliver events until the
+	// client disconnects on its own. Nil disables the respective check (e.g. in
+	// tests that do not need it).
+	UserRepo    banChecker
+	SessionRepo middleware.IsRevoker
+	Log         *zap.Logger
 }
 
 // NewNotificationHandler constructs a NotificationHandler.
@@ -52,6 +70,8 @@ func NewNotificationHandler(cfg NotificationHandlerConfig) *NotificationHandler 
 		hub:               cfg.Hub,
 		params:            cfg.Params,
 		unsubscribeSecret: cfg.UnsubscribeSecret,
+		userRepo:          cfg.UserRepo,
+		sessionRepo:       cfg.SessionRepo,
 		log:               cfg.Log,
 	}
 }
@@ -140,6 +160,10 @@ func (h *NotificationHandler) GetStream(w http.ResponseWriter, r *http.Request) 
 	}
 	defer cleanup()
 
+	// Captured once at connection time; used by the periodic re-check below.
+	// Empty when RequireAuth did not populate a sid (e.g. test tokens).
+	sid, _ := middleware.SessionIDFromContext(r.Context())
+
 	// Disable the per-response write deadline so this long-lived SSE connection
 	// is not silently killed by http.Server.WriteTimeout (default 30 s). Each
 	// write is still subject to the TCP stack's send-buffer timeout.
@@ -180,10 +204,42 @@ func (h *NotificationHandler) GetStream(w http.ResponseWriter, r *http.Request) 
 			flusher.Flush()
 
 		case <-heartbeat.C:
+			// RequireAuth/ResolveUser only checked ban and session-revocation
+			// status once, when the connection was opened. Without this,
+			// a user banned or logged-out mid-stream would keep receiving
+			// notifications until they closed the tab. Piggybacking on the
+			// existing heartbeat cadence bounds that window to one interval
+			// (default 30s) instead of leaving it open indefinitely.
+			if h.sessionInvalid(r.Context(), caller.ID, sid) {
+				h.log.Info("sse: closing stream — user banned or session revoked since connection was opened",
+					zap.Int("user_id", caller.ID))
+				return
+			}
 			fmt.Fprintf(w, "event: heartbeat\ndata: {}\n\n")
 			flusher.Flush()
 		}
 	}
+}
+
+// sessionInvalid reports whether the SSE connection for userID/sid should be
+// torn down: the user has been banned or deleted, or their session has been
+// locally revoked (logout), since the connection was opened. Both checks are
+// optional — a nil dependency skips it — and both fail open on error, matching
+// the same fail-open contract ResolveUser and PolicyProvider already apply on
+// every regular HTTP request: a transient DB blip must not mass-disconnect
+// every open SSE stream.
+func (h *NotificationHandler) sessionInvalid(ctx context.Context, userID int, sid string) bool {
+	if h.userRepo != nil {
+		if u, err := h.userRepo.GetByID(ctx, userID); err == nil && (u == nil || u.BannedAt != nil) {
+			return true
+		}
+	}
+	if sid != "" && h.sessionRepo != nil {
+		if revoked, err := h.sessionRepo.IsRevoked(ctx, sid); err == nil && revoked {
+			return true
+		}
+	}
+	return false
 }
 
 // ── Mark read ─────────────────────────────────────────────────────────────────

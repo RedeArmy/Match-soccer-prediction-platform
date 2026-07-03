@@ -330,6 +330,198 @@ func TestNotifHandler_GetStream_Broadcast_DeliverData(t *testing.T) {
 	}
 }
 
+// ── GetStream periodic re-validation (ban / session revocation) ──────────────
+
+// fastHeartbeatParamSvc overrides only the SSE heartbeat interval so the
+// re-validation tests below don't need to wait ~30s (the production default)
+// for the first tick.
+type fastHeartbeatParamSvc struct {
+	stubAdminParamSvc
+	heartbeatSec int
+}
+
+func (s *fastHeartbeatParamSvc) GetInt(ctx context.Context, key string, def int) int {
+	if key == domain.ParamKeyNotifySSEHeartbeatIntervalSec {
+		return s.heartbeatSec
+	}
+	return s.stubAdminParamSvc.GetInt(ctx, key, def)
+}
+
+type stubStreamUserRepo struct {
+	user *domain.User
+	err  error
+}
+
+func (s *stubStreamUserRepo) GetByID(_ context.Context, _ int) (*domain.User, error) {
+	return s.user, s.err
+}
+
+type stubStreamSessionRepo struct {
+	revoked bool
+	err     error
+}
+
+func (s *stubStreamSessionRepo) IsRevoked(_ context.Context, _ string) (bool, error) {
+	return s.revoked, s.err
+}
+
+// TestNotifHandler_GetStream_BannedMidConnection_ClosesOnNextHeartbeat is the
+// regression test for the SSE finding: a user banned after the connection was
+// opened must stop receiving events within one heartbeat interval instead of
+// keeping the stream open until the client disconnects on its own.
+func TestNotifHandler_GetStream_BannedMidConnection_ClosesOnNextHeartbeat(t *testing.T) {
+	t.Parallel()
+	bannedAt := time.Now()
+	nh := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo: &stubUserNotifRepo{},
+		PrefRepo:  &stubNotifPrefRepo{},
+		PushRepo:  &stubNotifPushRepo{},
+		Hub:       hub.New(),
+		Params:    &fastHeartbeatParamSvc{heartbeatSec: 1},
+		UserRepo:  &stubStreamUserRepo{user: &domain.User{ID: 77, BannedAt: &bannedAt}},
+		Log:       zaptest.NewLogger(t),
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := middleware.ContextWithUser(r.Context(), &domain.User{ID: 77})
+		nh.GetStream(w, r.WithContext(ctx))
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(func() {
+		cancel()
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = srv.Config.Shutdown(shutCtx)
+		srv.Close()
+	})
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := http.DefaultClient.Do(req) //nolint:noctx
+	if err != nil {
+		t.Fatalf("SSE connect: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// The server must close the connection on its own (banned mid-stream)
+	// within a few heartbeat intervals; a fully-drained scanner (Scan()
+	// returns false) signals the response body was closed server-side.
+	scanner := bufio.NewScanner(resp.Body)
+	closed := make(chan struct{})
+	go func() {
+		for scanner.Scan() {
+		}
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		// expected: server closed the stream after detecting the ban
+	case <-time.After(4 * time.Second):
+		t.Fatal("GetStream did not close the connection after the user was banned")
+	}
+}
+
+// TestNotifHandler_GetStream_SessionRevokedMidConnection_ClosesOnNextHeartbeat
+// covers the logout-during-active-stream scenario: a session revoked (e.g.
+// via POST /auth/logout) after the SSE connection was opened must also stop
+// the stream within one heartbeat interval.
+func TestNotifHandler_GetStream_SessionRevokedMidConnection_ClosesOnNextHeartbeat(t *testing.T) {
+	t.Parallel()
+	nh := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo:   &stubUserNotifRepo{},
+		PrefRepo:    &stubNotifPrefRepo{},
+		PushRepo:    &stubNotifPushRepo{},
+		Hub:         hub.New(),
+		Params:      &fastHeartbeatParamSvc{heartbeatSec: 1},
+		SessionRepo: &stubStreamSessionRepo{revoked: true},
+		Log:         zaptest.NewLogger(t),
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := middleware.ContextWithUser(r.Context(), &domain.User{ID: 78})
+		ctx = middleware.ContextWithSessionID(ctx, "sid-revoked")
+		nh.GetStream(w, r.WithContext(ctx))
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(func() {
+		cancel()
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = srv.Config.Shutdown(shutCtx)
+		srv.Close()
+	})
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := http.DefaultClient.Do(req) //nolint:noctx
+	if err != nil {
+		t.Fatalf("SSE connect: %v", err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	closed := make(chan struct{})
+	go func() {
+		for scanner.Scan() {
+		}
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		// expected: server closed the stream after detecting the revoked session
+	case <-time.After(4 * time.Second):
+		t.Fatal("GetStream did not close the connection after the session was revoked")
+	}
+}
+
+// TestNotifHandler_GetStream_UnbannedUser_StaysOpenAcrossHeartbeats guards
+// against a regression where the periodic re-check itself would incorrectly
+// close healthy connections.
+func TestNotifHandler_GetStream_UnbannedUser_StaysOpenAcrossHeartbeats(t *testing.T) {
+	t.Parallel()
+	nh := handler.NewNotificationHandler(handler.NotificationHandlerConfig{
+		NotifRepo:   &stubUserNotifRepo{},
+		PrefRepo:    &stubNotifPrefRepo{},
+		PushRepo:    &stubNotifPushRepo{},
+		Hub:         hub.New(),
+		Params:      &fastHeartbeatParamSvc{heartbeatSec: 1},
+		UserRepo:    &stubStreamUserRepo{user: &domain.User{ID: 79}},
+		SessionRepo: &stubStreamSessionRepo{revoked: false},
+		Log:         zaptest.NewLogger(t),
+	})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := middleware.ContextWithUser(r.Context(), &domain.User{ID: 79})
+		ctx = middleware.ContextWithSessionID(ctx, "sid-ok")
+		nh.GetStream(w, r.WithContext(ctx))
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	t.Cleanup(func() {
+		cancel()
+		shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutCancel()
+		_ = srv.Config.Shutdown(shutCtx)
+		srv.Close()
+	})
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := http.DefaultClient.Do(req) //nolint:noctx
+	if err != nil {
+		t.Fatalf("SSE connect: %v", err)
+	}
+	defer resp.Body.Close()
+
+	scanner := bufio.NewScanner(resp.Body)
+	heartbeats := 0
+	for scanner.Scan() {
+		if scanner.Text() == "event: heartbeat" {
+			heartbeats++
+			if heartbeats >= 2 {
+				return // survived at least two re-validation ticks — success
+			}
+		}
+	}
+	t.Errorf("expected at least 2 heartbeats before the client-side timeout closed the connection, got %d", heartbeats)
+}
+
 // ── MarkRead ──────────────────────────────────────────────────────────────────
 
 func TestNotifHandler_MarkRead_ByIDs_204(t *testing.T) {

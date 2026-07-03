@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/service"
@@ -130,6 +131,24 @@ func kycProfileToResponse(p *domain.KYCProfile) KYCProfileResponse {
 		r.NextReviewAt = &s
 	}
 	return r
+}
+
+// maskDocumentNumber redacts all but the last 4 characters of a government
+// document number, e.g. "3001987654321" -> "*********4321".
+//
+// Used only for the admin review-queue LIST endpoint, where a single request
+// returns many users' full identity documents at once — the highest-exposure
+// surface for an over-privileged admin session or an accidentally logged
+// response. The single-profile admin detail view (GetProfileByID) and the
+// user's own profile view still return the number in full: the compliance
+// reviewer must compare it byte-for-byte against the uploaded document photo
+// to do their job, and a user already knows their own document number.
+func maskDocumentNumber(v string) string {
+	const visible = 4
+	if len(v) <= visible {
+		return v
+	}
+	return strings.Repeat("*", len(v)-visible) + v[len(v)-visible:]
 }
 
 func kycDocumentToResponse(d *domain.KYCDocument) KYCDocumentResponse {

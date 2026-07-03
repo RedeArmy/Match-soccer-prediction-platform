@@ -149,11 +149,28 @@ func (w *whereBuilder) addCond(expr string) {
 // expr must contain exactly two %d verbs that will both receive the same
 // positional argument index. Use for ILIKE patterns applied across two columns:
 //
-//	wb.addDual("(name ILIKE $%d OR email ILIKE $%d)", "%query%")
+//	wb.addDual("(name ILIKE $%d OR email ILIKE $%d)", "%"+escapeLikePattern(query)+"%")
 func (w *whereBuilder) addDual(expr string, val any) {
 	w.conds = append(w.conds, fmt.Sprintf(expr, w.argIdx, w.argIdx))
 	w.args = append(w.args, val)
 	w.argIdx++
+}
+
+// likeEscaper escapes Postgres LIKE/ILIKE metacharacters — '%', '_', and the
+// escape character itself ('\', Postgres's default) — in that order, so that
+// escaping the backslash first doesn't also escape the backslashes just
+// inserted for '%'/'_'.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// escapeLikePattern makes a raw user-supplied search term safe to embed in a
+// LIKE/ILIKE pattern (e.g. "%"+escapeLikePattern(s)+"%"). Parameter binding
+// already prevents SQL injection, but it does NOT stop Postgres from
+// interpreting a literal '%' or '_' the user typed as a wildcard — e.g.
+// searching for "50%_off" would otherwise match far more than intended, and a
+// bare "%" would match every row. This is a correctness/least-surprise fix,
+// not a SQL-injection fix.
+func escapeLikePattern(s string) string {
+	return likeEscaper.Replace(s)
 }
 
 // next returns the next positional argument index for passing to applyPagination.

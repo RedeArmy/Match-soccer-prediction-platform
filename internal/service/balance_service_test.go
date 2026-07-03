@@ -79,18 +79,6 @@ type balanceLedgerRepoStub struct {
 func (r *balanceLedgerRepoStub) Credit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
 	return r.err
 }
-func (r *balanceLedgerRepoStub) Debit(_ context.Context, _ int, _ int, _ domain.BalanceLedgerKind, _ int64, _ string, _ int) error {
-	return r.err
-}
-func (r *balanceLedgerRepoStub) Reserve(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return r.err
-}
-func (r *balanceLedgerRepoStub) ReleaseReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return r.err
-}
-func (r *balanceLedgerRepoStub) CommitReservation(_ context.Context, _ int, _ int, _ int64, _ string, _ int) error {
-	return r.err
-}
 func (r *balanceLedgerRepoStub) ListByUser(_ context.Context, _ int, _ repository.Pagination) ([]*domain.BalanceLedger, error) {
 	return r.entries, r.err
 }

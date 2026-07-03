@@ -288,6 +288,19 @@ func (s *Server) registerNotificationRoutes(r chi.Router, d apiV1Deps) {
 // consuming their general user quota. Applied after RequireRole so non-admins
 // are rejected before consuming a token from the admin bucket.
 func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore middleware.Allower) {
+	// expensiveAdminRateStore is a second, tighter bucket layered on top of the
+	// general admin bucket for the two mutations that trigger synchronous,
+	// group-wide computation: a full leaderboard recompute and prize
+	// distribution across every member. Both share adminRateStore (2 req/s,
+	// burst 10) with cheap reads like ListUsers, so an admin retrying one of
+	// these in a tight loop could otherwise still saturate backend CPU well
+	// within their normal admin quota. 1 req/5s with a burst of 2 allows a
+	// legitimate retry after a transient failure without enabling a loop.
+	// Hardcoded rather than system_param-backed, same as registerAuthRoutes'
+	// logoutRateStore — these are fixed safety valves, not operator-tunable
+	// business rules.
+	expensiveAdminRateStore := middleware.NewLimiterStore(1.0/5.0, 2)
+
 	r.Route("/admin", func(r chi.Router) {
 		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
 		r.Use(middleware.RequireRole(d.repos.user, s.log, domain.RoleAdmin))
@@ -398,8 +411,10 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 		// Bulk group operations
 		r.Post("/groups/bulk-delete", d.h.adminGroup.BulkDeleteGroups)
 		r.Post("/groups/{id}/members/bulk-remove", d.h.adminGroup.BulkRemoveMembers)
-		r.Post("/groups/{id}/leaderboard/recalculate", d.h.adminGroup.RecalculateLeaderboard)
-		r.Post("/groups/{id}/distribute-prizes", d.h.adminGroup.DistributePrizes)
+		r.With(middleware.RateLimitByUserID(expensiveAdminRateStore, s.log)).
+			Post("/groups/{id}/leaderboard/recalculate", d.h.adminGroup.RecalculateLeaderboard)
+		r.With(middleware.RateLimitByUserID(expensiveAdminRateStore, s.log)).
+			Post("/groups/{id}/distribute-prizes", d.h.adminGroup.DistributePrizes)
 
 		// Scoring rules
 		r.Get("/scoring-rules", d.h.adminScoringRules.List)

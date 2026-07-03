@@ -774,7 +774,9 @@ func (r *PostgresGroupMembershipRepository) LeaveMembershipAndTransferOwnership(
 // row — all in a single transaction.
 func (r *PostgresGroupMembershipRepository) DebitBalanceAndMarkPaid(ctx context.Context, quinielaID, userID, amountCents int) (*domain.GroupMembership, error) {
 	var membership *domain.GroupMembership
-	err := withTx(ctx, r.db, "GroupMembershipRepository.DebitBalanceAndMarkPaid", func(tx pgx.Tx) error {
+	// withRetryTx: real money debit (entry fee), same resilience policy as
+	// BalanceLedgerRepository.Credit for deposits (ATD-002).
+	err := withRetryTx(ctx, r.db, "GroupMembershipRepository.DebitBalanceAndMarkPaid", func(tx pgx.Tx) error {
 		var balanceAfter int
 		err := tx.QueryRow(ctx, `
 			UPDATE users
@@ -823,7 +825,11 @@ func (r *PostgresGroupMembershipRepository) DebitBalanceAndMarkPaid(ctx context.
 // transaction is rolled back and a Conflict error is returned.
 func (r *PostgresGroupMembershipRepository) BulkDebitAndMarkPaid(ctx context.Context, quinielaID, amountCents int) ([]int, error) {
 	var charged []int
-	err := withTx(ctx, r.db, "GroupMembershipRepository.BulkDebitAndMarkPaid", func(tx pgx.Tx) error {
+	// withRetryTx: this transaction locks multiple member rows (FOR UPDATE OF gm)
+	// and debits each in a loop, making it the most realistic candidate in this
+	// package for a genuine serialization failure/deadlock under concurrent
+	// bulk-charge or individual entry-fee debits touching overlapping users.
+	err := withRetryTx(ctx, r.db, "GroupMembershipRepository.BulkDebitAndMarkPaid", func(tx pgx.Tx) error {
 		userIDs, err := fetchUnpaidMemberIDs(ctx, tx, quinielaID)
 		if err != nil {
 			return err

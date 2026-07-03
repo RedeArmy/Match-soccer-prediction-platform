@@ -10,6 +10,14 @@ Checks performed per file:
   - No duplicate node IDs within a workflow
   - At least one trigger node (webhook, scheduleTrigger, etc.)
   - Webhook nodes have a non-empty path parameter
+  - Webhook nodes reachable by our own signed Go backend (i.e. not fed by
+    Prometheus Alertmanager, which cannot send our HMAC signature — see
+    ALERTMANAGER_TRIGGERED_FILES) must feed a "Verify Signature" code node
+    immediately after the trigger, with Raw Body enabled on the trigger. This
+    prevents a regression back to the pre-fix state where any request that
+    reached the webhook path (e.g. from a compromised sibling container) could
+    forge a KYC/payout event and trigger a phishing email or a fraudulent
+    manual-transfer instruction to an operator.
 
 Cross-file checks:
   - Webhook paths are unique across all workflows — n8n silently overwrites the
@@ -36,6 +44,19 @@ TRIGGER_TYPES = frozenset(
         "n8n-nodes-base.cronTrigger",
         "n8n-nodes-base.manualTrigger",
         "n8n-nodes-base.emailReadImap",
+    }
+)
+
+# Workflows whose webhook is called by Prometheus Alertmanager (see
+# observability/alertmanager.yml), not by our Go backend's signed dispatcher
+# (internal/observability/notifier.go, internal/notification/dispatcher/admin.go).
+# Alertmanager has no way to compute our HMAC-SHA256 X-Signature, so these are
+# intentionally exempt from the signature-verification requirement below.
+ALERTMANAGER_TRIGGERED_FILES = frozenset(
+    {
+        "circuit-breaker-alert.json",
+        "payment-error-escalation.json",
+        "prometheus-alert-relay.json",
     }
 )
 
@@ -149,6 +170,45 @@ for fpath in workflow_files:
             f"{fname}: no trigger node found (webhook, scheduleTrigger, etc.) — "
             "the workflow will never execute automatically"
         )
+
+    # ── Signature verification (backend-triggered webhooks only) ────────────
+    if fname not in ALERTMANAGER_TRIGGERED_FILES:
+        nodes_by_name = {n.get("name"): n for n in nodes}
+        for node in nodes:
+            if node.get("type") != "n8n-nodes-base.webhook":
+                continue
+            node_name = node.get("name", "")
+
+            raw_body = (
+                node.get("parameters", {}).get("options", {}).get("rawBody")
+            )
+            if raw_body is not True:
+                errors.append(
+                    f"{fname}: webhook node '{node_name}' must set "
+                    "parameters.options.rawBody = true so the Verify Signature "
+                    "node can validate the exact signed bytes"
+                )
+
+            first_targets = (
+                connections.get(node_name, {}).get("main", [[]])[0]
+                if isinstance(connections.get(node_name, {}).get("main"), list)
+                and connections.get(node_name, {}).get("main")
+                else []
+            )
+            first_target_name = first_targets[0].get("node") if first_targets else None
+            first_target = nodes_by_name.get(first_target_name)
+
+            if (
+                first_target is None
+                or first_target.get("name") != "Verify Signature"
+                or first_target.get("type") != "n8n-nodes-base.code"
+            ):
+                errors.append(
+                    f"{fname}: webhook node '{node_name}' must feed a "
+                    "'Verify Signature' code node immediately after the trigger — "
+                    "this workflow is reachable by anyone who can reach the "
+                    "webhook path unless the HMAC signature is checked first"
+                )
 
     # ── Connection graph integrity ────────────────────────────────────────────
     for src_name, outputs in connections.items():
