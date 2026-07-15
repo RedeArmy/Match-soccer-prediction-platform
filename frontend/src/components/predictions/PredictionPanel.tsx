@@ -807,6 +807,96 @@ function getButtonLabel(
   return t("predictions.submit");
 }
 
+interface TeamTimingHandle {
+  readonly timing: TeamTimingState;
+  readonly onPeriodChange: (newPeriod: ExtraTeamScoresAnswer) => void;
+  readonly onHalftimeGoalsChange: (newGoals: number) => void;
+}
+
+// useTeamTiming owns one team's lifted "scores in" period + half-time goal
+// count, keeping the two in sync (see teamScoresAnswerFromHalftime /
+// halftimeGoalsFromPeriod) and re-derived as the draft score or persisted
+// extras change. One instance per team, parameterised by which extra type it
+// submits — pulled out of PredictionMatchCard so that component's own
+// cognitive complexity stays within budget.
+function useTeamTiming(
+  extraType: "home_team_scores" | "away_team_scores",
+  fulltimeGoals: number,
+  persistedPeriod: string | undefined,
+  persistedHalftimeGoals: number | null,
+  onExtraSubmit: (extraType: ExtraType, answer: string) => void,
+): TeamTimingHandle {
+  const [timing, setTiming] = useState<TeamTimingState>(() =>
+    initialTeamTiming(fulltimeGoals, persistedPeriod, persistedHalftimeGoals),
+  );
+
+  // Re-derive whenever the draft score changes (narrows/widens which periods
+  // are even possible — this is what "clears" a now-stale choice, e.g. a
+  // team-scores answer of "none" left over from a 1-0 draft that just became
+  // 1-1) or the persisted extras change (server data arriving/refetching).
+  useEffect(() => {
+    setTiming(
+      initialTeamTiming(fulltimeGoals, persistedPeriod, persistedHalftimeGoals),
+    );
+  }, [fulltimeGoals, persistedPeriod, persistedHalftimeGoals]);
+
+  function onPeriodChange(newPeriod: ExtraTeamScoresAnswer) {
+    const pinned = halftimeGoalsFromPeriod(newPeriod, fulltimeGoals);
+    setTiming((current) => ({
+      period: newPeriod,
+      halftimeGoals:
+        pinned ??
+        Math.min(
+          Math.max(current.halftimeGoals, 1),
+          Math.max(1, fulltimeGoals - 1),
+        ),
+    }));
+    onExtraSubmit(extraType, newPeriod);
+  }
+
+  function onHalftimeGoalsChange(newGoals: number) {
+    const derivedPeriod = teamScoresAnswerFromHalftime(newGoals, fulltimeGoals);
+    setTiming({ period: derivedPeriod, halftimeGoals: newGoals });
+    if (derivedPeriod) {
+      onExtraSubmit(extraType, derivedPeriod);
+    }
+  }
+
+  return { timing, onPeriodChange, onHalftimeGoalsChange };
+}
+
+// useAutoFillForcedExtras submits any extra whose answer is fully determined
+// by the user's saved main prediction (e.g. a 0-0 scoreline forces
+// first_scorer="none") — bundled with the main prediction save rather than
+// fired on every draft keystroke, so this reacts to the *saved* prediction's
+// score, not the live draft. Pulled out of PredictionMatchCard for the same
+// complexity-budget reason as useTeamTiming above.
+function useAutoFillForcedExtras(
+  prediction: PredictionResponse | undefined,
+  extras: ExtrasByType,
+  locked: boolean,
+  onExtraSubmit: (extraType: ExtraType, answer: string) => void,
+) {
+  useEffect(() => {
+    if (!prediction || locked) return;
+    const { home_score, away_score } = prediction;
+    (
+      [
+        "first_scorer",
+        "home_team_scores",
+        "away_team_scores",
+        "halftime_result",
+      ] as const
+    ).forEach((type) => {
+      const forced = forcedExtraAnswer(type, home_score, away_score);
+      if (forced != null && extras[type]?.answer !== forced) {
+        onExtraSubmit(type, forced);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prediction?.home_score, prediction?.away_score, locked]);
+}
+
 interface PredictionMatchCardProps {
   readonly match: MatchResponse;
   readonly prediction: PredictionResponse | undefined;
@@ -887,111 +977,23 @@ function PredictionMatchCard({
 
   // Each team's half-time "scores in" period and half-time goal count are two
   // views of the same underlying data — editing either determines/narrows the
-  // other (see teamScoresAnswerFromHalftime / halftimeGoalsFromPeriod). This
-  // lifts that shared state above both the team-scores selects and the
-  // half-time number inputs so they always stay consistent with each other.
-  const [homeTiming, setHomeTiming] = useState<TeamTimingState>(() =>
-    initialTeamTiming(
-      draft.home,
-      extras.home_team_scores?.answer,
-      parseScoreline(extras.halftime_result?.answer)?.home ?? null,
-    ),
+  // other (see useTeamTiming below). One hook instance per team keeps that
+  // logic (and the auto-fill effect) out of this component's own body.
+  const home = useTeamTiming(
+    "home_team_scores",
+    draft.home,
+    extras.home_team_scores?.answer,
+    parseScoreline(extras.halftime_result?.answer)?.home ?? null,
+    onExtraSubmit,
   );
-  const [awayTiming, setAwayTiming] = useState<TeamTimingState>(() =>
-    initialTeamTiming(
-      draft.away,
-      extras.away_team_scores?.answer,
-      parseScoreline(extras.halftime_result?.answer)?.away ?? null,
-    ),
+  const away = useTeamTiming(
+    "away_team_scores",
+    draft.away,
+    extras.away_team_scores?.answer,
+    parseScoreline(extras.halftime_result?.answer)?.away ?? null,
+    onExtraSubmit,
   );
-
-  // Re-derive whenever the draft score changes (narrows/widens which periods
-  // are even possible — this is what "clears" a now-stale choice, e.g. a
-  // team-scores answer of "none" left over from a 1-0 draft that just became
-  // 1-1) or the persisted extras change (server data arriving/refetching).
-  useEffect(() => {
-    setHomeTiming(
-      initialTeamTiming(
-        draft.home,
-        extras.home_team_scores?.answer,
-        parseScoreline(extras.halftime_result?.answer)?.home ?? null,
-      ),
-    );
-  }, [draft.home, extras.home_team_scores?.answer, extras.halftime_result?.answer]);
-
-  useEffect(() => {
-    setAwayTiming(
-      initialTeamTiming(
-        draft.away,
-        extras.away_team_scores?.answer,
-        parseScoreline(extras.halftime_result?.answer)?.away ?? null,
-      ),
-    );
-  }, [draft.away, extras.away_team_scores?.answer, extras.halftime_result?.answer]);
-
-  // Auto-fills extras whose answer is fully determined by the saved main
-  // prediction (e.g. a 0-0 scoreline forces first_scorer="none") — bundled
-  // with the main prediction rather than fired on every draft keystroke, so
-  // this reacts to the *saved* prediction's score, not the live draft.
-  useEffect(() => {
-    if (!prediction || locked) return;
-    const { home_score, away_score } = prediction;
-    (
-      [
-        "first_scorer",
-        "home_team_scores",
-        "away_team_scores",
-        "halftime_result",
-      ] as const
-    ).forEach((type) => {
-      const forced = forcedExtraAnswer(type, home_score, away_score);
-      if (forced != null && extras[type]?.answer !== forced) {
-        onExtraSubmit(type, forced);
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prediction?.home_score, prediction?.away_score, locked]);
-
-  function handleTeamPeriodChange(
-    team: "home" | "away",
-    fulltimeGoals: number,
-    newPeriod: ExtraTeamScoresAnswer,
-  ) {
-    const pinned = halftimeGoalsFromPeriod(newPeriod, fulltimeGoals);
-    const setTiming = team === "home" ? setHomeTiming : setAwayTiming;
-    setTiming((current) => ({
-      period: newPeriod,
-      halftimeGoals:
-        pinned ??
-        Math.min(
-          Math.max(current.halftimeGoals, 1),
-          Math.max(1, fulltimeGoals - 1),
-        ),
-    }));
-    onExtraSubmit(
-      team === "home" ? "home_team_scores" : "away_team_scores",
-      newPeriod,
-    );
-  }
-
-  function handleTeamHalftimeGoalsChange(
-    team: "home" | "away",
-    fulltimeGoals: number,
-    newGoals: number,
-  ) {
-    const derivedPeriod = teamScoresAnswerFromHalftime(
-      newGoals,
-      fulltimeGoals,
-    );
-    const setTiming = team === "home" ? setHomeTiming : setAwayTiming;
-    setTiming({ period: derivedPeriod, halftimeGoals: newGoals });
-    if (derivedPeriod) {
-      onExtraSubmit(
-        team === "home" ? "home_team_scores" : "away_team_scores",
-        derivedPeriod,
-      );
-    }
-  }
+  useAutoFillForcedExtras(prediction, extras, locked, onExtraSubmit);
 
   return (
     <article
@@ -1144,25 +1146,21 @@ function PredictionMatchCard({
                   }
                   draftHome={draft.home}
                   draftAway={draft.away}
-                  home={homeTiming.halftimeGoals}
-                  away={awayTiming.halftimeGoals}
-                  homePeriod={homeTiming.period}
-                  awayPeriod={awayTiming.period}
-                  onHomeChange={(value) =>
-                    handleTeamHalftimeGoalsChange("home", draft.home, value)
-                  }
-                  onAwayChange={(value) =>
-                    handleTeamHalftimeGoalsChange("away", draft.away, value)
-                  }
+                  home={home.timing.halftimeGoals}
+                  away={away.timing.halftimeGoals}
+                  homePeriod={home.timing.period}
+                  awayPeriod={away.timing.period}
+                  onHomeChange={home.onHalftimeGoalsChange}
+                  onAwayChange={away.onHalftimeGoalsChange}
                 />
                 <MatchExtraControl
                   label={t("predictions.extraHomeTeamScores")}
                   options={TEAM_SCORES_OPTIONS(t)}
                   validValues={teamScoresValidValues(
                     draft.home,
-                    homeTiming.period,
+                    home.timing.period,
                   )}
-                  displayedAnswer={homeTiming.period}
+                  displayedAnswer={home.timing.period}
                   locked={locked}
                   isFinished={isFinished}
                   prediction={extras.home_team_scores}
@@ -1172,11 +1170,7 @@ function PredictionMatchCard({
                   )}
                   isPending={extraPendingType === "home_team_scores"}
                   onSubmit={(answer) =>
-                    handleTeamPeriodChange(
-                      "home",
-                      draft.home,
-                      answer as ExtraTeamScoresAnswer,
-                    )
+                    home.onPeriodChange(answer as ExtraTeamScoresAnswer)
                   }
                 />
                 <MatchExtraControl
@@ -1184,9 +1178,9 @@ function PredictionMatchCard({
                   options={TEAM_SCORES_OPTIONS(t)}
                   validValues={teamScoresValidValues(
                     draft.away,
-                    awayTiming.period,
+                    away.timing.period,
                   )}
-                  displayedAnswer={awayTiming.period}
+                  displayedAnswer={away.timing.period}
                   locked={locked}
                   isFinished={isFinished}
                   prediction={extras.away_team_scores}
@@ -1196,11 +1190,7 @@ function PredictionMatchCard({
                   )}
                   isPending={extraPendingType === "away_team_scores"}
                   onSubmit={(answer) =>
-                    handleTeamPeriodChange(
-                      "away",
-                      draft.away,
-                      answer as ExtraTeamScoresAnswer,
-                    )
+                    away.onPeriodChange(answer as ExtraTeamScoresAnswer)
                   }
                 />
               </div>
@@ -1303,11 +1293,10 @@ function halftimeScorelineAnswer(match: MatchResponse): string | null {
   return `${match.halftime_home_score}-${match.halftime_away_score}`;
 }
 
-// TeamTimingState is the shared, lifted state behind one team's "scores in"
-// period and half-time goal count — see the comment above homeTiming/
-// awayTiming in PredictionMatchCard for why these two must stay in sync.
-// period is null until either the user picks one or a half-time number
-// unambiguously implies one.
+// TeamTimingState is the shared state behind one team's "scores in" period
+// and half-time goal count — see useTeamTiming for why these two must stay
+// in sync. period is null until either the user picks one or a half-time
+// number unambiguously implies one.
 interface TeamTimingState {
   readonly period: ExtraTeamScoresAnswer | null;
   readonly halftimeGoals: number;
@@ -1437,7 +1426,7 @@ function MatchExtraControl({
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="text-text-muted">{label}</span>
         <span className="inline-flex items-center gap-1 font-medium text-white">
-          {forcedLabel}
+          <span>{forcedLabel}</span>
           <span className="text-[9px] font-normal uppercase tracking-wide text-text-muted">
             ({t("predictions.extraAuto")})
           </span>
@@ -1489,7 +1478,7 @@ interface HalftimeScoreExtraControlProps {
   readonly draftHome: number;
   readonly draftAway: number;
   // Controlled by the parent (lifted alongside the team-scores period so the
-  // two stay in sync — see homeTiming/awayTiming in PredictionMatchCard).
+  // two stay in sync — see useTeamTiming).
   readonly home: number;
   readonly away: number;
   readonly homePeriod: ExtraTeamScoresAnswer | null;
@@ -1566,7 +1555,7 @@ function HalftimeScoreExtraControl({
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="text-text-muted">{label}</span>
         <span className="inline-flex items-center gap-1 font-medium text-white">
-          0-0
+          <span>0-0</span>
           <span className="text-[9px] font-normal uppercase tracking-wide text-text-muted">
             ({t("predictions.extraAuto")})
           </span>
@@ -1578,7 +1567,7 @@ function HalftimeScoreExtraControl({
   const homeBounds = halftimeSideBounds(draftHome, homePeriod);
   const awayBounds = halftimeSideBounds(draftAway, awayPeriod);
   const saved = parseScoreline(prediction?.answer);
-  const dirty = saved === null || saved.home !== home || saved.away !== away;
+  const dirty = saved?.home !== home || saved?.away !== away;
 
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
