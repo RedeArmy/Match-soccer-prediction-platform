@@ -113,14 +113,14 @@ func newKYCGateWithParam(tier domain.KYCTier, paramVal string) KYCGate {
 // ── CheckWithdrawal ───────────────────────────────────────────────────────────
 
 func TestKYCGate_CheckWithdrawal_Tier0_Blocked(t *testing.T) {
-	err := newKYCGate(domain.KYCTierUnverified).CheckWithdrawal(context.Background(), 1, 1000)
+	err := newKYCGate(domain.KYCTierUnverified).CheckWithdrawal(context.Background(), 1, 1000, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Fatalf("expected Forbidden for Tier 0, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckWithdrawal_Tier1_Blocked(t *testing.T) {
-	err := newKYCGate(domain.KYCTierOne).CheckWithdrawal(context.Background(), 1, 1000)
+	err := newKYCGate(domain.KYCTierOne).CheckWithdrawal(context.Background(), 1, 1000, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Fatalf("expected Forbidden for Tier 1, got %v", err)
 	}
@@ -128,35 +128,35 @@ func TestKYCGate_CheckWithdrawal_Tier1_Blocked(t *testing.T) {
 
 func TestKYCGate_CheckWithdrawal_Tier2_BelowCap_Allowed(t *testing.T) {
 	// default cap = Q15,000; withdraw Q5,000
-	if err := newKYCGate(domain.KYCTierTwo).CheckWithdrawal(context.Background(), 1, 500_000); err != nil {
+	if err := newKYCGate(domain.KYCTierTwo).CheckWithdrawal(context.Background(), 1, 500_000, "GTQ"); err != nil {
 		t.Fatalf("expected nil for Tier 2 within cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckWithdrawal_Tier2_ExceedsCap_Blocked(t *testing.T) {
 	gate := newKYCGateWithParam(domain.KYCTierTwo, "100000")
-	err := gate.CheckWithdrawal(context.Background(), 1, 200_000)
+	err := gate.CheckWithdrawal(context.Background(), 1, 200_000, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Fatalf("expected Forbidden when Tier 2 exceeds cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckWithdrawal_Tier3_Unlimited(t *testing.T) {
-	if err := newKYCGate(domain.KYCTierThree).CheckWithdrawal(context.Background(), 1, 99_999_999); err != nil {
+	if err := newKYCGate(domain.KYCTierThree).CheckWithdrawal(context.Background(), 1, 99_999_999, "GTQ"); err != nil {
 		t.Fatalf("expected nil for Tier 3, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckWithdrawal_UserNotFound_ReturnsError(t *testing.T) {
 	gate := NewKYCGate(&kycUserRepoStub{user: nil}, &noopSystemParamService{})
-	if err := gate.CheckWithdrawal(context.Background(), 999, 1000); err == nil {
+	if err := gate.CheckWithdrawal(context.Background(), 999, 1000, "GTQ"); err == nil {
 		t.Fatal("expected error when user not found, got nil")
 	}
 }
 
 func TestKYCGate_CheckWithdrawal_RepoError_Propagates(t *testing.T) {
 	gate := NewKYCGate(&kycUserRepoStub{err: errors.New("db down")}, &noopSystemParamService{})
-	if err := gate.CheckWithdrawal(context.Background(), 1, 1000); err == nil {
+	if err := gate.CheckWithdrawal(context.Background(), 1, 1000, "GTQ"); err == nil {
 		t.Fatal("expected error from repo, got nil")
 	}
 }
@@ -164,49 +164,154 @@ func TestKYCGate_CheckWithdrawal_RepoError_Propagates(t *testing.T) {
 // ── CheckDeposit ──────────────────────────────────────────────────────────────
 
 func TestKYCGate_CheckDeposit_Tier0_BelowCap_Allowed(t *testing.T) {
-	if err := newKYCGate(domain.KYCTierUnverified).CheckDeposit(context.Background(), 1, 100_000); err != nil {
+	if err := newKYCGate(domain.KYCTierUnverified).CheckDeposit(context.Background(), 1, 100_000, "GTQ"); err != nil {
 		t.Fatalf("expected nil for Tier 0 within cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckDeposit_Tier0_ExceedsCap_Blocked(t *testing.T) {
 	gate := newKYCGateWithParam(domain.KYCTierUnverified, "50000")
-	err := gate.CheckDeposit(context.Background(), 1, 100_000)
+	err := gate.CheckDeposit(context.Background(), 1, 100_000, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Fatalf("expected Forbidden for Tier 0 exceeding cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckDeposit_Tier1_BelowCap_Allowed(t *testing.T) {
-	if err := newKYCGate(domain.KYCTierOne).CheckDeposit(context.Background(), 1, 100_000); err != nil {
+	if err := newKYCGate(domain.KYCTierOne).CheckDeposit(context.Background(), 1, 100_000, "GTQ"); err != nil {
 		t.Fatalf("expected nil for Tier 1 within cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckDeposit_Tier2_BelowCap_Allowed(t *testing.T) {
-	if err := newKYCGate(domain.KYCTierTwo).CheckDeposit(context.Background(), 1, 500_000); err != nil {
+	if err := newKYCGate(domain.KYCTierTwo).CheckDeposit(context.Background(), 1, 500_000, "GTQ"); err != nil {
 		t.Fatalf("expected nil for Tier 2 within cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckDeposit_Tier2_ExceedsCap_Blocked(t *testing.T) {
 	gate := newKYCGateWithParam(domain.KYCTierTwo, "100000")
-	err := gate.CheckDeposit(context.Background(), 1, 200_000)
+	err := gate.CheckDeposit(context.Background(), 1, 200_000, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Fatalf("expected Forbidden for Tier 2 exceeding deposit cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckDeposit_Tier3_Unlimited(t *testing.T) {
-	if err := newKYCGate(domain.KYCTierThree).CheckDeposit(context.Background(), 1, 99_999_999); err != nil {
+	if err := newKYCGate(domain.KYCTierThree).CheckDeposit(context.Background(), 1, 99_999_999, "GTQ"); err != nil {
 		t.Fatalf("expected nil for Tier 3, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckDeposit_RepoError_Propagates(t *testing.T) {
 	gate := NewKYCGate(&kycUserRepoStub{err: errors.New("db down")}, &noopSystemParamService{})
-	if err := gate.CheckDeposit(context.Background(), 1, 1000); err == nil {
+	if err := gate.CheckDeposit(context.Background(), 1, 1000, "GTQ"); err == nil {
 		t.Fatal("expected error from repo, got nil")
+	}
+}
+
+// ── Currency conversion (V30: USD amounts were compared 1:1 against GTQ caps) ──
+//
+// DefaultKYCTier1DepositLimitCents = 250_000 (Q2,500) and DefaultUSDGTQRate =
+// 790 (Q7.90/$1) throughout this block — both read from noopSystemParamService
+// falling back to domain defaults, exactly as production does when the
+// operator hasn't overridden either param.
+
+// TestKYCGate_CheckDeposit_USD_ConvertedAboveCap_Blocked reproduces the V30
+// exploit directly: a Tier-0 (unverified) user depositing $2,499 via PayPal.
+// Raw cents (249_900) is UNDER the raw GTQ cap (250_000) — the bug this
+// closes — but the real GTQ-equivalent value (249_900 * 790 / 100 = 1_974_210,
+// i.e. ~Q19,742) is now correctly compared instead, and must be blocked.
+func TestKYCGate_CheckDeposit_USD_ConvertedAboveCap_Blocked(t *testing.T) {
+	err := newKYCGate(domain.KYCTierUnverified).CheckDeposit(context.Background(), 1, 249_900, "USD")
+	if err == nil {
+		t.Fatal("expected a $2,499 USD deposit from an unverified user to be blocked (GTQ-equivalent ~Q19,742 exceeds the Q2,500 cap), got nil")
+	}
+	if !isForbidden(err) {
+		t.Errorf("expected apperrors.Forbidden, got %v", err)
+	}
+}
+
+// TestKYCGate_CheckDeposit_USD_ConvertedBelowCap_Allowed verifies a genuinely
+// small USD deposit still passes after conversion (this must not become a
+// blanket USD block).
+func TestKYCGate_CheckDeposit_USD_ConvertedBelowCap_Allowed(t *testing.T) {
+	// $2.00 → Q15.80, comfortably under the Q2,500 Tier-1 cap.
+	if err := newKYCGate(domain.KYCTierUnverified).CheckDeposit(context.Background(), 1, 200, "USD"); err != nil {
+		t.Errorf("expected small USD deposit to pass after conversion, got %v", err)
+	}
+}
+
+// TestKYCGate_CheckDeposit_EmptyCurrency_TreatedAsGTQ verifies backward
+// compatibility: call sites that don't pass a currency (currency == "") get
+// the pre-existing GTQ 1:1 behaviour, not an unexpected conversion.
+func TestKYCGate_CheckDeposit_EmptyCurrency_TreatedAsGTQ(t *testing.T) {
+	if err := newKYCGate(domain.KYCTierUnverified).CheckDeposit(context.Background(), 1, 200_000, ""); err != nil {
+		t.Errorf("expected empty currency to behave as GTQ (200_000 < 250_000 cap), got %v", err)
+	}
+}
+
+// TestKYCGate_CheckWithdrawal_USD_ConvertedAboveCap_Blocked mirrors the
+// deposit exploit for the withdrawal-side Tier-2 payout cap
+// (DefaultKYCTier2PayoutLimitCents = 1_500_000, i.e. Q15,000).
+func TestKYCGate_CheckWithdrawal_USD_ConvertedAboveCap_Blocked(t *testing.T) {
+	// $1,900 raw cents (190_000) is under the raw cap (1_500_000) but its GTQ
+	// equivalent (190_000 * 790 / 100 = 1_501_000, ~Q15,010) exceeds it.
+	err := newKYCGate(domain.KYCTierTwo).CheckWithdrawal(context.Background(), 1, 190_000, "USD")
+	if err == nil {
+		t.Fatal("expected USD withdrawal to be blocked once converted to its GTQ equivalent, got nil")
+	}
+}
+
+// TestKYCGate_ExceedsAMLThreshold_USD_ConvertedAboveThreshold_ReturnsTrue
+// verifies the AML flag itself (not just the tier-cap block) correctly
+// detects a USD transaction whose GTQ-equivalent value crosses
+// DefaultKYCAMLThresholdCents (2_500_000, i.e. Q25,000).
+func TestKYCGate_ExceedsAMLThreshold_USD_ConvertedAboveThreshold_ReturnsTrue(t *testing.T) {
+	gate := NewKYCGate(&kycUserRepoStub{}, &noopSystemParamService{})
+	// $3,200 raw cents (320_000) is under the raw GTQ threshold (2_500_000)
+	// but its GTQ equivalent (320_000 * 790 / 100 = 2_528_000) exceeds it.
+	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), 320_000, "USD")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !exceeds {
+		t.Error("expected a $3,200 deposit (~Q25,280) to exceed the Q25,000 AML threshold once converted, got false")
+	}
+}
+
+// TestKYCGate_ExceedsAMLThreshold_USD_ConvertedBelowThreshold_ReturnsFalse is
+// the negative counterpart, guarding against an overly-aggressive conversion.
+func TestKYCGate_ExceedsAMLThreshold_USD_ConvertedBelowThreshold_ReturnsFalse(t *testing.T) {
+	gate := NewKYCGate(&kycUserRepoStub{}, &noopSystemParamService{})
+	// $100 → Q790, nowhere near the Q25,000 threshold.
+	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), 10_000, "USD")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exceeds {
+		t.Error("expected a small USD deposit to stay below the AML threshold after conversion, got true")
+	}
+}
+
+// TestKYCGate_ToGTQCents_CustomRate_UsesConfiguredRate verifies the
+// conversion reads payment.usd_gtq_rate rather than always using the
+// compiled-in default, mirroring WithdrawalService.toGTQCents' own test.
+func TestKYCGate_ToGTQCents_CustomRate_UsesConfiguredRate(t *testing.T) {
+	g := NewKYCGate(&kycUserRepoStub{}, &paramReturning{value: "800"}).(*kycGate)
+	got := g.toGTQCents(context.Background(), 10_000, "USD") // $100 * 8.00 = Q800
+	if want := 80_000; got != want {
+		t.Errorf("toGTQCents with custom rate 800: got %d, want %d", got, want)
+	}
+}
+
+// TestKYCGate_ToGTQCents_UnrecognisedCurrency_TreatedAsGTQ documents the
+// defensive fallback for a currency this system doesn't otherwise produce.
+func TestKYCGate_ToGTQCents_UnrecognisedCurrency_TreatedAsGTQ(t *testing.T) {
+	g := NewKYCGate(&kycUserRepoStub{}, &noopSystemParamService{}).(*kycGate)
+	got := g.toGTQCents(context.Background(), 12_345, "EUR")
+	if got != 12_345 {
+		t.Errorf("unrecognised currency: got %d, want unchanged 12345", got)
 	}
 }
 
@@ -255,7 +360,7 @@ func TestKYCGate_CheckWinFreeze_RepoError_Propagates(t *testing.T) {
 
 func TestKYCGate_ExceedsAMLThreshold_BelowDefault_ReturnsFalse(t *testing.T) {
 	gate := NewKYCGate(&kycUserRepoStub{}, &noopSystemParamService{})
-	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), 1_000_000)
+	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), 1_000_000, "GTQ")
 	if err != nil || exceeds {
 		t.Errorf("expected false below default threshold, got exceeds=%v err=%v", exceeds, err)
 	}
@@ -263,7 +368,7 @@ func TestKYCGate_ExceedsAMLThreshold_BelowDefault_ReturnsFalse(t *testing.T) {
 
 func TestKYCGate_ExceedsAMLThreshold_AtThreshold_ReturnsTrue(t *testing.T) {
 	gate := NewKYCGate(&kycUserRepoStub{}, &noopSystemParamService{})
-	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), domain.DefaultKYCAMLThresholdCents)
+	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), domain.DefaultKYCAMLThresholdCents, "GTQ")
 	if err != nil || !exceeds {
 		t.Errorf("expected true at default threshold, got exceeds=%v err=%v", exceeds, err)
 	}
@@ -271,7 +376,7 @@ func TestKYCGate_ExceedsAMLThreshold_AtThreshold_ReturnsTrue(t *testing.T) {
 
 func TestKYCGate_ExceedsAMLThreshold_CustomThreshold(t *testing.T) {
 	gate := NewKYCGate(&kycUserRepoStub{}, &paramReturning{value: "100000"})
-	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), 100_000)
+	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), 100_000, "GTQ")
 	if err != nil || !exceeds {
 		t.Errorf("expected true at custom threshold, got exceeds=%v err=%v", exceeds, err)
 	}
@@ -279,7 +384,7 @@ func TestKYCGate_ExceedsAMLThreshold_CustomThreshold(t *testing.T) {
 
 func TestKYCGate_ExceedsAMLThreshold_AboveDefault_ReturnsTrue(t *testing.T) {
 	gate := NewKYCGate(&kycUserRepoStub{}, &noopSystemParamService{})
-	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), domain.DefaultKYCAMLThresholdCents+1)
+	exceeds, err := gate.ExceedsAMLThreshold(context.Background(), domain.DefaultKYCAMLThresholdCents+1, "GTQ")
 	if err != nil || !exceeds {
 		t.Errorf("expected true above threshold, got exceeds=%v err=%v", exceeds, err)
 	}
@@ -289,21 +394,21 @@ func TestKYCGate_ExceedsAMLThreshold_AboveDefault_ReturnsTrue(t *testing.T) {
 
 func TestKYCGate_CheckDepositVelocity_NoLedger_Allowed(t *testing.T) {
 	gate := newKYCGate(domain.KYCTierUnverified)
-	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000_000); err != nil {
+	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000_000, "GTQ"); err != nil {
 		t.Errorf("expected nil without ledger, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckDepositVelocity_Tier0_BelowCap_Allowed(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierUnverified, 0)
-	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000); err != nil {
+	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000, "GTQ"); err != nil {
 		t.Errorf("expected nil below cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckDepositVelocity_Tier0_ExceedsCap_Blocked(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierUnverified, int64(domain.DefaultKYCTier1DepositVelocityCents))
-	err := gate.CheckDepositVelocity(context.Background(), 1, 1)
+	err := gate.CheckDepositVelocity(context.Background(), 1, 1, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Errorf("expected forbidden when velocity cap exceeded, got %v", err)
 	}
@@ -311,14 +416,14 @@ func TestKYCGate_CheckDepositVelocity_Tier0_ExceedsCap_Blocked(t *testing.T) {
 
 func TestKYCGate_CheckDepositVelocity_Tier2_BelowCap_Allowed(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierTwo, 0)
-	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000); err != nil {
+	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000, "GTQ"); err != nil {
 		t.Errorf("expected nil below tier2 cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckDepositVelocity_Tier3_Unlimited(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierThree, int64(domain.DefaultKYCTier2DepositVelocityCents)*100)
-	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000_000); err != nil {
+	if err := gate.CheckDepositVelocity(context.Background(), 1, 1_000_000, "GTQ"); err != nil {
 		t.Errorf("expected nil for Tier 3 (unlimited), got %v", err)
 	}
 }
@@ -327,7 +432,7 @@ func TestKYCGate_CheckDepositVelocity_LedgerError_Propagates(t *testing.T) {
 	u := &domain.User{ID: 1, KYCTier: domain.KYCTierOne}
 	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
 	g.SetLedger(&ledgerSumStub{err: errors.New("db fail")})
-	if err := g.CheckDepositVelocity(context.Background(), 1, 100); err == nil {
+	if err := g.CheckDepositVelocity(context.Background(), 1, 100, "GTQ"); err == nil {
 		t.Error("expected ledger error to propagate")
 	}
 }
@@ -336,14 +441,14 @@ func TestKYCGate_CheckDepositVelocity_LedgerError_Propagates(t *testing.T) {
 
 func TestKYCGate_CheckWithdrawalVelocity_NoLedger_Allowed(t *testing.T) {
 	gate := newKYCGate(domain.KYCTierTwo)
-	if err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1_000); err != nil {
+	if err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1_000, "GTQ"); err != nil {
 		t.Errorf("expected nil without ledger, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckWithdrawalVelocity_Tier0_AlwaysBlocked(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierUnverified, 0)
-	err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1)
+	err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Errorf("expected forbidden for Tier 0 (cap=0), got %v", err)
 	}
@@ -351,14 +456,14 @@ func TestKYCGate_CheckWithdrawalVelocity_Tier0_AlwaysBlocked(t *testing.T) {
 
 func TestKYCGate_CheckWithdrawalVelocity_Tier2_BelowCap_Allowed(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierTwo, 0)
-	if err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1_000); err != nil {
+	if err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1_000, "GTQ"); err != nil {
 		t.Errorf("expected nil below tier2 cap, got %v", err)
 	}
 }
 
 func TestKYCGate_CheckWithdrawalVelocity_Tier2_ExceedsCap_Blocked(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierTwo, int64(domain.DefaultKYCTier2WithdrawalVelocityCents))
-	err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1)
+	err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Errorf("expected forbidden when velocity cap exceeded, got %v", err)
 	}
@@ -366,7 +471,7 @@ func TestKYCGate_CheckWithdrawalVelocity_Tier2_ExceedsCap_Blocked(t *testing.T) 
 
 func TestKYCGate_CheckWithdrawalVelocity_Tier3_Unlimited(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierThree, int64(domain.DefaultKYCTier2WithdrawalVelocityCents)*100)
-	if err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1_000_000); err != nil {
+	if err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1_000_000, "GTQ"); err != nil {
 		t.Errorf("expected nil for Tier 3 (unlimited), got %v", err)
 	}
 }
@@ -375,7 +480,7 @@ func TestKYCGate_CheckWithdrawalVelocity_Tier3_Unlimited(t *testing.T) {
 
 func TestKYCGate_ExceedsCumulative_NoLedger_BelowSingle_ReturnsFalse(t *testing.T) {
 	gate := newKYCGate(domain.KYCTierTwo)
-	exceeds, err := gate.ExceedsCumulativeAMLThreshold(context.Background(), 1, 1_000)
+	exceeds, err := gate.ExceedsCumulativeAMLThreshold(context.Background(), 1, 1_000, "GTQ")
 	if err != nil || exceeds {
 		t.Errorf("expected false below threshold with no ledger, got exceeds=%v err=%v", exceeds, err)
 	}
@@ -383,7 +488,7 @@ func TestKYCGate_ExceedsCumulative_NoLedger_BelowSingle_ReturnsFalse(t *testing.
 
 func TestKYCGate_ExceedsCumulative_SingleTransactionAtThreshold_ReturnsTrue(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierTwo, 0)
-	exceeds, err := gate.ExceedsCumulativeAMLThreshold(context.Background(), 1, domain.DefaultKYCAMLThresholdCents)
+	exceeds, err := gate.ExceedsCumulativeAMLThreshold(context.Background(), 1, domain.DefaultKYCAMLThresholdCents, "GTQ")
 	if err != nil || !exceeds {
 		t.Errorf("expected true at threshold, got exceeds=%v err=%v", exceeds, err)
 	}
@@ -392,7 +497,7 @@ func TestKYCGate_ExceedsCumulative_SingleTransactionAtThreshold_ReturnsTrue(t *t
 func TestKYCGate_ExceedsCumulative_RollingWindowPushesOverThreshold_ReturnsTrue(t *testing.T) {
 	half := int64(domain.DefaultKYCAMLThresholdCents / 2)
 	gate := newKYCGateWithLedger(domain.KYCTierTwo, half)
-	exceeds, err := gate.ExceedsCumulativeAMLThreshold(context.Background(), 1, int(half)+1)
+	exceeds, err := gate.ExceedsCumulativeAMLThreshold(context.Background(), 1, int(half)+1, "GTQ")
 	if err != nil || !exceeds {
 		t.Errorf("expected true when rolling sum + amount >= threshold, got exceeds=%v err=%v", exceeds, err)
 	}
@@ -402,7 +507,7 @@ func TestKYCGate_ExceedsCumulative_LedgerError_Propagates(t *testing.T) {
 	u := &domain.User{ID: 1, KYCTier: domain.KYCTierTwo}
 	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
 	g.SetLedger(&ledgerSumStub{err: errors.New("db fail")})
-	_, err := g.ExceedsCumulativeAMLThreshold(context.Background(), 1, 1_000)
+	_, err := g.ExceedsCumulativeAMLThreshold(context.Background(), 1, 1_000, "GTQ")
 	if err == nil {
 		t.Error("expected ledger error to propagate")
 	}
@@ -422,7 +527,7 @@ func TestKYCGate_CheckWithdrawal_TierInsufficient_WithMetrics(t *testing.T) {
 	u := &domain.User{ID: 1, KYCTier: domain.KYCTierUnverified}
 	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
 	g.SetMetrics(newTestMetrics(t))
-	err := g.CheckWithdrawal(context.Background(), 1, 1000)
+	err := g.CheckWithdrawal(context.Background(), 1, 1000, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Fatalf("expected Forbidden for Tier 0 with metrics, got %v", err)
 	}
@@ -432,7 +537,7 @@ func TestKYCGate_CheckWithdrawal_CapExceeded_WithMetrics(t *testing.T) {
 	u := &domain.User{ID: 1, KYCTier: domain.KYCTierTwo}
 	g := NewKYCGate(&kycUserRepoStub{user: u}, &paramReturning{value: "100000"}).(*kycGate)
 	g.SetMetrics(newTestMetrics(t))
-	err := g.CheckWithdrawal(context.Background(), 1, 200_000)
+	err := g.CheckWithdrawal(context.Background(), 1, 200_000, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Fatalf("expected Forbidden for cap exceeded with metrics, got %v", err)
 	}
@@ -583,7 +688,7 @@ func TestKYCGate_CheckDeposit_CapExceeded_WithMetrics(t *testing.T) {
 	u := &domain.User{ID: 1, KYCTier: domain.KYCTierUnverified}
 	g := NewKYCGate(&kycUserRepoStub{user: u}, &paramReturning{value: "50000"}).(*kycGate)
 	g.SetMetrics(newTestMetrics(t))
-	err := g.CheckDeposit(context.Background(), 1, 100_000)
+	err := g.CheckDeposit(context.Background(), 1, 100_000, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Fatalf("expected Forbidden for deposit cap exceeded with metrics, got %v", err)
 	}
@@ -596,7 +701,7 @@ func TestKYCGate_intParam_UnparsableValue_ReturnsDefault(t *testing.T) {
 	g := NewKYCGate(&kycUserRepoStub{user: u}, &paramReturning{value: "not-a-number"}).(*kycGate)
 	// CheckDeposit calls intParam; with an unparseable param the gate falls back
 	// to the default cap, so a small deposit within that default must pass.
-	if err := g.CheckDeposit(context.Background(), 1, 1_000); err != nil {
+	if err := g.CheckDeposit(context.Background(), 1, 1_000, "GTQ"); err != nil {
 		t.Errorf("expected nil using default cap when param is unparseable, got %v", err)
 	}
 }
@@ -607,7 +712,7 @@ func TestKYCGate_CheckWithdrawalVelocity_LedgerError_Propagates(t *testing.T) {
 	u := &domain.User{ID: 1, KYCTier: domain.KYCTierTwo}
 	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
 	g.SetLedger(&ledgerSumStub{err: errors.New("db fail")})
-	if err := g.CheckWithdrawalVelocity(context.Background(), 1, 1_000); err == nil {
+	if err := g.CheckWithdrawalVelocity(context.Background(), 1, 1_000, "GTQ"); err == nil {
 		t.Error("expected ledger error to propagate")
 	}
 }
@@ -617,7 +722,7 @@ func TestKYCGate_CheckWithdrawalVelocity_NoAllowance_WithMetrics(t *testing.T) {
 	g := NewKYCGate(&kycUserRepoStub{user: u}, &noopSystemParamService{}).(*kycGate)
 	g.SetLedger(&ledgerSumStub{sum: 0})
 	g.SetMetrics(newTestMetrics(t))
-	err := g.CheckWithdrawalVelocity(context.Background(), 1, 1)
+	err := g.CheckWithdrawalVelocity(context.Background(), 1, 1, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Errorf("expected Forbidden for Tier 1 with no withdrawal allowance, got %v", err)
 	}
@@ -626,7 +731,7 @@ func TestKYCGate_CheckWithdrawalVelocity_NoAllowance_WithMetrics(t *testing.T) {
 func TestKYCGate_CheckWithdrawalVelocity_VelocityExceeded_WithMetrics(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierTwo, int64(domain.DefaultKYCTier2WithdrawalVelocityCents))
 	gate.SetMetrics(newTestMetrics(t))
-	err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1)
+	err := gate.CheckWithdrawalVelocity(context.Background(), 1, 1, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Errorf("expected Forbidden when velocity exceeded with metrics, got %v", err)
 	}
@@ -637,7 +742,7 @@ func TestKYCGate_CheckWithdrawalVelocity_VelocityExceeded_WithMetrics(t *testing
 func TestKYCGate_CheckDepositVelocity_VelocityExceeded_WithMetrics(t *testing.T) {
 	gate := newKYCGateWithLedger(domain.KYCTierUnverified, int64(domain.DefaultKYCTier1DepositVelocityCents))
 	gate.SetMetrics(newTestMetrics(t))
-	err := gate.CheckDepositVelocity(context.Background(), 1, 1)
+	err := gate.CheckDepositVelocity(context.Background(), 1, 1, "GTQ")
 	if err == nil || !isForbidden(err) {
 		t.Errorf("expected Forbidden when deposit velocity exceeded with metrics, got %v", err)
 	}

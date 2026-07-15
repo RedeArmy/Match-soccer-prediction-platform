@@ -61,6 +61,17 @@ func (s *Server) registerPredictionRoutes(r chi.Router, d apiV1Deps) {
 	})
 }
 
+// registerExtraPredictionRoutes wires the /extras subrouter (match extras:
+// bonus predictions beyond the scoreline). Mirrors registerPredictionRoutes.
+func (s *Server) registerExtraPredictionRoutes(r chi.Router, d apiV1Deps) {
+	r.Route(routeExtras, func(r chi.Router) {
+		r.Use(middleware.RequestBodyLimit(d.bodySizeLimit))
+		r.Use(middleware.ResolveUser(d.repos.user, s.log))
+		r.Post("/", d.h.extraPrediction.Submit)
+		r.Get("/me", d.h.extraPrediction.GetMine)
+	})
+}
+
 // registerGroupRoutes wires the /groups subrouter.
 //
 // ResolveUser is applied at the subrouter level. Ownership-scoped operations
@@ -420,6 +431,11 @@ func (s *Server) registerAdminRoutes(r chi.Router, d apiV1Deps, adminRateStore m
 		r.Get("/scoring-rules", d.h.adminScoringRules.List)
 		r.Get("/scoring-rules/{phase}", d.h.adminScoringRules.GetByPhase)
 		r.Patch("/scoring-rules/{phase}", d.h.adminScoringRules.Update)
+
+		// Extra rules (match extras / bonus predictions point configuration)
+		r.Get("/extra-rules", d.h.adminExtraRules.List)
+		r.Get("/extra-rules/{extraType}", d.h.adminExtraRules.GetByType)
+		r.Patch("/extra-rules/{extraType}", d.h.adminExtraRules.Update)
 
 		// SSE hub observability — per-replica counters; aggregate in Prometheus for cluster totals
 		r.Get("/notifications/sse/stats", d.h.adminSSEStats.Stats)

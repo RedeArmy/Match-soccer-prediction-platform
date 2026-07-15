@@ -17,7 +17,12 @@ import {
   Timer,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import type { MatchResponse, PredictionResponse } from "@/lib/api-types";
+import type {
+  MatchResponse,
+  PredictionResponse,
+  ExtraPredictionResponse,
+  ExtraType,
+} from "@/lib/api-types";
 import {
   isKnockoutPlaceholder,
   visibleKnockoutPhases,
@@ -215,6 +220,72 @@ export function PredictionPanel() {
     queryFn: async () => {
       const token = await getToken();
       return api.getMyPredictions(token!);
+    },
+  });
+
+  // Extras (bonus predictions) are bulk-fetched for every match currently
+  // loaded, avoiding an N+1 request per card.
+  const matchIds = useMemo(
+    () => (matchesQuery.data ?? []).map((m) => m.id),
+    [matchesQuery.data],
+  );
+  const extrasQuery = useQuery({
+    queryKey: ["my-extras", matchIds],
+    queryFn: async () => {
+      const token = await getToken();
+      return api.getMyExtras(token!, matchIds);
+    },
+    enabled: matchIds.length > 0,
+  });
+
+  const extrasByMatch = useMemo(() => {
+    const map = new Map<
+      number,
+      { first_scorer?: ExtraPredictionResponse; halftime_result?: ExtraPredictionResponse }
+    >();
+    for (const extra of extrasQuery.data ?? []) {
+      const entry = map.get(extra.match_id) ?? {};
+      if (extra.extra_type === "first_scorer") entry.first_scorer = extra;
+      if (extra.extra_type === "halftime_result")
+        entry.halftime_result = extra;
+      map.set(extra.match_id, entry);
+    }
+    return map;
+  }, [extrasQuery.data]);
+
+  const [extraPending, setExtraPending] = useState<{
+    matchId: number;
+    extraType: ExtraType;
+  } | null>(null);
+
+  const extraMutation = useMutation({
+    mutationFn: async ({
+      matchId,
+      extraType,
+      answer,
+    }: {
+      matchId: number;
+      extraType: ExtraType;
+      answer: string;
+    }) => {
+      const token = await getToken();
+      return api.submitExtra(token!, {
+        match_id: matchId,
+        extra_type: extraType,
+        answer,
+      });
+    },
+    onMutate: ({ matchId, extraType }) => {
+      setExtraPending({ matchId, extraType });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["my-extras"] });
+    },
+    onError: () => {
+      setFeedback({ type: "error", message: t("predictions.extraSaveError") });
+    },
+    onSettled: () => {
+      setExtraPending(null);
     },
   });
 
@@ -506,6 +577,7 @@ export function PredictionPanel() {
               winMethod: prediction?.predicted_win_method ?? null,
               penaltyWinner: prediction?.predicted_penalty_winner ?? null,
             };
+            const extras = extrasByMatch.get(match.id);
             return (
               <PredictionMatchCard
                 key={match.id}
@@ -519,6 +591,16 @@ export function PredictionPanel() {
                 serverOffsetMs={serverOffsetMs}
                 onDraftChange={(value) => updateDraft(match.id, value)}
                 onSave={() => mutation.mutate({ match, draft })}
+                extraFirstScorer={extras?.first_scorer}
+                extraHalftimeResult={extras?.halftime_result}
+                extraPendingType={
+                  extraPending?.matchId === match.id
+                    ? extraPending.extraType
+                    : null
+                }
+                onExtraSubmit={(extraType, answer) =>
+                  extraMutation.mutate({ matchId: match.id, extraType, answer })
+                }
               />
             );
           })}
@@ -726,6 +808,10 @@ interface PredictionMatchCardProps {
   readonly serverOffsetMs: number;
   readonly onDraftChange: (value: DraftScores[number]) => void;
   readonly onSave: () => void;
+  readonly extraFirstScorer: ExtraPredictionResponse | undefined;
+  readonly extraHalftimeResult: ExtraPredictionResponse | undefined;
+  readonly extraPendingType: ExtraType | null;
+  readonly onExtraSubmit: (extraType: ExtraType, answer: string) => void;
 }
 
 function PredictionMatchCard({
@@ -734,6 +820,10 @@ function PredictionMatchCard({
   draft,
   isPending,
   serverOffsetMs,
+  extraFirstScorer,
+  extraHalftimeResult,
+  extraPendingType,
+  onExtraSubmit,
   onDraftChange,
   onSave,
 }: PredictionMatchCardProps) {
@@ -882,6 +972,38 @@ function PredictionMatchCard({
           </div>
         </div>
 
+        {/* ── Match extras (bonus predictions) — every match ── */}
+        <div className="flex shrink-0 flex-col justify-center gap-2 self-stretch rounded border border-white/8 bg-white/[0.03] px-3 py-2 lg:min-w-[11rem]">
+          <MatchExtraControl
+            label={t("predictions.extraFirstScorer")}
+            options={[
+              { value: "home", label: teamName(match.home_team) },
+              { value: "away", label: teamName(match.away_team) },
+              { value: "none", label: t("predictions.extraOptionNone") },
+            ]}
+            locked={locked}
+            isFinished={isFinished}
+            prediction={extraFirstScorer}
+            resolvedAnswer={match.first_scoring_team ?? null}
+            isPending={extraPendingType === "first_scorer"}
+            onSubmit={(answer) => onExtraSubmit("first_scorer", answer)}
+          />
+          <MatchExtraControl
+            label={t("predictions.extraHalftimeResult")}
+            options={[
+              { value: "home", label: teamName(match.home_team) },
+              { value: "draw", label: t("predictions.extraOptionDraw") },
+              { value: "away", label: teamName(match.away_team) },
+            ]}
+            locked={locked}
+            isFinished={isFinished}
+            prediction={extraHalftimeResult}
+            resolvedAnswer={halftimeResultAnswer(match)}
+            isPending={extraPendingType === "halftime_result"}
+            onSubmit={(answer) => onExtraSubmit("halftime_result", answer)}
+          />
+        </div>
+
         {/* ── Win-method — knockout phases only, unlocked matches ── */}
         {isKnockoutUnlocked && (
           <div className="flex shrink-0 items-center justify-center self-stretch rounded border border-white/8 bg-white/[0.03] px-3 py-2 lg:min-w-[9rem]">
@@ -967,6 +1089,104 @@ function PredictionMatchCard({
   );
 }
 
+// halftimeResultAnswer derives the resolved "home"/"draw"/"away" half-time
+// outcome from the match's halftime score fields, or null when either score
+// is unresolved (sync worker never supplied it, or the match finished before
+// this feature existed).
+function halftimeResultAnswer(match: MatchResponse): string | null {
+  if (match.halftime_home_score == null || match.halftime_away_score == null)
+    return null;
+  if (match.halftime_home_score > match.halftime_away_score) return "home";
+  if (match.halftime_home_score < match.halftime_away_score) return "away";
+  return "draw";
+}
+
+interface MatchExtraControlProps {
+  readonly label: string;
+  readonly options: readonly { value: string; label: string }[];
+  readonly locked: boolean;
+  readonly isFinished: boolean;
+  readonly prediction: ExtraPredictionResponse | undefined;
+  readonly resolvedAnswer: string | null;
+  readonly isPending: boolean;
+  readonly onSubmit: (answer: string) => void;
+}
+
+// MatchExtraControl renders one match extra (bonus prediction) as a compact
+// dropdown that auto-submits on change — extras are a single independent
+// value, unlike the scoreline prediction which batches home/away/win-method
+// into one Save action. Once the match is finished it switches to a
+// read-only summary of the resolved answer and points earned (or an
+// em-dash when the match never resolved this extra).
+function MatchExtraControl({
+  label,
+  options,
+  locked,
+  isFinished,
+  prediction,
+  resolvedAnswer,
+  isPending,
+  onSubmit,
+}: MatchExtraControlProps) {
+  const { t } = useI18n();
+
+  if (isFinished) {
+    const resolvedLabel =
+      resolvedAnswer == null
+        ? "—"
+        : (options.find((o) => o.value === resolvedAnswer)?.label ??
+          resolvedAnswer);
+    return (
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-text-muted">{label}</span>
+        <span className="flex items-center gap-1.5 font-medium text-white">
+          {resolvedAnswer == null ? (
+            <span className="text-text-muted">
+              {t("predictions.extraUnavailable")}
+            </span>
+          ) : (
+            <>
+              {resolvedLabel}
+              {prediction?.points != null && (
+                <span className="text-gold-300">
+                  +{prediction.points} {t("predictions.extraPointsEarned")}
+                </span>
+              )}
+            </>
+          )}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-text-muted">{label}</span>
+      <select
+        aria-label={label}
+        className="rounded border border-white/10 bg-black/20 px-1.5 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
+        value={prediction?.answer ?? ""}
+        disabled={locked || isPending}
+        onChange={(e) => {
+          if (e.target.value) onSubmit(e.target.value);
+        }}
+      >
+        <option value="" disabled label={t("predictions.extraPick")} />
+        {options.map((opt) => (
+          // The label attribute (not text content) supplies the option's
+          // display/accessible text. Team names are already rendered
+          // elsewhere on this card (TeamLabel, other extra selects); giving
+          // these options empty text content avoids duplicate DOM text nodes
+          // for the same team name while remaining fully accessible — the
+          // HTML spec defines label as exactly this: the text to display
+          // when it differs from (or replaces) the element's content.
+          <option key={opt.value} value={opt.value} label={opt.label} />
+        ))}
+      </select>
+    </div>
+  );
+}
+
 // ── Shared sub-components ──────────────────────────────────────────────────────
 
 function matchCardClass(
@@ -1035,6 +1255,7 @@ function WinMethodSelector({
           {t("predictions.penaltyWinner")}
         </span>
         <select
+          aria-label={t("predictions.penaltyWinner")}
           value={draft.penaltyWinner ?? ""}
           onChange={(e) => {
             onClearError();

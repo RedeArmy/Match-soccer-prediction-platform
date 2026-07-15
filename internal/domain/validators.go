@@ -116,6 +116,14 @@ func ValidatePrediction(p *Prediction, kickoffAt, now time.Time, deadlineOffset 
 	if p.AwayScore < 0 {
 		return apperrors.Validation("predicted away score must not be negative")
 	}
+	return ValidatePredictionDeadline(kickoffAt, now, deadlineOffset)
+}
+
+// ValidatePredictionDeadline rejects predictions submitted after kickoffAt
+// minus deadlineOffset. Extracted from ValidatePrediction so extra
+// predictions (match extras) can reuse the same deadline rule without a
+// dependency on the Prediction struct's score fields.
+func ValidatePredictionDeadline(kickoffAt, now time.Time, deadlineOffset time.Duration) error {
 	deadline := kickoffAt.Add(-deadlineOffset)
 	if now.After(deadline) {
 		return apperrors.Validation("predictions are no longer accepted for this match")
@@ -207,6 +215,52 @@ func ParseWinMethod(s string) (WinMethod, error) {
 		return "", apperrors.Validation(`win_method must be one of: "normal", "extra_time", "penalties"`)
 	}
 	return wm, nil
+}
+
+// validExtraTypes is the canonical set of accepted ExtraType string values.
+var validExtraTypes = map[ExtraType]struct{}{
+	ExtraTypeFirstScorer:    {},
+	ExtraTypeHalftimeResult: {},
+}
+
+// validExtraAnswers maps each ExtraType to its allowed answer values. The two
+// types intentionally have different answer domains (first_scorer allows
+// "none" for a 0-0 result; halftime_result does not), so answer validation
+// cannot be a single shared enum.
+var validExtraAnswers = map[ExtraType]map[string]struct{}{
+	ExtraTypeFirstScorer:    {"home": {}, "away": {}, "none": {}},
+	ExtraTypeHalftimeResult: {"home": {}, "draw": {}, "away": {}},
+}
+
+// ParseExtraType validates s against the known ExtraType constants and
+// returns the typed value. Returns a validation error for any unrecognised
+// string so callers receive a 422 rather than a raw PostgreSQL CHECK violation.
+func ParseExtraType(s string) (ExtraType, error) {
+	et := ExtraType(s)
+	if _, ok := validExtraTypes[et]; !ok {
+		return "", apperrors.Validation(`extra_type must be one of: "first_scorer", "halftime_result"`)
+	}
+	return et, nil
+}
+
+// ValidateExtraAnswer checks answer against the allowed value set for
+// extraType (assumed already validated by ParseExtraType).
+func ValidateExtraAnswer(extraType ExtraType, answer string) error {
+	allowed, ok := validExtraAnswers[extraType]
+	if !ok {
+		return apperrors.Validation("unrecognised extra_type")
+	}
+	if _, ok := allowed[answer]; !ok {
+		switch extraType {
+		case ExtraTypeFirstScorer:
+			return apperrors.Validation(`answer must be one of: "home", "away", "none"`)
+		case ExtraTypeHalftimeResult:
+			return apperrors.Validation(`answer must be one of: "home", "draw", "away"`)
+		default:
+			return apperrors.Validation("invalid answer for extra_type")
+		}
+	}
+	return nil
 }
 
 // validPhases is the set of recognised MatchPhase values. It is used by

@@ -155,6 +155,7 @@ type postScoringDeps struct {
 // because scoring has already committed.
 func newMatchFinishedHandler(
 	scorer service.MatchScorer,
+	extraScorer service.ExtraScorer,
 	deps postScoringDeps,
 	log *zap.Logger,
 ) func(context.Context, events.Envelope) error {
@@ -180,6 +181,19 @@ func newMatchFinishedHandler(
 			// Return the error so the bus retries and, if all attempts fail,
 			// pushes the event to the dead-letter queue for manual replay.
 			return fmt.Errorf("score match %d: %w", mf.MatchID, err)
+		}
+
+		// Extras (bonus predictions) are scored best-effort: a failure here is
+		// logged but must never trigger a DLQ retry of the whole event, since
+		// the core prediction scoring above has already committed.
+		if extraScorer != nil {
+			if err := extraScorer.ScoreExtras(ctx, mf.MatchID); err != nil {
+				log.Warn("worker: extras scoring failed after MatchFinished event",
+					append([]zap.Field{
+						zap.Int("match_id", mf.MatchID),
+						zap.Error(err),
+					}, tracing.LogFields(ctx)...)...)
+			}
 		}
 
 		log.Sugar().Infof("worker: scored match %d (%s %d-%d %s)",

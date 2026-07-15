@@ -1000,6 +1000,190 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/admin/extra-rules": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the point configuration for both match extras",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-extra-rules"
+                ],
+                "summary": "List extra rules",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.ExtraRuleResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/extra-rules/{extraType}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the point configuration for the requested extra type.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-extra-rules"
+                ],
+                "summary": "Get extra rule for a type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Extra type (first_scorer, halftime_result)",
+                        "name": "extraType",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ExtraRuleResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Type not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets a new point value and active flag for the requested extra",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-extra-rules"
+                ],
+                "summary": "Update extra rule for a type",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Extra type",
+                        "name": "extraType",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "New point value",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.updateExtraRuleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ExtraRuleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid JSON",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Caller is not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Type not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/admin/groups/bulk-delete": {
             "post": {
                 "security": [
@@ -4834,6 +5018,124 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/extras": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Submits (or updates) a guess for one match extra — a bonus",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "extras"
+                ],
+                "summary": "Submit a match extra guess",
+                "parameters": [
+                    {
+                        "description": "Extra guess",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.submitExtraPredictionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ExtraPredictionResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Match not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/extras/me": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the authenticated caller's extra guesses for the given",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "extras"
+                ],
+                "summary": "List my match extra guesses",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated match IDs",
+                        "name": "match_ids",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api_handler.ExtraPredictionResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid match_ids",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/groups": {
             "post": {
                 "security": [
@@ -7183,6 +7485,55 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.ExtraPredictionResponse": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "extra_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "match_id": {
+                    "type": "integer"
+                },
+                "points": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_handler.ExtraRuleResponse": {
+            "type": "object",
+            "properties": {
+                "extra_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "points": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_handler.GlobalLeaderboardEntryResponse": {
             "type": "object",
             "properties": {
@@ -7416,8 +7767,18 @@ const docTemplate = `{
                 "external_match_id": {
                     "type": "integer"
                 },
+                "first_scoring_team": {
+                    "type": "string"
+                },
                 "group_label": {
                     "type": "string"
+                },
+                "halftime_away_score": {
+                    "type": "integer"
+                },
+                "halftime_home_score": {
+                    "description": "Extras result fields — the \"correct answers\" for match extras (bonus\npredictions). Nil until the sync worker (or an admin correction)\nresolves them; the frontend renders a nil value as \"unavailable\" rather\nthan guessing, which also covers matches finished before this feature\nexisted (their columns are simply NULL).",
+                    "type": "integer"
                 },
                 "home_score": {
                     "type": "integer"
@@ -8627,6 +8988,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.submitExtraPredictionRequest": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "extra_type": {
+                    "type": "string"
+                },
+                "match_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.submitPredictionRequest": {
             "type": "object",
             "properties": {
@@ -8739,6 +9114,17 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_handler.updateExtraRuleRequest": {
+            "type": "object",
+            "properties": {
+                "is_active": {
+                    "type": "boolean"
+                },
+                "points": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_handler.updateGroupSettingsRequest": {
             "type": "object",
             "properties": {
@@ -8779,6 +9165,16 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "away_score": {
+                    "type": "integer"
+                },
+                "first_scoring_team": {
+                    "type": "string"
+                },
+                "halftime_away_score": {
+                    "type": "integer"
+                },
+                "halftime_home_score": {
+                    "description": "Extras result fields — optional. The sync worker normally populates\nthese from provider data; an admin may supply them here as a manual\ncorrection/escape-hatch when the provider is missing this data (e.g.\nthe goal-events feed failed for a fixture). first_scoring_team must be\n\"home\", \"away\", or \"none\" when present.",
                     "type": "integer"
                 },
                 "home_score": {

@@ -86,9 +86,12 @@ const (
 
 // stubMatchSvc implements service.MatchService with configurable returns.
 type stubMatchSvc struct {
-	match   *domain.Match
-	matches []*domain.Match
-	err     error
+	match            *domain.Match
+	matches          []*domain.Match
+	err              error
+	lastScore        service.ScoreUpdate // last value passed to UpdateResult
+	corrected        int                 // number of CorrectResult calls
+	lastCorrectScore service.ScoreUpdate // last value passed to CorrectResult
 }
 
 func (s *stubMatchSvc) CreateMatch(_ context.Context, _ *domain.Match) error {
@@ -106,13 +109,16 @@ func (s *stubMatchSvc) ListMatchesByPhase(_ context.Context, _ domain.MatchPhase
 func (s *stubMatchSvc) ListMatchesByStatus(_ context.Context, _ domain.MatchStatus) ([]*domain.Match, error) {
 	return s.matches, s.err
 }
-func (s *stubMatchSvc) UpdateResult(_ context.Context, _ int, _ service.ScoreUpdate) (*domain.Match, error) {
+func (s *stubMatchSvc) UpdateResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
+	s.lastScore = score
 	return s.match, s.err
 }
 func (s *stubMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, error) {
 	return s.match, s.err
 }
-func (s *stubMatchSvc) CorrectResult(_ context.Context, _ int, _ service.ScoreUpdate) (*domain.Match, error) {
+func (s *stubMatchSvc) CorrectResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
+	s.corrected++
+	s.lastCorrectScore = score
 	return s.match, s.err
 }
 func (s *stubMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
@@ -147,6 +153,23 @@ func (s *stubPredSvc) GetByUserAndQuiniela(_ context.Context, _, _ int) ([]*doma
 	return s.preds, s.err
 }
 func (s *stubPredSvc) GetByMatch(_ context.Context, _ int) ([]*domain.Prediction, error) {
+	return s.preds, s.err
+}
+
+// stubExtraPredSvc implements service.ExtraPredictionService with configurable returns.
+type stubExtraPredSvc struct {
+	pred  *domain.ExtraPrediction
+	preds []*domain.ExtraPrediction
+	err   error
+}
+
+func (s *stubExtraPredSvc) Submit(_ context.Context, _, _ int, _ domain.ExtraType, _ string) (*domain.ExtraPrediction, error) {
+	return s.pred, s.err
+}
+func (s *stubExtraPredSvc) GetByUserAndMatch(_ context.Context, _, _ int) ([]*domain.ExtraPrediction, error) {
+	return s.preds, s.err
+}
+func (s *stubExtraPredSvc) ListByUserAndMatches(_ context.Context, _ int, _ []int) ([]*domain.ExtraPrediction, error) {
 	return s.preds, s.err
 }
 
