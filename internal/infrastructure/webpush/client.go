@@ -43,14 +43,19 @@ type VAPIDClient struct {
 
 // NewVAPIDClient constructs a VAPIDClient.
 func NewVAPIDClient(publicKey, privateKey, subject string) *VAPIDClient {
-	return newVAPIDClientWithHTTP(publicKey, privateKey, subject, &http.Client{
+	return NewVAPIDClientWithHTTP(publicKey, privateKey, subject, &http.Client{
 		Transport: otelhttp.NewTransport(http.DefaultTransport),
 	})
 }
 
-// newVAPIDClientWithHTTP constructs a VAPIDClient using the provided HTTP client.
-// Used in tests to inject a custom transport without making real network calls.
-func newVAPIDClientWithHTTP(publicKey, privateKey, subject string, hc *http.Client) *VAPIDClient {
+// NewVAPIDClientWithHTTP constructs a VAPIDClient using the provided HTTP
+// client. Exported so tests can inject an isolated *http.Transport — sharing
+// http.DefaultTransport (as NewVAPIDClient does in production) is unsafe
+// across parallel tests that each own an httptest.Server: httptest.Server.Close
+// calls http.DefaultTransport.CloseIdleConnections() unconditionally, which
+// tears down in-flight connections belonging to any other parallel test still
+// using that same global transport.
+func NewVAPIDClientWithHTTP(publicKey, privateKey, subject string, hc *http.Client) *VAPIDClient {
 	return &VAPIDClient{
 		vapidPublicKey:  publicKey,
 		vapidPrivateKey: privateKey,

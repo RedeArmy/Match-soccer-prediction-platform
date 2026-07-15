@@ -101,7 +101,13 @@ func TestVAPIDClient_Send_201Created_PropagatesStatusCode(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := webpush.NewVAPIDClient(pubKey, privKey, "mailto:test@example.com")
+	// A dedicated *http.Transport (not NewVAPIDClient's shared
+	// http.DefaultTransport) is required here: this test runs in parallel with
+	// its siblings below, each owning its own httptest.Server, and
+	// httptest.Server.Close unconditionally calls
+	// http.DefaultTransport.CloseIdleConnections() — which would otherwise
+	// tear down another parallel test's in-flight connection.
+	c := webpush.NewVAPIDClientWithHTTP(pubKey, privKey, "mailto:test@example.com", &http.Client{Transport: &http.Transport{}})
 	code, err := c.Send(context.Background(), webpush.Message{
 		Endpoint:  srv.URL,
 		P256dhKey: p256dh,
@@ -135,7 +141,8 @@ func TestVAPIDClient_Send_410Gone_PropagatesStatusCode(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := webpush.NewVAPIDClient(pubKey, privKey, "mailto:test@example.com")
+	// Dedicated transport — see TestVAPIDClient_Send_201Created_PropagatesStatusCode.
+	c := webpush.NewVAPIDClientWithHTTP(pubKey, privKey, "mailto:test@example.com", &http.Client{Transport: &http.Transport{}})
 	code, err := c.Send(context.Background(), webpush.Message{
 		Endpoint:  srv.URL,
 		P256dhKey: p256dh,
@@ -170,7 +177,8 @@ func TestVAPIDClient_Send_429TooManyRequests_PropagatesStatusCode(t *testing.T) 
 	}))
 	defer srv.Close()
 
-	c := webpush.NewVAPIDClient(pubKey, privKey, "mailto:test@example.com")
+	// Dedicated transport — see TestVAPIDClient_Send_201Created_PropagatesStatusCode.
+	c := webpush.NewVAPIDClientWithHTTP(pubKey, privKey, "mailto:test@example.com", &http.Client{Transport: &http.Transport{}})
 	code, err := c.Send(context.Background(), webpush.Message{
 		Endpoint:  srv.URL,
 		P256dhKey: p256dh,
