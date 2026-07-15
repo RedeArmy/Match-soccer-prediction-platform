@@ -52,9 +52,10 @@ func extraRuleToResponse(r *domain.ExtraRule) ExtraRuleResponse {
 // List handles GET /admin/extra-rules.
 //
 // @Summary      List extra rules
-// @Description  Returns the point configuration for both match extras
+// @Description  Returns the point configuration for all match extras
 //
-//	(first_scorer, halftime_result). Requires admin role.
+//	(first_scorer, halftime_result, home_team_scores, away_team_scores).
+//	Requires admin role.
 //
 // @Tags         admin-extra-rules
 // @Produce      json
@@ -84,7 +85,7 @@ func (h *AdminExtraRuleHandler) List(w http.ResponseWriter, r *http.Request) {
 // @Tags         admin-extra-rules
 // @Produce      json
 // @Security     BearerAuth
-// @Param        extraType  path      string  true  "Extra type (first_scorer, halftime_result)"
+// @Param        extraType  path      string  true  "Extra type (first_scorer, halftime_result, home_team_scores, away_team_scores)"
 // @Success      200        {object}  handler.ExtraRuleResponse
 // @Failure      401        {object}  handler.ErrorResponse
 // @Failure      403        {object}  handler.ErrorResponse

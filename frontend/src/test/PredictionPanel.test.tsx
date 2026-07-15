@@ -272,24 +272,54 @@ describe("PredictionPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders both extra selectors for a scheduled match", async () => {
+  // A saved 2-1 prediction leaves every extra with more than one valid
+  // answer (both teams score, home scores 2 so "both_halves" stays possible,
+  // away scores 1) — the forced/auto-filled cases are covered separately by
+  // the 0-0 and one-sided tests below.
+  const savedPrediction2v1 = {
+    id: 1,
+    match_id: scheduledMatch.id,
+    home_score: 2,
+    away_score: 1,
+    points: null,
+    scored_at: null,
+    created_at: "",
+  };
+
+  it("renders all extra controls once the Puntos extras dropdown is opened", async () => {
     vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
-    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([savedPrediction2v1]);
 
     renderPanel();
     await screen.findByText("Canadá");
+
+    // Collapsed by default — extra controls are not in the DOM yet.
+    expect(
+      screen.queryByRole("combobox", { name: "Primer equipo en anotar" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
 
     expect(
       screen.getByRole("combobox", { name: "Primer equipo en anotar" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("combobox", { name: "Resultado al medio tiempo" }),
+      screen.getByRole("combobox", { name: "Local anota en" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Visitante anota en" }),
+    ).toBeInTheDocument();
+    // Half-time result is now a numeric scoreline, not a selector.
+    expect(
+      screen.queryByRole("combobox", { name: "Resultado al medio tiempo" }),
+    ).not.toBeInTheDocument();
   });
 
   it("submits a first-scorer extra guess", async () => {
     vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
-    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([savedPrediction2v1]);
     vi.mocked(api.submitExtra).mockResolvedValueOnce({
       id: 1,
       user_id: 1,
@@ -303,6 +333,9 @@ describe("PredictionPanel", () => {
 
     renderPanel();
     await screen.findByText("Canadá");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
 
     const select = screen.getByRole("combobox", {
       name: "Primer equipo en anotar",
@@ -316,6 +349,276 @@ describe("PredictionPanel", () => {
         answer: "home",
       });
     });
+  });
+
+  it("submits a team-scores extra guess for the home team", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([savedPrediction2v1]);
+    vi.mocked(api.submitExtra).mockResolvedValueOnce({
+      id: 2,
+      user_id: 1,
+      match_id: scheduledMatch.id,
+      extra_type: "home_team_scores",
+      answer: "both_halves",
+      points: null,
+      created_at: "",
+      updated_at: "",
+    });
+
+    renderPanel();
+    await screen.findByText("Canadá");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
+
+    const select = screen.getByRole("combobox", { name: "Local anota en" });
+    fireEvent.change(select, { target: { value: "both_halves" } });
+
+    await waitFor(() => {
+      expect(api.submitExtra).toHaveBeenCalledWith("tok", {
+        match_id: scheduledMatch.id,
+        extra_type: "home_team_scores",
+        answer: "both_halves",
+      });
+    });
+  });
+
+  it("submits a half-time scoreline extra guess via the numeric inputs", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([savedPrediction2v1]);
+    vi.mocked(api.submitExtra).mockResolvedValueOnce({
+      id: 3,
+      user_id: 1,
+      match_id: scheduledMatch.id,
+      extra_type: "halftime_result",
+      answer: "1-0",
+      points: null,
+      created_at: "",
+      updated_at: "",
+    });
+
+    renderPanel();
+    await screen.findByText("Canadá");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
+
+    const homeInput = screen.getByRole("spinbutton", {
+      name: "Resultado al medio tiempo Local",
+    });
+    fireEvent.change(homeInput, { target: { value: "1" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar resultado al medio tiempo" }),
+    );
+
+    await waitFor(() => {
+      expect(api.submitExtra).toHaveBeenCalledWith("tok", {
+        match_id: scheduledMatch.id,
+        extra_type: "halftime_result",
+        answer: "1-0",
+      });
+    });
+  });
+
+  it("auto-fills every extra as a fixed value for a saved 0-0 prediction", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([
+      {
+        id: 1,
+        match_id: scheduledMatch.id,
+        home_score: 0,
+        away_score: 0,
+        points: null,
+        scored_at: null,
+        created_at: "",
+      },
+    ]);
+    vi.mocked(api.submitExtra).mockResolvedValue({
+      id: 1,
+      user_id: 1,
+      match_id: scheduledMatch.id,
+      extra_type: "first_scorer",
+      answer: "none",
+      points: null,
+      created_at: "",
+      updated_at: "",
+    } as never);
+
+    renderPanel();
+    await screen.findByText("Canadá");
+
+    // A 0-0 scoreline fully determines every extra — the panel auto-submits
+    // them without the user touching anything, bundled with the (already
+    // saved) main prediction rather than on every draft keystroke.
+    await waitFor(() => {
+      expect(api.submitExtra).toHaveBeenCalledWith("tok", {
+        match_id: scheduledMatch.id,
+        extra_type: "first_scorer",
+        answer: "none",
+      });
+      expect(api.submitExtra).toHaveBeenCalledWith("tok", {
+        match_id: scheduledMatch.id,
+        extra_type: "home_team_scores",
+        answer: "none",
+      });
+      expect(api.submitExtra).toHaveBeenCalledWith("tok", {
+        match_id: scheduledMatch.id,
+        extra_type: "away_team_scores",
+        answer: "none",
+      });
+      expect(api.submitExtra).toHaveBeenCalledWith("tok", {
+        match_id: scheduledMatch.id,
+        extra_type: "halftime_result",
+        answer: "0-0",
+      });
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
+
+    // All 4 extras render as fixed "(auto)" values, not editable controls —
+    // no extras combobox, and no half-time number inputs (the 2 spinbuttons
+    // that do exist are the always-present main score inputs).
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("spinbutton")).toHaveLength(2);
+    expect(await screen.findAllByText("(auto)")).toHaveLength(4);
+  });
+
+  it("forces the scoring team and narrows team-scores options for a one-sided prediction", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([
+      {
+        id: 1,
+        match_id: scheduledMatch.id,
+        home_score: 1,
+        away_score: 0,
+        points: null,
+        scored_at: null,
+        created_at: "",
+      },
+    ]);
+    vi.mocked(api.submitExtra).mockResolvedValue({
+      id: 1,
+      user_id: 1,
+      match_id: scheduledMatch.id,
+      extra_type: "first_scorer",
+      answer: "home",
+      points: null,
+      created_at: "",
+      updated_at: "",
+    } as never);
+
+    renderPanel();
+    await screen.findByText("Canadá");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
+
+    // first_scorer and away_team_scores are fully forced (1-0: away never
+    // scores, home is the only possible first scorer) — no select for
+    // either. home_team_scores still needs a choice (1 goal: first or
+    // second half), so it keeps its select, just without "no anota"/"ambos
+    // tiempos".
+    expect(
+      screen.queryByRole("combobox", { name: "Primer equipo en anotar" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Visitante anota en" }),
+    ).not.toBeInTheDocument();
+
+    const homeSelect = screen.getByRole("combobox", {
+      name: "Local anota en",
+    });
+    const homeOptionValues = Array.from(
+      homeSelect.querySelectorAll("option"),
+    )
+      .map((o) => o.getAttribute("value"))
+      .filter(Boolean);
+    expect(homeOptionValues.sort()).toEqual(["first_half", "second_half"]);
+  });
+
+  it("locks the half-time input for a team once its scoring period is chosen", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([savedPrediction2v1]);
+    vi.mocked(api.submitExtra).mockResolvedValue({
+      id: 1,
+      user_id: 1,
+      match_id: scheduledMatch.id,
+      extra_type: "home_team_scores",
+      answer: "second_half",
+      points: null,
+      created_at: "",
+      updated_at: "",
+    } as never);
+
+    renderPanel();
+    await screen.findByText("Canadá");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
+
+    const homeTimingSelect = screen.getByRole("combobox", {
+      name: "Local anota en",
+    });
+    fireEvent.change(homeTimingSelect, { target: { value: "second_half" } });
+
+    await waitFor(() => {
+      expect(api.submitExtra).toHaveBeenCalledWith("tok", {
+        match_id: scheduledMatch.id,
+        extra_type: "home_team_scores",
+        answer: "second_half",
+      });
+    });
+
+    // second_half pins the home half-time goal count to 0 and disables the
+    // input — no longer a free choice once the period is known.
+    const homeHalftimeInput = screen.getByRole("spinbutton", {
+      name: "Resultado al medio tiempo Local",
+    });
+    expect(homeHalftimeInput).toBeDisabled();
+    expect(homeHalftimeInput).toHaveValue(0);
+  });
+
+  it("derives and locks the team-scores answer when the half-time input is edited directly", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([savedPrediction2v1]);
+    vi.mocked(api.submitExtra).mockResolvedValue({
+      id: 1,
+      user_id: 1,
+      match_id: scheduledMatch.id,
+      extra_type: "home_team_scores",
+      answer: "first_half",
+      points: null,
+      created_at: "",
+      updated_at: "",
+    } as never);
+
+    renderPanel();
+    await screen.findByText("Canadá");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
+
+    const homeHalftimeInput = screen.getByRole("spinbutton", {
+      name: "Resultado al medio tiempo Local",
+    });
+    // Home is predicted 2-1: entering 2 at half-time means all goals arrived
+    // by half-time — deterministically "first_half".
+    fireEvent.change(homeHalftimeInput, { target: { value: "2" } });
+
+    await waitFor(() => {
+      expect(api.submitExtra).toHaveBeenCalledWith("tok", {
+        match_id: scheduledMatch.id,
+        extra_type: "home_team_scores",
+        answer: "first_half",
+      });
+    });
+
+    // The team-scores control now shows the derived answer as a fixed value.
+    expect(
+      screen.queryByRole("combobox", { name: "Local anota en" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the resolved first-scorer answer and points for a finished match", async () => {
@@ -344,11 +647,15 @@ describe("PredictionPanel", () => {
 
     renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Pasados" }));
+    await screen.findByText("Canadá");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
 
     expect(await screen.findByText("+3 pts extra")).toBeInTheDocument();
   });
 
-  it("shows extraUnavailable for a finished match without a resolved first-scorer answer", async () => {
+  it("shows extraUnavailable for a finished match without any resolved extras", async () => {
     const finishedMatch = {
       ...scheduledMatch,
       id: 32,
@@ -362,11 +669,16 @@ describe("PredictionPanel", () => {
 
     renderPanel();
     fireEvent.click(screen.getByRole("button", { name: "Pasados" }));
+    await screen.findByText("Canadá");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Puntos extras" }),
+    );
 
-    // Both extras are unresolved for this match (first_scoring_team is null
-    // and halftime scores were never set), so the placeholder appears twice.
+    // All four extras are unresolved for this match (first_scoring_team is
+    // null and halftime scores were never set), so the placeholder appears
+    // once per extra type.
     const placeholders = await screen.findAllByText("No disponible");
-    expect(placeholders).toHaveLength(2);
+    expect(placeholders).toHaveLength(4);
   });
 
   it("shows points placeholder when finished match has no scored prediction", async () => {

@@ -13,6 +13,7 @@ import {
   MapPin,
   Save,
   SlidersHorizontal,
+  Sparkles,
   Target,
   Timer,
 } from "lucide-react";
@@ -21,8 +22,19 @@ import type {
   MatchResponse,
   PredictionResponse,
   ExtraPredictionResponse,
+  ExtraTeamScoresAnswer,
   ExtraType,
 } from "@/lib/api-types";
+import {
+  forcedExtraAnswer,
+  halftimeGoalsFromPeriod,
+  halftimeSideBounds,
+  isAnswerStillValid,
+  teamScoresAnswerFromHalftime,
+  teamScoresValidValues,
+  validFirstScorerAnswers,
+  validTeamScoresAnswers,
+} from "@/lib/extras";
 import {
   isKnockoutPlaceholder,
   visibleKnockoutPhases,
@@ -43,6 +55,7 @@ type DraftScores = Record<
     penaltyWinner?: string | null; // "home" | "away" | null
   }
 >;
+type ExtrasByType = Partial<Record<ExtraType, ExtraPredictionResponse>>;
 type Filter = "all" | "pending" | "saved" | "past";
 const PAGE_SIZE = 6;
 type GroupLabel =
@@ -239,15 +252,10 @@ export function PredictionPanel() {
   });
 
   const extrasByMatch = useMemo(() => {
-    const map = new Map<
-      number,
-      { first_scorer?: ExtraPredictionResponse; halftime_result?: ExtraPredictionResponse }
-    >();
+    const map = new Map<number, ExtrasByType>();
     for (const extra of extrasQuery.data ?? []) {
       const entry = map.get(extra.match_id) ?? {};
-      if (extra.extra_type === "first_scorer") entry.first_scorer = extra;
-      if (extra.extra_type === "halftime_result")
-        entry.halftime_result = extra;
+      entry[extra.extra_type] = extra;
       map.set(extra.match_id, entry);
     }
     return map;
@@ -591,8 +599,7 @@ export function PredictionPanel() {
                 serverOffsetMs={serverOffsetMs}
                 onDraftChange={(value) => updateDraft(match.id, value)}
                 onSave={() => mutation.mutate({ match, draft })}
-                extraFirstScorer={extras?.first_scorer}
-                extraHalftimeResult={extras?.halftime_result}
+                extras={extras ?? {}}
                 extraPendingType={
                   extraPending?.matchId === match.id
                     ? extraPending.extraType
@@ -808,8 +815,7 @@ interface PredictionMatchCardProps {
   readonly serverOffsetMs: number;
   readonly onDraftChange: (value: DraftScores[number]) => void;
   readonly onSave: () => void;
-  readonly extraFirstScorer: ExtraPredictionResponse | undefined;
-  readonly extraHalftimeResult: ExtraPredictionResponse | undefined;
+  readonly extras: ExtrasByType;
   readonly extraPendingType: ExtraType | null;
   readonly onExtraSubmit: (extraType: ExtraType, answer: string) => void;
 }
@@ -820,8 +826,7 @@ function PredictionMatchCard({
   draft,
   isPending,
   serverOffsetMs,
-  extraFirstScorer,
-  extraHalftimeResult,
+  extras,
   extraPendingType,
   onExtraSubmit,
   onDraftChange,
@@ -829,6 +834,7 @@ function PredictionMatchCard({
 }: PredictionMatchCardProps) {
   const { t, teamName, formatKickoff, phaseName } = useI18n();
   const [localError, setLocalError] = useState<string | null>(null);
+  const [isExtrasOpen, setIsExtrasOpen] = useState(false);
 
   // Virtual clock — single interval drives background colour, lock state, and countdown.
   const [virtualNow, setVirtualNow] = useState(
@@ -878,6 +884,114 @@ function PredictionMatchCard({
     match.status,
     t,
   );
+
+  // Each team's half-time "scores in" period and half-time goal count are two
+  // views of the same underlying data — editing either determines/narrows the
+  // other (see teamScoresAnswerFromHalftime / halftimeGoalsFromPeriod). This
+  // lifts that shared state above both the team-scores selects and the
+  // half-time number inputs so they always stay consistent with each other.
+  const [homeTiming, setHomeTiming] = useState<TeamTimingState>(() =>
+    initialTeamTiming(
+      draft.home,
+      extras.home_team_scores?.answer,
+      parseScoreline(extras.halftime_result?.answer)?.home ?? null,
+    ),
+  );
+  const [awayTiming, setAwayTiming] = useState<TeamTimingState>(() =>
+    initialTeamTiming(
+      draft.away,
+      extras.away_team_scores?.answer,
+      parseScoreline(extras.halftime_result?.answer)?.away ?? null,
+    ),
+  );
+
+  // Re-derive whenever the draft score changes (narrows/widens which periods
+  // are even possible — this is what "clears" a now-stale choice, e.g. a
+  // team-scores answer of "none" left over from a 1-0 draft that just became
+  // 1-1) or the persisted extras change (server data arriving/refetching).
+  useEffect(() => {
+    setHomeTiming(
+      initialTeamTiming(
+        draft.home,
+        extras.home_team_scores?.answer,
+        parseScoreline(extras.halftime_result?.answer)?.home ?? null,
+      ),
+    );
+  }, [draft.home, extras.home_team_scores?.answer, extras.halftime_result?.answer]);
+
+  useEffect(() => {
+    setAwayTiming(
+      initialTeamTiming(
+        draft.away,
+        extras.away_team_scores?.answer,
+        parseScoreline(extras.halftime_result?.answer)?.away ?? null,
+      ),
+    );
+  }, [draft.away, extras.away_team_scores?.answer, extras.halftime_result?.answer]);
+
+  // Auto-fills extras whose answer is fully determined by the saved main
+  // prediction (e.g. a 0-0 scoreline forces first_scorer="none") — bundled
+  // with the main prediction rather than fired on every draft keystroke, so
+  // this reacts to the *saved* prediction's score, not the live draft.
+  useEffect(() => {
+    if (!prediction || locked) return;
+    const { home_score, away_score } = prediction;
+    (
+      [
+        "first_scorer",
+        "home_team_scores",
+        "away_team_scores",
+        "halftime_result",
+      ] as const
+    ).forEach((type) => {
+      const forced = forcedExtraAnswer(type, home_score, away_score);
+      if (forced != null && extras[type]?.answer !== forced) {
+        onExtraSubmit(type, forced);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prediction?.home_score, prediction?.away_score, locked]);
+
+  function handleTeamPeriodChange(
+    team: "home" | "away",
+    fulltimeGoals: number,
+    newPeriod: ExtraTeamScoresAnswer,
+  ) {
+    const pinned = halftimeGoalsFromPeriod(newPeriod, fulltimeGoals);
+    const setTiming = team === "home" ? setHomeTiming : setAwayTiming;
+    setTiming((current) => ({
+      period: newPeriod,
+      halftimeGoals:
+        pinned ??
+        Math.min(
+          Math.max(current.halftimeGoals, 1),
+          Math.max(1, fulltimeGoals - 1),
+        ),
+    }));
+    onExtraSubmit(
+      team === "home" ? "home_team_scores" : "away_team_scores",
+      newPeriod,
+    );
+  }
+
+  function handleTeamHalftimeGoalsChange(
+    team: "home" | "away",
+    fulltimeGoals: number,
+    newGoals: number,
+  ) {
+    const derivedPeriod = teamScoresAnswerFromHalftime(
+      newGoals,
+      fulltimeGoals,
+    );
+    const setTiming = team === "home" ? setHomeTiming : setAwayTiming;
+    setTiming({ period: derivedPeriod, halftimeGoals: newGoals });
+    if (derivedPeriod) {
+      onExtraSubmit(
+        team === "home" ? "home_team_scores" : "away_team_scores",
+        derivedPeriod,
+      );
+    }
+  }
 
   return (
     <article
@@ -970,38 +1084,128 @@ function PredictionMatchCard({
               />
             )}
           </div>
-        </div>
 
-        {/* ── Match extras (bonus predictions) — every match ── */}
-        <div className="flex shrink-0 flex-col justify-center gap-2 self-stretch rounded border border-white/8 bg-white/[0.03] px-3 py-2 lg:min-w-[11rem]">
-          <MatchExtraControl
-            label={t("predictions.extraFirstScorer")}
-            options={[
-              { value: "home", label: teamName(match.home_team) },
-              { value: "away", label: teamName(match.away_team) },
-              { value: "none", label: t("predictions.extraOptionNone") },
-            ]}
-            locked={locked}
-            isFinished={isFinished}
-            prediction={extraFirstScorer}
-            resolvedAnswer={match.first_scoring_team ?? null}
-            isPending={extraPendingType === "first_scorer"}
-            onSubmit={(answer) => onExtraSubmit("first_scorer", answer)}
-          />
-          <MatchExtraControl
-            label={t("predictions.extraHalftimeResult")}
-            options={[
-              { value: "home", label: teamName(match.home_team) },
-              { value: "draw", label: t("predictions.extraOptionDraw") },
-              { value: "away", label: teamName(match.away_team) },
-            ]}
-            locked={locked}
-            isFinished={isFinished}
-            prediction={extraHalftimeResult}
-            resolvedAnswer={halftimeResultAnswer(match)}
-            isPending={extraPendingType === "halftime_result"}
-            onSubmit={(answer) => onExtraSubmit("halftime_result", answer)}
-          />
+          {/* ── Match extras (bonus predictions) — collapsible, every match ── */}
+          <div className="mt-3 rounded border border-white/8 bg-white/[0.03]">
+            <button
+              type="button"
+              onClick={() => setIsExtrasOpen((v) => !v)}
+              aria-expanded={isExtrasOpen}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-text-secondary transition-colors hover:text-white"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-gold-300" />
+                {t("predictions.extraDropdownLabel")}
+              </span>
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                  isExtrasOpen && "rotate-180",
+                )}
+              />
+            </button>
+            {isExtrasOpen && (
+              <div className="flex flex-col gap-2 border-t border-white/8 px-3 py-2">
+                <MatchExtraControl
+                  label={t("predictions.extraFirstScorer")}
+                  options={[
+                    { value: "home", label: teamName(match.home_team) },
+                    { value: "away", label: teamName(match.away_team) },
+                    { value: "none", label: t("predictions.extraOptionNone") },
+                  ]}
+                  validValues={validFirstScorerAnswers(draft.home, draft.away)}
+                  displayedAnswer={
+                    extras.first_scorer &&
+                    isAnswerStillValid(
+                      "first_scorer",
+                      extras.first_scorer.answer,
+                      draft.home,
+                      draft.away,
+                    )
+                      ? extras.first_scorer.answer
+                      : null
+                  }
+                  locked={locked}
+                  isFinished={isFinished}
+                  prediction={extras.first_scorer}
+                  resolvedAnswer={match.first_scoring_team ?? null}
+                  isPending={extraPendingType === "first_scorer"}
+                  onSubmit={(answer) => onExtraSubmit("first_scorer", answer)}
+                />
+                <HalftimeScoreExtraControl
+                  label={t("predictions.extraHalftimeResult")}
+                  locked={locked}
+                  isFinished={isFinished}
+                  prediction={extras.halftime_result}
+                  resolvedAnswer={halftimeScorelineAnswer(match)}
+                  isPending={extraPendingType === "halftime_result"}
+                  onSubmit={(answer) =>
+                    onExtraSubmit("halftime_result", answer)
+                  }
+                  draftHome={draft.home}
+                  draftAway={draft.away}
+                  home={homeTiming.halftimeGoals}
+                  away={awayTiming.halftimeGoals}
+                  homePeriod={homeTiming.period}
+                  awayPeriod={awayTiming.period}
+                  onHomeChange={(value) =>
+                    handleTeamHalftimeGoalsChange("home", draft.home, value)
+                  }
+                  onAwayChange={(value) =>
+                    handleTeamHalftimeGoalsChange("away", draft.away, value)
+                  }
+                />
+                <MatchExtraControl
+                  label={t("predictions.extraHomeTeamScores")}
+                  options={TEAM_SCORES_OPTIONS(t)}
+                  validValues={teamScoresValidValues(
+                    draft.home,
+                    homeTiming.period,
+                  )}
+                  displayedAnswer={homeTiming.period}
+                  locked={locked}
+                  isFinished={isFinished}
+                  prediction={extras.home_team_scores}
+                  resolvedAnswer={teamScoresAnswerFromHalftime(
+                    match.halftime_home_score,
+                    match.home_score,
+                  )}
+                  isPending={extraPendingType === "home_team_scores"}
+                  onSubmit={(answer) =>
+                    handleTeamPeriodChange(
+                      "home",
+                      draft.home,
+                      answer as ExtraTeamScoresAnswer,
+                    )
+                  }
+                />
+                <MatchExtraControl
+                  label={t("predictions.extraAwayTeamScores")}
+                  options={TEAM_SCORES_OPTIONS(t)}
+                  validValues={teamScoresValidValues(
+                    draft.away,
+                    awayTiming.period,
+                  )}
+                  displayedAnswer={awayTiming.period}
+                  locked={locked}
+                  isFinished={isFinished}
+                  prediction={extras.away_team_scores}
+                  resolvedAnswer={teamScoresAnswerFromHalftime(
+                    match.halftime_away_score,
+                    match.away_score,
+                  )}
+                  isPending={extraPendingType === "away_team_scores"}
+                  onSubmit={(answer) =>
+                    handleTeamPeriodChange(
+                      "away",
+                      draft.away,
+                      answer as ExtraTeamScoresAnswer,
+                    )
+                  }
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {/* ── Win-method — knockout phases only, unlocked matches ── */}
@@ -1089,21 +1293,82 @@ function PredictionMatchCard({
   );
 }
 
-// halftimeResultAnswer derives the resolved "home"/"draw"/"away" half-time
-// outcome from the match's halftime score fields, or null when either score
+// halftimeScorelineAnswer derives the resolved "<home>-<away>" half-time
+// scoreline from the match's halftime score fields, or null when either score
 // is unresolved (sync worker never supplied it, or the match finished before
-// this feature existed).
-function halftimeResultAnswer(match: MatchResponse): string | null {
+// this feature existed). Mirrors domain.FormatScorelineAnswer on the backend.
+function halftimeScorelineAnswer(match: MatchResponse): string | null {
   if (match.halftime_home_score == null || match.halftime_away_score == null)
     return null;
-  if (match.halftime_home_score > match.halftime_away_score) return "home";
-  if (match.halftime_home_score < match.halftime_away_score) return "away";
-  return "draw";
+  return `${match.halftime_home_score}-${match.halftime_away_score}`;
 }
+
+// TeamTimingState is the shared, lifted state behind one team's "scores in"
+// period and half-time goal count — see the comment above homeTiming/
+// awayTiming in PredictionMatchCard for why these two must stay in sync.
+// period is null until either the user picks one or a half-time number
+// unambiguously implies one.
+interface TeamTimingState {
+  readonly period: ExtraTeamScoresAnswer | null;
+  readonly halftimeGoals: number;
+}
+
+// initialTeamTiming (re-)derives a team's timing state from whatever is
+// currently persisted, preferring the half-time scoreline (more granular —
+// it pins an exact goal count) over the team-scores period answer when both
+// exist. Falls through to "nothing chosen yet" when neither persisted value
+// is still consistent with fulltimeGoals (the draft score changed since they
+// were saved) — this is what makes a stale extra answer stop being
+// pre-filled after the user edits the main scoreline.
+function initialTeamTiming(
+  fulltimeGoals: number,
+  persistedPeriod: string | undefined,
+  persistedHalftimeGoals: number | null,
+): TeamTimingState {
+  if (persistedHalftimeGoals != null && persistedHalftimeGoals <= fulltimeGoals) {
+    return {
+      period: teamScoresAnswerFromHalftime(persistedHalftimeGoals, fulltimeGoals),
+      halftimeGoals: persistedHalftimeGoals,
+    };
+  }
+  if (
+    persistedPeriod &&
+    (validTeamScoresAnswers(fulltimeGoals) as string[]).includes(
+      persistedPeriod,
+    )
+  ) {
+    const period = persistedPeriod as ExtraTeamScoresAnswer;
+    const pinned = halftimeGoalsFromPeriod(period, fulltimeGoals);
+    return {
+      period,
+      halftimeGoals:
+        pinned ?? Math.max(1, Math.min(fulltimeGoals - 1, Math.ceil(fulltimeGoals / 2))),
+    };
+  }
+  return { period: null, halftimeGoals: 0 };
+}
+
+const TEAM_SCORES_OPTIONS = (t: (key: string) => string) =>
+  [
+    { value: "first_half", label: t("predictions.extraOptionFirstHalf") },
+    { value: "second_half", label: t("predictions.extraOptionSecondHalf") },
+    { value: "both_halves", label: t("predictions.extraOptionBothHalves") },
+    { value: "none", label: t("predictions.extraOptionDoesNotScore") },
+  ] as const;
 
 interface MatchExtraControlProps {
   readonly label: string;
   readonly options: readonly { value: string; label: string }[];
+  // The subset of options currently possible given the draft prediction (and,
+  // for the team-scores extras, the linked half-time split) — see
+  // validFirstScorerAnswers / teamScoresValidValues. When this narrows to a
+  // single value, the extra is fully determined and rendered read-only
+  // instead of as a select.
+  readonly validValues: readonly string[];
+  // The answer to show as currently selected — null when nothing valid is
+  // chosen yet (either never submitted, or a previously-submitted answer that
+  // is no longer consistent with the current draft prediction).
+  readonly displayedAnswer: string | null;
   readonly locked: boolean;
   readonly isFinished: boolean;
   readonly prediction: ExtraPredictionResponse | undefined;
@@ -1117,10 +1382,15 @@ interface MatchExtraControlProps {
 // value, unlike the scoreline prediction which batches home/away/win-method
 // into one Save action. Once the match is finished it switches to a
 // read-only summary of the resolved answer and points earned (or an
-// em-dash when the match never resolved this extra).
+// em-dash when the match never resolved this extra). Before that, if the
+// draft prediction already determines the answer (e.g. a 0-0 scoreline
+// forces first_scorer="none"), it shows that fixed value instead of an
+// editable control — no choice is actually left to make.
 function MatchExtraControl({
   label,
   options,
+  validValues,
+  displayedAnswer,
   locked,
   isFinished,
   prediction,
@@ -1159,20 +1429,41 @@ function MatchExtraControl({
     );
   }
 
+  if (validValues.length === 1) {
+    const forcedLabel =
+      options.find((o) => o.value === validValues[0])?.label ??
+      validValues[0];
+    return (
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-text-muted">{label}</span>
+        <span className="inline-flex items-center gap-1 font-medium text-white">
+          {forcedLabel}
+          <span className="text-[9px] font-normal uppercase tracking-wide text-text-muted">
+            ({t("predictions.extraAuto")})
+          </span>
+        </span>
+      </div>
+    );
+  }
+
+  const selectableOptions = options.filter((opt) =>
+    validValues.includes(opt.value),
+  );
+
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
       <span className="text-text-muted">{label}</span>
       <select
         aria-label={label}
         className="rounded border border-white/10 bg-black/20 px-1.5 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
-        value={prediction?.answer ?? ""}
+        value={displayedAnswer ?? ""}
         disabled={locked || isPending}
         onChange={(e) => {
           if (e.target.value) onSubmit(e.target.value);
         }}
       >
         <option value="" disabled label={t("predictions.extraPick")} />
-        {options.map((opt) => (
+        {selectableOptions.map((opt) => (
           // The label attribute (not text content) supplies the option's
           // display/accessible text. Team names are already rendered
           // elsewhere on this card (TeamLabel, other extra selects); giving
@@ -1183,6 +1474,163 @@ function MatchExtraControl({
           <option key={opt.value} value={opt.value} label={opt.label} />
         ))}
       </select>
+    </div>
+  );
+}
+
+interface HalftimeScoreExtraControlProps {
+  readonly label: string;
+  readonly locked: boolean;
+  readonly isFinished: boolean;
+  readonly prediction: ExtraPredictionResponse | undefined;
+  readonly resolvedAnswer: string | null;
+  readonly isPending: boolean;
+  readonly onSubmit: (answer: string) => void;
+  readonly draftHome: number;
+  readonly draftAway: number;
+  // Controlled by the parent (lifted alongside the team-scores period so the
+  // two stay in sync — see homeTiming/awayTiming in PredictionMatchCard).
+  readonly home: number;
+  readonly away: number;
+  readonly homePeriod: ExtraTeamScoresAnswer | null;
+  readonly awayPeriod: ExtraTeamScoresAnswer | null;
+  readonly onHomeChange: (value: number) => void;
+  readonly onAwayChange: (value: number) => void;
+}
+
+// parseScoreline reads the "<home>-<away>" answer encoding (see
+// domain.FormatScorelineAnswer) back into numbers for the input fields.
+function parseScoreline(
+  answer: string | undefined,
+): { home: number; away: number } | null {
+  if (!answer) return null;
+  const m = /^(\d{1,2})-(\d{1,2})$/.exec(answer);
+  if (!m) return null;
+  return { home: Number(m[1]), away: Number(m[2]) };
+}
+
+// HalftimeScoreExtraControl renders the half-time result extra as an exact
+// numeric scoreline input, matching the format of the main final-score
+// prediction, instead of a fixed home/draw/away enum. Submission is explicit
+// (a small save button) rather than auto-submit-on-change, since two
+// independent number inputs need to settle before the combined answer is
+// valid. Each side's input is bounded to [0, that team's predicted final
+// score] and disabled once its "scores in" period pins an exact value (see
+// halftimeSideBounds) — editing a still-open input immediately derives and
+// submits the corresponding team-scores period.
+function HalftimeScoreExtraControl({
+  label,
+  locked,
+  isFinished,
+  prediction,
+  resolvedAnswer,
+  isPending,
+  onSubmit,
+  draftHome,
+  draftAway,
+  home,
+  away,
+  homePeriod,
+  awayPeriod,
+  onHomeChange,
+  onAwayChange,
+}: HalftimeScoreExtraControlProps) {
+  const { t } = useI18n();
+
+  if (isFinished) {
+    return (
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-text-muted">{label}</span>
+        <span className="flex items-center gap-1.5 font-medium text-white">
+          {resolvedAnswer == null ? (
+            <span className="text-text-muted">
+              {t("predictions.extraUnavailable")}
+            </span>
+          ) : (
+            <>
+              {resolvedAnswer}
+              {prediction?.points != null && (
+                <span className="text-gold-300">
+                  +{prediction.points} {t("predictions.extraPointsEarned")}
+                </span>
+              )}
+            </>
+          )}
+        </span>
+      </div>
+    );
+  }
+
+  if (draftHome === 0 && draftAway === 0) {
+    return (
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="text-text-muted">{label}</span>
+        <span className="inline-flex items-center gap-1 font-medium text-white">
+          0-0
+          <span className="text-[9px] font-normal uppercase tracking-wide text-text-muted">
+            ({t("predictions.extraAuto")})
+          </span>
+        </span>
+      </div>
+    );
+  }
+
+  const homeBounds = halftimeSideBounds(draftHome, homePeriod);
+  const awayBounds = halftimeSideBounds(draftAway, awayPeriod);
+  const saved = parseScoreline(prediction?.answer);
+  const dirty = saved === null || saved.home !== home || saved.away !== away;
+
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="text-text-muted">{label}</span>
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          min={homeBounds.min}
+          max={homeBounds.max}
+          inputMode="numeric"
+          aria-label={`${label} ${t("predictions.home")}`}
+          disabled={locked || isPending || homeBounds.disabled}
+          value={home}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => {
+            const raw = Number(e.target.value);
+            if (!Number.isFinite(raw)) return;
+            onHomeChange(
+              Math.min(homeBounds.max, Math.max(homeBounds.min, raw)),
+            );
+          }}
+          className="h-7 w-9 rounded border border-white/10 bg-black/20 text-center text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        <span className="text-text-muted">-</span>
+        <input
+          type="number"
+          min={awayBounds.min}
+          max={awayBounds.max}
+          inputMode="numeric"
+          aria-label={`${label} ${t("predictions.away")}`}
+          disabled={locked || isPending || awayBounds.disabled}
+          value={away}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => {
+            const raw = Number(e.target.value);
+            if (!Number.isFinite(raw)) return;
+            onAwayChange(
+              Math.min(awayBounds.max, Math.max(awayBounds.min, raw)),
+            );
+          }}
+          className="h-7 w-9 rounded border border-white/10 bg-black/20 text-center text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        <button
+          type="button"
+          aria-label={t("predictions.extraSaveHalftime")}
+          disabled={locked || isPending || !dirty}
+          onClick={() => onSubmit(`${home}-${away}`)}
+          className="rounded p-1 text-text-muted transition-colors hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          <Save className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

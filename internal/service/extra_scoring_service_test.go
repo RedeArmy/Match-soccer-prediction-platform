@@ -104,8 +104,8 @@ func TestScoreExtras_HalftimeResult_DerivedFromScores(t *testing.T) {
 		HalftimeHomeScore: intp(1), HalftimeAwayScore: intp(0),
 	}
 	preds := []*domain.ExtraPrediction{
-		{ID: 1, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "home"}, // correct: 1-0 at HT
-		{ID: 2, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "draw"}, // wrong
+		{ID: 1, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "1-0"}, // correct
+		{ID: 2, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "0-0"}, // wrong
 	}
 	extraRepo := &stubExtraPredRepo{list: preds}
 	svc := NewExtraScoringService(&stubMatchRepo{match: match}, extraRepo, &stubExtraRuleRepo{}, zap.NewNop())
@@ -121,14 +121,14 @@ func TestScoreExtras_HalftimeResult_DerivedFromScores(t *testing.T) {
 	}
 }
 
-func TestScoreExtras_HalftimeDraw_ResolvesToDrawAnswer(t *testing.T) {
+func TestScoreExtras_HalftimeResult_ZeroZero_ExactMatch(t *testing.T) {
 	match := &domain.Match{
 		ID: 1, Status: domain.MatchStatusFinished,
 		HomeScore: intp(1), AwayScore: intp(1),
 		HalftimeHomeScore: intp(0), HalftimeAwayScore: intp(0),
 	}
 	preds := []*domain.ExtraPrediction{
-		{ID: 1, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "draw"},
+		{ID: 1, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "0-0"},
 	}
 	extraRepo := &stubExtraPredRepo{list: preds}
 	svc := NewExtraScoringService(&stubMatchRepo{match: match}, extraRepo, &stubExtraRuleRepo{}, zap.NewNop())
@@ -137,7 +137,116 @@ func TestScoreExtras_HalftimeDraw_ResolvesToDrawAnswer(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if *preds[0].Points != domain.DefaultExtraHalftimeResultPoints {
-		t.Errorf("draw guess: got %d points, want %d", *preds[0].Points, domain.DefaultExtraHalftimeResultPoints)
+		t.Errorf("exact 0-0 guess: got %d points, want %d", *preds[0].Points, domain.DefaultExtraHalftimeResultPoints)
+	}
+}
+
+// ── home_team_scores / away_team_scores ──────────────────────────────────────
+
+func TestScoreExtras_HomeTeamScores_FirstHalfOnly(t *testing.T) {
+	match := &domain.Match{
+		ID: 1, Status: domain.MatchStatusFinished,
+		HomeScore: intp(1), AwayScore: intp(0),
+		HalftimeHomeScore: intp(1), HalftimeAwayScore: intp(0),
+	}
+	preds := []*domain.ExtraPrediction{
+		{ID: 1, ExtraType: domain.ExtraTypeHomeTeamScores, Answer: "first_half"},  // correct
+		{ID: 2, ExtraType: domain.ExtraTypeHomeTeamScores, Answer: "second_half"}, // wrong
+	}
+	extraRepo := &stubExtraPredRepo{list: preds}
+	svc := NewExtraScoringService(&stubMatchRepo{match: match}, extraRepo, &stubExtraRuleRepo{}, zap.NewNop())
+
+	if err := svc.ScoreExtras(context.Background(), 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *preds[0].Points != domain.DefaultExtraTeamScoresPoints {
+		t.Errorf("correct guess: got %d points, want %d", *preds[0].Points, domain.DefaultExtraTeamScoresPoints)
+	}
+	if *preds[1].Points != 0 {
+		t.Errorf("wrong guess: got %d points, want 0", *preds[1].Points)
+	}
+}
+
+func TestScoreExtras_AwayTeamScores_SecondHalfOnly(t *testing.T) {
+	match := &domain.Match{
+		ID: 1, Status: domain.MatchStatusFinished,
+		HomeScore: intp(0), AwayScore: intp(1),
+		HalftimeHomeScore: intp(0), HalftimeAwayScore: intp(0),
+	}
+	preds := []*domain.ExtraPrediction{
+		{ID: 1, ExtraType: domain.ExtraTypeAwayTeamScores, Answer: "second_half"},
+	}
+	extraRepo := &stubExtraPredRepo{list: preds}
+	svc := NewExtraScoringService(&stubMatchRepo{match: match}, extraRepo, &stubExtraRuleRepo{}, zap.NewNop())
+
+	if err := svc.ScoreExtras(context.Background(), 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *preds[0].Points != domain.DefaultExtraTeamScoresPoints {
+		t.Errorf("correct guess: got %d points, want %d", *preds[0].Points, domain.DefaultExtraTeamScoresPoints)
+	}
+}
+
+func TestScoreExtras_HomeTeamScores_BothHalves(t *testing.T) {
+	match := &domain.Match{
+		ID: 1, Status: domain.MatchStatusFinished,
+		HomeScore: intp(2), AwayScore: intp(0),
+		HalftimeHomeScore: intp(1), HalftimeAwayScore: intp(0),
+	}
+	preds := []*domain.ExtraPrediction{
+		{ID: 1, ExtraType: domain.ExtraTypeHomeTeamScores, Answer: "both_halves"},
+	}
+	extraRepo := &stubExtraPredRepo{list: preds}
+	svc := NewExtraScoringService(&stubMatchRepo{match: match}, extraRepo, &stubExtraRuleRepo{}, zap.NewNop())
+
+	if err := svc.ScoreExtras(context.Background(), 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *preds[0].Points != domain.DefaultExtraTeamScoresPoints {
+		t.Errorf("both_halves guess: got %d points, want %d", *preds[0].Points, domain.DefaultExtraTeamScoresPoints)
+	}
+}
+
+func TestScoreExtras_HomeTeamScores_None(t *testing.T) {
+	match := &domain.Match{
+		ID: 1, Status: domain.MatchStatusFinished,
+		HomeScore: intp(0), AwayScore: intp(0),
+		HalftimeHomeScore: intp(0), HalftimeAwayScore: intp(0),
+	}
+	preds := []*domain.ExtraPrediction{
+		{ID: 1, ExtraType: domain.ExtraTypeHomeTeamScores, Answer: "none"},
+	}
+	extraRepo := &stubExtraPredRepo{list: preds}
+	svc := NewExtraScoringService(&stubMatchRepo{match: match}, extraRepo, &stubExtraRuleRepo{}, zap.NewNop())
+
+	if err := svc.ScoreExtras(context.Background(), 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if *preds[0].Points != domain.DefaultExtraTeamScoresPoints {
+		t.Errorf("none guess: got %d points, want %d", *preds[0].Points, domain.DefaultExtraTeamScoresPoints)
+	}
+}
+
+func TestScoreExtras_TeamScores_UnresolvedHalftime_LeavesPredictionUnscored(t *testing.T) {
+	match := &domain.Match{
+		ID: 1, Status: domain.MatchStatusFinished,
+		HomeScore: intp(1), AwayScore: intp(0),
+		HalftimeHomeScore: nil, HalftimeAwayScore: nil,
+	}
+	preds := []*domain.ExtraPrediction{
+		{ID: 1, ExtraType: domain.ExtraTypeHomeTeamScores, Answer: "first_half"},
+	}
+	extraRepo := &stubExtraPredRepo{list: preds}
+	svc := NewExtraScoringService(&stubMatchRepo{match: match}, extraRepo, &stubExtraRuleRepo{}, zap.NewNop())
+
+	if err := svc.ScoreExtras(context.Background(), 1); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(extraRepo.updated) != 0 {
+		t.Errorf("expected 0 updated predictions when halftime is unresolved, got %d", len(extraRepo.updated))
+	}
+	if preds[0].Points != nil {
+		t.Error("expected Points to remain nil for an unresolved extra")
 	}
 }
 
@@ -281,5 +390,34 @@ func TestScoreExtras_NoPredictions_NoOp(t *testing.T) {
 
 	if err := svc.ScoreExtras(context.Background(), 1); err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// ── teamScoresAnswer ──────────────────────────────────────────────────────────
+
+func TestTeamScoresAnswer_AllBranches(t *testing.T) {
+	cases := []struct {
+		name               string
+		halftime, fulltime *int
+		want               *string
+	}{
+		{"scores only in first half", intp(1), intp(1), strp("first_half")},
+		{"scores only in second half", intp(0), intp(2), strp("second_half")},
+		{"scores in both halves", intp(1), intp(2), strp("both_halves")},
+		{"never scores", intp(0), intp(0), strp("none")},
+		{"halftime unresolved", nil, intp(1), nil},
+		{"fulltime nil (defensive)", intp(1), nil, nil},
+		{"fulltime less than halftime (data inconsistency)", intp(2), intp(1), nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := teamScoresAnswer(c.halftime, c.fulltime)
+			if (got == nil) != (c.want == nil) {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+			if got != nil && *got != *c.want {
+				t.Errorf("got %q, want %q", *got, *c.want)
+			}
+		})
 	}
 }
