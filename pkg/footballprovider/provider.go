@@ -70,19 +70,58 @@ func (s FixtureStatus) IsCancelled() bool {
 // by the external API. Only the fields consumed by the sync worker are present;
 // additional raw data is discarded at the decode layer.
 type Fixture struct {
-	ExternalID       int64
-	HomeTeam         string
-	AwayTeam         string
-	Status           FixtureStatus
-	HomeScore        int
-	AwayScore        int
-	KickoffUTC       time.Time
-	PenaltyHomeScore *int // non-nil during/after a penalty shootout
-	PenaltyAwayScore *int // non-nil during/after a penalty shootout
+	ExternalID        int64
+	HomeTeam          string
+	AwayTeam          string
+	Status            FixtureStatus
+	HomeScore         int
+	AwayScore         int
+	KickoffUTC        time.Time
+	PenaltyHomeScore  *int // non-nil during/after a penalty shootout
+	PenaltyAwayScore  *int // non-nil during/after a penalty shootout
+	HalftimeHomeScore *int // non-nil once the first half has completed
+	HalftimeAwayScore *int // non-nil once the first half has completed
+}
+
+// MatchEvent is a single goal-scoring event within a fixture, used to
+// determine which team scored first (the "first_scorer" match extra).
+// GetFixtureEvents only requests Type=Goal events, so no Type field is
+// needed here.
+type MatchEvent struct {
+	TeamName   string
+	ElapsedMin int
+}
+
+// FirstScoringTeam returns "home" or "away" based on the earliest-elapsed
+// event in events, matched by team name against homeTeam/awayTeam. It
+// returns nil when events is empty — callers must distinguish "no goals were
+// scored" (a 0-0 final score) from "event data unavailable" using the
+// fixture's own score before falling back to this helper — or when the
+// earliest event's team name matches neither homeTeam nor awayTeam.
+func FirstScoringTeam(events []MatchEvent, homeTeam, awayTeam string) *string {
+	if len(events) == 0 {
+		return nil
+	}
+	first := events[0]
+	for _, e := range events[1:] {
+		if e.ElapsedMin < first.ElapsedMin {
+			first = e
+		}
+	}
+	switch first.TeamName {
+	case homeTeam:
+		s := "home"
+		return &s
+	case awayTeam:
+		s := "away"
+		return &s
+	default:
+		return nil
+	}
 }
 
 // Client is the interface every football data provider must satisfy.
-// It is kept narrow intentionally: the sync worker only needs three operations.
+// It is kept narrow intentionally: the sync worker only needs four operations.
 type Client interface {
 	// GetFixture fetches the current state of a single fixture by its
 	// provider-assigned ID. Returns an error when the request fails or
@@ -97,4 +136,10 @@ type Client interface {
 	// UTC date (YYYY-MM-DD). Used by the daily fixture sync job to link and
 	// update kickoff times for every match scheduled on a given day.
 	GetFixturesByDate(ctx context.Context, leagueID, season int, date string) ([]*Fixture, error)
+
+	// GetFixtureEvents returns every goal event for a fixture, used to derive
+	// the "first_scorer" match extra. The sync worker only calls this once per
+	// fixture, when the final score shows at least one goal — a 0-0 result
+	// never needs the event timeline.
+	GetFixtureEvents(ctx context.Context, externalID int64) ([]MatchEvent, error)
 }

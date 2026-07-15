@@ -258,14 +258,48 @@ func (s *matchSyncService) applyLiveScore(ctx context.Context, m *domain.Match, 
 	return s.matchRepo.Update(ctx, m)
 }
 
+// resolveExtrasFields derives the match extras' correct-answer fields from a
+// finished fixture. Halftime scores are copied straight from the fixture
+// payload — already fetched, no extra API call. The first-scorer field needs
+// a separate GetFixtureEvents call, so it is skipped in three cases: a 0-0
+// result (the answer is unambiguously "none"), a provider error (logged and
+// left unresolved — recoverable later via the admin correction endpoint), and
+// when existingFirstScorer is already non-nil (an earlier sync run already
+// resolved it; re-fetching would only burn API quota for no benefit — used by
+// the penalty-repair loop, which may re-run many times for the same match).
+func (s *matchSyncService) resolveExtrasFields(ctx context.Context, fix *footballprovider.Fixture, existingFirstScorer *string) (halftimeHome, halftimeAway *int, firstScorer *string) {
+	halftimeHome, halftimeAway = fix.HalftimeHomeScore, fix.HalftimeAwayScore
+	if existingFirstScorer != nil {
+		firstScorer = existingFirstScorer
+		return
+	}
+	if fix.HomeScore == 0 && fix.AwayScore == 0 {
+		none := "none"
+		firstScorer = &none
+		return
+	}
+	events, err := s.provider.GetFixtureEvents(ctx, fix.ExternalID)
+	if err != nil {
+		s.log.Warn("match sync: GetFixtureEvents failed — first_scorer extra left unresolved",
+			zap.Int64("external_id", fix.ExternalID), zap.Error(err))
+		return
+	}
+	firstScorer = footballprovider.FirstScoringTeam(events, fix.HomeTeam, fix.AwayTeam)
+	return
+}
+
 func (s *matchSyncService) applyResult(ctx context.Context, matchID int, fix *footballprovider.Fixture) (bool, bool, error) {
+	htHome, htAway, firstScorer := s.resolveExtrasFields(ctx, fix, nil)
 	score := ScoreUpdate{
-		HomeScore:        fix.HomeScore,
-		AwayScore:        fix.AwayScore,
-		WinMethod:        winMethodFromStatus(fix.Status),
-		PenaltyWinner:    derivePenaltyWinner(fix),
-		PenaltyHomeScore: fix.PenaltyHomeScore,
-		PenaltyAwayScore: fix.PenaltyAwayScore,
+		HomeScore:         fix.HomeScore,
+		AwayScore:         fix.AwayScore,
+		WinMethod:         winMethodFromStatus(fix.Status),
+		PenaltyWinner:     derivePenaltyWinner(fix),
+		PenaltyHomeScore:  fix.PenaltyHomeScore,
+		PenaltyAwayScore:  fix.PenaltyAwayScore,
+		HalftimeHomeScore: htHome,
+		HalftimeAwayScore: htAway,
+		FirstScoringTeam:  firstScorer,
 	}
 	if _, err := s.matchSvc.UpdateResult(ctx, matchID, score); err != nil {
 		if errors.Is(err, apperrors.ErrValidation) {
@@ -561,13 +595,17 @@ func (s *matchSyncService) applyResultFromProvider(ctx context.Context, m *domai
 			return
 		}
 	}
+	htHome, htAway, firstScorer := s.resolveExtrasFields(ctx, fix, nil)
 	score := ScoreUpdate{
-		HomeScore:        fix.HomeScore,
-		AwayScore:        fix.AwayScore,
-		WinMethod:        winMethodFromStatus(fix.Status),
-		PenaltyWinner:    derivePenaltyWinner(fix),
-		PenaltyHomeScore: fix.PenaltyHomeScore,
-		PenaltyAwayScore: fix.PenaltyAwayScore,
+		HomeScore:         fix.HomeScore,
+		AwayScore:         fix.AwayScore,
+		WinMethod:         winMethodFromStatus(fix.Status),
+		PenaltyWinner:     derivePenaltyWinner(fix),
+		PenaltyHomeScore:  fix.PenaltyHomeScore,
+		PenaltyAwayScore:  fix.PenaltyAwayScore,
+		HalftimeHomeScore: htHome,
+		HalftimeAwayScore: htAway,
+		FirstScoringTeam:  firstScorer,
 	}
 	if _, err := s.matchSvc.UpdateResult(ctx, m.ID, score); err != nil {
 		if !errors.Is(err, apperrors.ErrValidation) {
@@ -590,13 +628,20 @@ func (s *matchSyncService) repairPenaltyDataIfMissing(ctx context.Context, m *do
 			zap.Int("match_id", m.ID))
 		return false
 	}
+	// This repair loop can run many times for the same match until
+	// penalty_winner is fixed; skip re-fetching first-scorer events once
+	// already resolved on an earlier run to avoid burning API quota.
+	htHome, htAway, firstScorer := s.resolveExtrasFields(ctx, fix, m.FirstScoringTeam)
 	score := ScoreUpdate{
-		HomeScore:        fix.HomeScore,
-		AwayScore:        fix.AwayScore,
-		WinMethod:        winMethodFromStatus(fix.Status),
-		PenaltyWinner:    penaltyWinner,
-		PenaltyHomeScore: fix.PenaltyHomeScore,
-		PenaltyAwayScore: fix.PenaltyAwayScore,
+		HomeScore:         fix.HomeScore,
+		AwayScore:         fix.AwayScore,
+		WinMethod:         winMethodFromStatus(fix.Status),
+		PenaltyWinner:     penaltyWinner,
+		PenaltyHomeScore:  fix.PenaltyHomeScore,
+		PenaltyAwayScore:  fix.PenaltyAwayScore,
+		HalftimeHomeScore: htHome,
+		HalftimeAwayScore: htAway,
+		FirstScoringTeam:  firstScorer,
 	}
 	if _, err := s.matchSvc.CorrectResult(ctx, m.ID, score); err != nil {
 		s.log.Warn("match daily sync: CorrectResult (penalty repair) failed",

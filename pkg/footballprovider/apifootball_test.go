@@ -512,6 +512,182 @@ func TestGetFixture_NilGoals_DefaultsToZero(t *testing.T) {
 	}
 }
 
+// ── Halftime score decoding ───────────────────────────────────────────────────
+
+func TestGetFixture_HalftimeScore_DecodedFromScoreField(t *testing.T) {
+	type fixtureResp struct {
+		Results  int              `json:"results"`
+		Errors   []any            `json:"errors"`
+		Response []map[string]any `json:"response"`
+	}
+	item := map[string]any{
+		"fixture": map[string]any{
+			"id":     123,
+			"date":   "2026-06-14T20:00:00+00:00",
+			"status": map[string]any{"short": "FT", "elapsed": nil},
+		},
+		"goals": map[string]any{"home": intPtr(2), "away": intPtr(1)},
+		"score": map[string]any{
+			"halftime": map[string]any{"home": intPtr(1), "away": intPtr(0)},
+		},
+	}
+	b, _ := json.Marshal(fixtureResp{Results: 1, Errors: []any{}, Response: []map[string]any{item}})
+	srv := buildServer(t, http.StatusOK, string(b))
+	defer srv.Close()
+
+	fix, err := newClient(t, srv).GetFixture(context.Background(), 123)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fix.HalftimeHomeScore == nil || *fix.HalftimeHomeScore != 1 {
+		t.Errorf("HalftimeHomeScore: got %v, want 1", fix.HalftimeHomeScore)
+	}
+	if fix.HalftimeAwayScore == nil || *fix.HalftimeAwayScore != 0 {
+		t.Errorf("HalftimeAwayScore: got %v, want 0", fix.HalftimeAwayScore)
+	}
+}
+
+func TestGetFixture_MissingHalftimeScore_NilFields(t *testing.T) {
+	body := buildFixtureJSON(1, "NS", intPtr(0), intPtr(0))
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	fix, err := newClient(t, srv).GetFixture(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if fix.HalftimeHomeScore != nil || fix.HalftimeAwayScore != nil {
+		t.Errorf("expected nil halftime scores, got %v/%v", fix.HalftimeHomeScore, fix.HalftimeAwayScore)
+	}
+}
+
+// ── GetFixtureEvents ──────────────────────────────────────────────────────────
+
+func TestGetFixtureEvents_ReturnsGoalEvents(t *testing.T) {
+	body := `{"results":2,"errors":[],"response":[` +
+		`{"time":{"elapsed":23},"team":{"name":"Argentina"},"type":"Goal"},` +
+		`{"time":{"elapsed":67},"team":{"name":"Brazil"},"type":"Goal"}]}`
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	events, err := newClient(t, srv).GetFixtureEvents(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[0].TeamName != "Argentina" || events[0].ElapsedMin != 23 {
+		t.Errorf("events[0]: got %+v", events[0])
+	}
+	if events[1].TeamName != "Brazil" || events[1].ElapsedMin != 67 {
+		t.Errorf("events[1]: got %+v", events[1])
+	}
+}
+
+func TestGetFixtureEvents_NoGoals_ReturnsEmpty(t *testing.T) {
+	srv := buildServer(t, http.StatusOK, `{"results":0,"errors":[],"response":[]}`)
+	defer srv.Close()
+
+	events, err := newClient(t, srv).GetFixtureEvents(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("expected 0 events, got %d", len(events))
+	}
+}
+
+func TestGetFixtureEvents_RateLimit_ReturnsError(t *testing.T) {
+	srv := buildServer(t, http.StatusTooManyRequests, `{}`)
+	defer srv.Close()
+
+	_, err := newClient(t, srv).GetFixtureEvents(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected rate-limit error, got nil")
+	}
+}
+
+func TestGetFixtureEvents_APIError_ReturnsError(t *testing.T) {
+	body := `{"results":0,"errors":{"requests":"limit reached"},"response":[]}`
+	srv := buildServer(t, http.StatusOK, body)
+	defer srv.Close()
+
+	_, err := newClient(t, srv).GetFixtureEvents(context.Background(), 1)
+	if err == nil {
+		t.Fatal("expected API error, got nil")
+	}
+}
+
+func TestGetFixtureEvents_PassesFixtureAndTypeParams(t *testing.T) {
+	var capturedQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"results":0,"errors":[],"response":[]}`))
+	}))
+	defer srv.Close()
+
+	_, _ = newClient(t, srv).GetFixtureEvents(context.Background(), 999)
+
+	for _, want := range []string{"fixture=999", "type=Goal"} {
+		if !strings.Contains(capturedQuery, want) {
+			t.Errorf("expected query param %q in %q", want, capturedQuery)
+		}
+	}
+}
+
+// ── FirstScoringTeam ──────────────────────────────────────────────────────────
+
+func TestFirstScoringTeam_HomeScoresFirst(t *testing.T) {
+	events := []footballprovider.MatchEvent{
+		{TeamName: "Mexico", ElapsedMin: 10},
+		{TeamName: "Canada", ElapsedMin: 55},
+	}
+	got := footballprovider.FirstScoringTeam(events, "Mexico", "Canada")
+	if got == nil || *got != "home" {
+		t.Errorf("got %v, want \"home\"", got)
+	}
+}
+
+func TestFirstScoringTeam_AwayScoresFirst(t *testing.T) {
+	events := []footballprovider.MatchEvent{
+		{TeamName: "Canada", ElapsedMin: 30},
+		{TeamName: "Mexico", ElapsedMin: 80},
+	}
+	got := footballprovider.FirstScoringTeam(events, "Mexico", "Canada")
+	if got == nil || *got != "away" {
+		t.Errorf("got %v, want \"away\"", got)
+	}
+}
+
+func TestFirstScoringTeam_UnorderedEvents_PicksEarliestElapsed(t *testing.T) {
+	events := []footballprovider.MatchEvent{
+		{TeamName: "Mexico", ElapsedMin: 80},
+		{TeamName: "Canada", ElapsedMin: 12},
+	}
+	got := footballprovider.FirstScoringTeam(events, "Mexico", "Canada")
+	if got == nil || *got != "away" {
+		t.Errorf("got %v, want \"away\" (earliest elapsed wins)", got)
+	}
+}
+
+func TestFirstScoringTeam_NoEvents_ReturnsNil(t *testing.T) {
+	got := footballprovider.FirstScoringTeam(nil, "Mexico", "Canada")
+	if got != nil {
+		t.Errorf("expected nil, got %v", *got)
+	}
+}
+
+func TestFirstScoringTeam_UnrecognisedTeamName_ReturnsNil(t *testing.T) {
+	events := []footballprovider.MatchEvent{{TeamName: "Unknown FC", ElapsedMin: 5}}
+	got := footballprovider.FirstScoringTeam(events, "Mexico", "Canada")
+	if got != nil {
+		t.Errorf("expected nil for unrecognised team name, got %v", *got)
+	}
+}
+
 // TestGetFixturesByDate_PassesQueryParams verifies that league, season, and
 // date are forwarded as query parameters to the API.
 func TestGetFixturesByDate_PassesQueryParams(t *testing.T) {

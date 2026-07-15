@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -73,20 +74,56 @@ func ContextWithUser(ctx context.Context, user *domain.User) context.Context {
 //
 // On Fly.io the edge sets Fly-Client-IP from the real TCP connection address
 // before the request reaches the app; clients cannot forge or override it.
-// Outside Fly.io (local dev, CI) the header is absent, so we fall back to
-// r.RemoteAddr, which is the raw TCP peer address and equally unforgeable.
+// This app's actual production deployment is Hetzner + Caddy (see
+// Caddyfile), not Fly, so Fly-Client-IP is never present there — it is kept
+// as the first, highest-priority check only for forward-compatibility with a
+// possible future Fly deployment.
 //
-// We deliberately never read X-Forwarded-For, X-Real-IP, or True-Client-IP:
-// any client can set those to arbitrary values to cycle fake IPs past rate
-// limiters.
+// For the Caddy deployment, the Go backend's HTTP port is never reachable
+// directly from the public internet: docker-compose.prod.yml binds it to
+// 127.0.0.1 only (reachable exclusively by Caddy on the same host) and, for
+// requests proxied through the Next.js BFF, to the docker-compose bridge
+// network (reachable exclusively by the frontend container — see
+// BACKEND_INTERNAL_URL). Both of those intermediaries are trusted
+// infrastructure we control: Caddy's reverse_proxy always appends the true
+// connecting IP as the LAST entry of X-Forwarded-For regardless of what a
+// client sent (this cannot be influenced by the client), and the BFF proxy
+// (frontend/src/app/api/[...path]/route.ts) faithfully relays that same
+// header unmodified on its internal call to the backend. So the last entry
+// of X-Forwarded-For is safe to trust here specifically because nothing
+// other than those two trusted hops can ever reach this port — it is NOT
+// safe to trust in general, and this reasoning must be revisited if the
+// deployment topology changes (e.g. exposing the API port directly, or
+// adding a proxy hop that does not control this header).
+//
+// Without Fly-Client-IP or X-Forwarded-For (local dev, CI, or any direct
+// caller not behind Caddy) we fall back to r.RemoteAddr, the raw TCP peer
+// address, which is unforgeable but collapses every BFF-proxied user onto
+// the frontend container's address in that scenario — acceptable outside
+// production. We deliberately never read X-Real-IP or True-Client-IP: Caddy
+// does not manage those, so trusting them would let a client set arbitrary
+// values to cycle fake IPs past rate limiters.
 func TrustedClientIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if ip := r.Header.Get("Fly-Client-IP"); ip != "" {
-			r.RemoteAddr = ip
+		switch {
+		case r.Header.Get("Fly-Client-IP") != "":
+			r.RemoteAddr = r.Header.Get("Fly-Client-IP")
+		case r.Header.Get("X-Forwarded-For") != "":
+			r.RemoteAddr = lastForwardedFor(r.Header.Get("X-Forwarded-For"))
 		}
 		// else: r.RemoteAddr is already the unforgeable TCP peer address.
 		next.ServeHTTP(w, r)
 	})
+}
+
+// lastForwardedFor returns the right-most (most-recently-appended) entry of
+// a comma-separated X-Forwarded-For chain, trimmed of whitespace. The last
+// entry is the one our own trusted reverse proxy (Caddy) appended; any
+// earlier entries may have been supplied by the client and must never be
+// trusted for rate-limiting or audit purposes.
+func lastForwardedFor(xff string) string {
+	parts := strings.Split(xff, ",")
+	return strings.TrimSpace(parts[len(parts)-1])
 }
 
 // StoreClientIP extracts the host portion of r.RemoteAddr (already normalised

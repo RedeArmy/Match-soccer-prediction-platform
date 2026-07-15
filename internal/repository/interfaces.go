@@ -938,6 +938,47 @@ type ScoringRuleRepository interface {
 	Update(ctx context.Context, rule *domain.ScoringRule) (*domain.ScoringRule, error)
 }
 
+// ExtraRuleRepository defines persistence operations for the admin-tunable
+// point values awarded for match extras (bonus predictions). Unlike
+// ScoringRuleRepository, rows are keyed by ExtraType, not MatchPhase: the same
+// fixed pair of extra types applies to every match, so there is no per-phase
+// dimension. Implementations must guarantee every domain.AllExtraTypes value
+// has a corresponding row (seeded by migration 000225).
+type ExtraRuleRepository interface {
+	// List returns all extra rules ordered by extra_type for admin display.
+	List(ctx context.Context) ([]*domain.ExtraRule, error)
+	// GetByType returns the rule for a specific extra type, or nil if absent.
+	GetByType(ctx context.Context, extraType domain.ExtraType) (*domain.ExtraRule, error)
+	// Update persists a new point value and the is_active flag for an existing
+	// extra_type row. Returns NotFound when the type has no seeded row.
+	Update(ctx context.Context, rule *domain.ExtraRule) (*domain.ExtraRule, error)
+}
+
+// ExtraPredictionRepository owns per-user guesses for match extras (bonus
+// predictions beyond the scoreline, e.g. "first team to score"). It mirrors
+// PredictionRepository's upsert-for-idempotent-POST and atomic
+// read-compute-write scoring shape, scoped to the extra_predictions table.
+type ExtraPredictionRepository interface {
+	// Upsert inserts a new guess or, on the (user_id, match_id, extra_type)
+	// unique constraint firing, performs a no-op UPDATE to obtain the existing
+	// row via RETURNING. Returns created=true only on a true insert, mirroring
+	// PredictionRepository.Upsert so POST /extras is safe to retry.
+	Upsert(ctx context.Context, p *domain.ExtraPrediction) (created bool, err error)
+	// GetByUserAndMatch returns every extra guess (across all extra types)
+	// submitted by userID for matchID.
+	GetByUserAndMatch(ctx context.Context, userID, matchID int) ([]*domain.ExtraPrediction, error)
+	// ListByUserAndMatches bulk-fetches every extra guess submitted by userID
+	// across all of matchIDs in one round-trip, avoiding N+1 queries when
+	// rendering a match-list view. Returns nil when matchIDs is empty.
+	ListByUserAndMatches(ctx context.Context, userID int, matchIDs []int) ([]*domain.ExtraPrediction, error)
+	// ScoreMatchBatch atomically reads all extra predictions for matchID, calls
+	// scorer to compute the new point values, and writes them back in a single
+	// database transaction — the same atomicity guarantee as
+	// PredictionRepository.ScoreMatchBatch. chunkSize ≤ 0 falls back to
+	// domain.DefaultScoringUpdateChunkSize.
+	ScoreMatchBatch(ctx context.Context, matchID int, scorer func([]*domain.ExtraPrediction) (map[int]int, error), chunkSize int) error
+}
+
 // BalanceLedgerRepository owns balance credits for the users table and the
 // corresponding immutable balance_ledger audit rows.  Every method executes
 // atomically: it updates users.balance_cents AND inserts a balance_ledger row

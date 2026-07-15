@@ -14,6 +14,8 @@ import type {
   LeaderboardEntry,
   MatchResponse,
   PredictionResponse,
+  ExtraPredictionResponse,
+  ExtraType,
   KYCProfileResponse,
   KYCDocumentResponse,
   KYCRequirementsResponse,
@@ -410,6 +412,31 @@ class APIClient {
     return this.request(
       `/api/v1/predictions/${id}`,
       { method: "PATCH", body: JSON.stringify(data) },
+      token,
+    );
+  }
+
+  // ── Match extras (bonus predictions) ─────────────────────────────────────
+
+  getMyExtras(
+    token: string,
+    matchIds: number[],
+  ): Promise<ExtraPredictionResponse[]> {
+    if (matchIds.length === 0) return Promise.resolve([]);
+    return this.request(
+      `/api/v1/extras/me?match_ids=${matchIds.join(",")}`,
+      {},
+      token,
+    );
+  }
+
+  submitExtra(
+    token: string,
+    data: { match_id: number; extra_type: ExtraType; answer: string },
+  ): Promise<ExtraPredictionResponse> {
+    return this.request(
+      "/api/v1/extras",
+      { method: "POST", body: JSON.stringify(data) },
       token,
     );
   }

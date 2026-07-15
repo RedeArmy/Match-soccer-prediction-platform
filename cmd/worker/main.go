@@ -259,6 +259,9 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 	scorer := service.NewScoringService(matchRepo, predRepo, ruleRepo, params, log,
 		service.WithScoringMeter(meter),
 	)
+	extraRuleRepo := repository.NewPostgresExtraRuleRepository(db)
+	extraPredRepo := repository.NewPostgresExtraPredictionRepository(db)
+	extraScorer := service.NewExtraScoringService(matchRepo, extraPredRepo, extraRuleRepo, log)
 
 	// Match sync — build the provider client only when the API key is present.
 	// When absent, matchSyncSvc.PollAndApply returns an error and the scheduler
@@ -271,7 +274,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 			nil,
 		)
 	}
-	matchSvc := service.NewMatchService(matchRepo, bus, scorer, service.NoopAuditLogger{}, log)
+	matchSvc := service.NewMatchService(matchRepo, bus, scorer, extraScorer, service.NoopAuditLogger{}, log)
 	matchSyncSvc := service.NewMatchSyncService(matchRepo, matchSvc, fpClient, log)
 	tournamentRepo := repository.NewPostgresTournamentRepository(db)
 	teamRepo := repository.NewPostgresTeamRepository(db)
@@ -545,6 +548,7 @@ func run(ctx context.Context, cfg *config.Config, log *zap.Logger) error {
 		cfg:            cfg,
 		bus:            bus,
 		scorer:         scorer,
+		extraScorer:    extraScorer,
 		autoConfirmer:  tournamentSvc,
 		snapshotter:    snapshotter,
 		predRepo:       predRepo,
@@ -1040,6 +1044,7 @@ type workerDeps struct {
 	cfg                        *config.Config
 	bus                        events.Bus
 	scorer                     service.MatchScorer
+	extraScorer                service.ExtraScorer
 	autoConfirmer              SlotAutoConfirmer
 	snapshotter                service.Snapshotter
 	predRepo                   repository.PredictionRepository
@@ -1084,7 +1089,7 @@ func startWorker(ctx context.Context, deps workerDeps, log *zap.Logger) error {
 	log.Sugar().Info("worker: subscribed to MatchStarted events")
 
 	deps.bus.Subscribe(ctx, events.EventMatchFinished,
-		safeEventHandler("matchFinished", newMatchFinishedHandler(deps.scorer, postScoringDeps{
+		safeEventHandler("matchFinished", newMatchFinishedHandler(deps.scorer, deps.extraScorer, postScoringDeps{
 			snapshotter:   deps.snapshotter,
 			predRepo:      deps.predRepo,
 			invalidators:  deps.invalidators,

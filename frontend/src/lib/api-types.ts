@@ -149,6 +149,12 @@ export interface MatchResponse {
   external_match_id?: number | null;
   home_slot_id?: number | null;
   away_slot_id?: number | null;
+  // Extras result fields — the "correct answers" for match extras (bonus
+  // predictions). Null until resolved by the sync worker (or an admin
+  // correction); also null for matches finished before this feature existed.
+  halftime_home_score?: number | null;
+  halftime_away_score?: number | null;
+  first_scoring_team?: ExtraFirstScorerAnswer | null;
 }
 
 // ── Live predictions carousel ─────────────────────────────────────────────────
@@ -183,6 +189,22 @@ export interface PredictionResponse {
   points: number | null;
   scored_at: string | null;
   created_at: string;
+}
+
+// ── Match extras (bonus predictions) ─────────────────────────────────────────
+export type ExtraType = "first_scorer" | "halftime_result";
+export type ExtraFirstScorerAnswer = "home" | "away" | "none";
+export type ExtraHalftimeResultAnswer = "home" | "draw" | "away";
+
+export interface ExtraPredictionResponse {
+  id: number;
+  user_id: number;
+  match_id: number;
+  extra_type: ExtraType;
+  answer: string;
+  points: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ── Quiniela (group created via API) ─────────────────────────────────────────

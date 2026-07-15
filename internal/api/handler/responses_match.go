@@ -26,6 +26,15 @@ type MatchResponse struct {
 	UpdatedAt        string           `json:"updated_at"`
 	HomeSlotID       *int             `json:"home_slot_id,omitempty"`
 	AwaySlotID       *int             `json:"away_slot_id,omitempty"`
+
+	// Extras result fields — the "correct answers" for match extras (bonus
+	// predictions). Nil until the sync worker (or an admin correction)
+	// resolves them; the frontend renders a nil value as "unavailable" rather
+	// than guessing, which also covers matches finished before this feature
+	// existed (their columns are simply NULL).
+	HalftimeHomeScore *int    `json:"halftime_home_score,omitempty"`
+	HalftimeAwayScore *int    `json:"halftime_away_score,omitempty"`
+	FirstScoringTeam  *string `json:"first_scoring_team,omitempty"`
 }
 
 // matchStatusToAPI maps domain status values to the API contract string.
@@ -56,6 +65,10 @@ func matchToResponse(m *domain.Match) MatchResponse {
 		ExternalMatchID:  m.ExternalMatchID,
 		CreatedAt:        m.CreatedAt.Format(timeFormat),
 		UpdatedAt:        m.UpdatedAt.Format(timeFormat),
+
+		HalftimeHomeScore: m.HalftimeHomeScore,
+		HalftimeAwayScore: m.HalftimeAwayScore,
+		FirstScoringTeam:  m.FirstScoringTeam,
 	}
 	resp.HomeSlotID = m.HomeSlotID
 	resp.AwaySlotID = m.AwaySlotID

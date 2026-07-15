@@ -63,7 +63,8 @@ type apiFixtureItem struct {
 }
 
 type apiScore struct {
-	Penalty apiGoals `json:"penalty"`
+	Halftime apiGoals `json:"halftime"`
+	Penalty  apiGoals `json:"penalty"`
 }
 
 type apiTeams struct {
@@ -91,9 +92,29 @@ type apiGoals struct {
 	Away *int `json:"away"`
 }
 
+// apiEventsResponse is the top-level envelope for the /fixtures/events endpoint.
+// It mirrors apiResponse but the response array holds events, not fixtures.
+type apiEventsResponse struct {
+	Results  int             `json:"results"`
+	Response []apiEventItem  `json:"response"`
+	Errors   json.RawMessage `json:"errors"`
+}
+
+type apiEventItem struct {
+	Time apiEventTime  `json:"time"`
+	Team apiTeamDetail `json:"team"`
+}
+
+type apiEventTime struct {
+	Elapsed int `json:"elapsed"`
+}
+
 // pathFixtures is the API-Football endpoint shared by GetFixture,
 // GetLiveFixtures, and GetFixturesByDate.
 const pathFixtures = "/fixtures"
+
+// pathFixtureEvents is the API-Football endpoint used by GetFixtureEvents.
+const pathFixtureEvents = "/fixtures/events"
 
 // ── Public methods ────────────────────────────────────────────────────────────
 
@@ -151,9 +172,34 @@ func (c *APIFootballClient) GetFixturesByDate(ctx context.Context, leagueID, sea
 	return out, nil
 }
 
+// GetFixtureEvents returns every goal event for a fixture, used to derive the
+// "first_scorer" match extra. The type=Goal filter is applied server-side so
+// the response only contains the events the caller needs.
+func (c *APIFootballClient) GetFixtureEvents(ctx context.Context, externalID int64) ([]MatchEvent, error) {
+	items, err := c.fetchEvents(ctx, map[string]string{
+		"fixture": strconv.FormatInt(externalID, 10),
+		"type":    "Goal",
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MatchEvent, 0, len(items))
+	for _, item := range items {
+		out = append(out, MatchEvent{
+			TeamName:   item.Team.Name,
+			ElapsedMin: item.Time.Elapsed,
+		})
+	}
+	return out, nil
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-func (c *APIFootballClient) fetch(ctx context.Context, path string, params map[string]string) ([]apiFixtureItem, error) {
+// doRequest issues an authenticated GET against path with the given query
+// params and returns the raw response body. Shared by fetch (fixtures) and
+// fetchEvents (goal events) since both endpoints share the same transport,
+// auth, and HTTP-level error handling — only the envelope schema differs.
+func (c *APIFootballClient) doRequest(ctx context.Context, path string, params map[string]string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("footballprovider: build request: %w", err)
@@ -183,19 +229,48 @@ func (c *APIFootballClient) fetch(ctx context.Context, path string, params map[s
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("footballprovider: unexpected status %d", resp.StatusCode)
 	}
+	return body, nil
+}
+
+// apiErrorsField reports whether envelope errors denotes a request-level
+// problem. API-Football signals some errors as a JSON object in the "errors"
+// field rather than via HTTP status codes; a non-null, non-empty-array value
+// indicates a real error (invalid key, unknown league, …).
+func apiErrorsField(errors json.RawMessage) bool {
+	return len(errors) > 0 && string(errors) != "[]" && string(errors) != "null"
+}
+
+func (c *APIFootballClient) fetch(ctx context.Context, path string, params map[string]string) ([]apiFixtureItem, error) {
+	body, err := c.doRequest(ctx, path, params)
+	if err != nil {
+		return nil, err
+	}
 
 	var envelope apiResponse
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return nil, fmt.Errorf("footballprovider: decode response: %w", err)
 	}
-
-	// API-Football signals some errors as a JSON object in the "errors" field
-	// rather than via HTTP status codes. A non-null, non-empty-array errors
-	// value indicates a request-level problem (invalid key, unknown league, …).
-	if len(envelope.Errors) > 0 && string(envelope.Errors) != "[]" && string(envelope.Errors) != "null" {
+	if apiErrorsField(envelope.Errors) {
 		return nil, fmt.Errorf("footballprovider: API error: %s", envelope.Errors)
 	}
+	return envelope.Response, nil
+}
 
+// fetchEvents calls the /fixtures/events endpoint and returns the decoded
+// event items. Used only by GetFixtureEvents.
+func (c *APIFootballClient) fetchEvents(ctx context.Context, params map[string]string) ([]apiEventItem, error) {
+	body, err := c.doRequest(ctx, pathFixtureEvents, params)
+	if err != nil {
+		return nil, err
+	}
+
+	var envelope apiEventsResponse
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("footballprovider: decode events response: %w", err)
+	}
+	if apiErrorsField(envelope.Errors) {
+		return nil, fmt.Errorf("footballprovider: API error: %s", envelope.Errors)
+	}
 	return envelope.Response, nil
 }
 
@@ -209,15 +284,17 @@ func itemToFixture(item apiFixtureItem) *Fixture {
 		away = *item.Goals.Away
 	}
 	return &Fixture{
-		ExternalID:       item.Fixture.ID,
-		HomeTeam:         item.Teams.Home.Name,
-		AwayTeam:         item.Teams.Away.Name,
-		Status:           status,
-		HomeScore:        home,
-		AwayScore:        away,
-		KickoffUTC:       item.Fixture.Date.UTC(),
-		PenaltyHomeScore: item.Score.Penalty.Home,
-		PenaltyAwayScore: item.Score.Penalty.Away,
+		ExternalID:        item.Fixture.ID,
+		HomeTeam:          item.Teams.Home.Name,
+		AwayTeam:          item.Teams.Away.Name,
+		Status:            status,
+		HomeScore:         home,
+		AwayScore:         away,
+		KickoffUTC:        item.Fixture.Date.UTC(),
+		PenaltyHomeScore:  item.Score.Penalty.Home,
+		PenaltyAwayScore:  item.Score.Penalty.Away,
+		HalftimeHomeScore: item.Score.Halftime.Home,
+		HalftimeAwayScore: item.Score.Halftime.Away,
 	}
 }
 

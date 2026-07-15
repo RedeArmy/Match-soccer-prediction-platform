@@ -32,6 +32,7 @@ const (
 	AuditActionLeaderboardRefreshed = "admin_group.leaderboard_refreshed"
 	AuditActionPrizesDistributed    = "admin_group.prizes_distributed"
 	AuditActionScoringRuleUpdated   = "scoring_rule.updated"
+	AuditActionExtraRuleUpdated     = "extra_rule.updated"
 
 	// Balance and payment actions.
 	AuditActionBankTransferUploaded = "bank_transfer.uploaded"

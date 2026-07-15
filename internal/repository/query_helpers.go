@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -176,4 +177,46 @@ func escapeLikePattern(s string) string {
 // next returns the next positional argument index for passing to applyPagination.
 func (w *whereBuilder) next() int {
 	return w.argIdx
+}
+
+// applyChunkedPointsUpdate converts points into parallel id/pts slices and
+// executes an UPDATE against table in chunkSize-row UNNEST batches, all
+// inside the caller's open transaction. Shared by PredictionRepository and
+// ExtraPredictionRepository's ScoreMatchBatch, whose batch-update logic is
+// otherwise identical bar the target table. The WHERE ... scored_at IS NULL
+// guard makes the update idempotent: a retried scoring run only touches rows
+// that have not already been scored. An empty points map is a no-op.
+//
+// table must be a trusted, compile-time constant — never user input — since
+// it is concatenated directly into the query text; SQL identifiers (unlike
+// values) cannot be bound as positional parameters. This mirrors the existing
+// convention of concatenating column-list constants (e.g. predictionColumns)
+// into query strings elsewhere in this package.
+func applyChunkedPointsUpdate(ctx context.Context, tx pgx.Tx, table string, points map[int]int, chunkSize int) error {
+	if len(points) == 0 {
+		return nil
+	}
+
+	ids := make([]int, 0, len(points))
+	pts := make([]int, 0, len(points))
+	for id, p := range points {
+		ids = append(ids, id)
+		pts = append(pts, p)
+	}
+
+	query := `UPDATE ` + table + `
+	    SET points     = v.points,
+	        scored_at  = NOW(),
+	        updated_at = NOW()
+	   FROM UNNEST($1::int[], $2::int[]) AS v(id, points)
+	  WHERE ` + table + `.id = v.id
+	    AND ` + table + `.scored_at IS NULL`
+
+	for i := 0; i < len(ids); i += chunkSize {
+		end := min(i+chunkSize, len(ids))
+		if _, err := tx.Exec(ctx, query, ids[i:end], pts[i:end]); err != nil {
+			return apperrors.Internal(err)
+		}
+	}
+	return nil
 }

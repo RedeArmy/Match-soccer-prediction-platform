@@ -159,6 +159,56 @@ func TestPaymentIntentRepository_CaptureAndCredit_DifferentCaptureIDReturnsConfl
 	}
 }
 
+// TestPaymentIntentRepository_CaptureAndCredit_AlreadyCapturedByAdmin_DoesNotDoubleCredit
+// is the direct regression test for the V32 double-credit race: an admin
+// manually captures a still-pending Recurrente intent via AdminCreditExpired
+// (simulating a delayed webhook prompting a support ticket), and the real
+// webhook then arrives and calls CaptureAndCredit for the same token. Before
+// the fix, the webhook path credited unconditionally with no status guard;
+// this test proves the user's balance reflects exactly one credit, not two.
+func TestPaymentIntentRepository_CaptureAndCredit_AlreadyCapturedByAdmin_DoesNotDoubleCredit(t *testing.T) {
+	cleanTables(t)
+	u := seedUser(t)
+	admin := seedUser(t)
+	repo := repository.NewPostgresPaymentIntentRepository(testDB)
+
+	intent := &domain.PaymentIntent{
+		Token:       "tok_" + nextCode(),
+		UserID:      u.ID,
+		AmountCents: 6000,
+		Currency:    "GTQ",
+		Provider:    "recurrente",
+		Status:      domain.PaymentIntentPending,
+		ExpiresAt:   time.Now().Add(time.Hour),
+	}
+	if err := repo.Create(context.Background(), intent); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Admin manually credits the still-pending intent (delayed-webhook support flow).
+	if _, err := repo.AdminCreditExpired(context.Background(), intent.ID, admin.ID, intent.AmountCents, "manual credit before webhook arrived"); err != nil {
+		t.Fatalf("AdminCreditExpired: %v", err)
+	}
+
+	// The real webhook now arrives and attempts to capture+credit the same token.
+	_, err := repo.CaptureAndCredit(context.Background(), intent.Token, intent.Token, intent.AmountCents, "", 0)
+	if err == nil {
+		t.Fatal("expected an error (already captured by admin with a different reference) — this must never silently succeed")
+	}
+	if errors.Is(err, repository.ErrPaymentIntentAlreadyCaptured) {
+		t.Fatal("must not be treated as an idempotent replay — the admin's capture_id differs from the webhook's reference")
+	}
+
+	userRepo := repository.NewPostgresUserRepository(testDB)
+	bal, _, err := userRepo.GetBalance(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GetBalance: %v", err)
+	}
+	if bal != intent.AmountCents {
+		t.Errorf("balance: got %d, want exactly one credit of %d (double-credit if higher)", bal, intent.AmountCents)
+	}
+}
+
 func TestPaymentIntentRepository_CaptureAndCredit_TokenNotFoundReturnsNotFound(t *testing.T) {
 	cleanTables(t)
 	repo := repository.NewPostgresPaymentIntentRepository(testDB)

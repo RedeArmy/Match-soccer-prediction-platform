@@ -49,7 +49,6 @@ type WebhookPaymentService interface {
 }
 
 type webhookPaymentService struct {
-	ledgerRepo repository.BalanceLedgerRepository
 	intentRepo repository.PaymentIntentRepository
 	userRepo   repository.UserRepository // wired via SetUserRepository; used to read balance_currency
 	kycGate    KYCGate                   // wired via SetKYCGate after construction; nil disables KYC checks
@@ -58,15 +57,16 @@ type webhookPaymentService struct {
 	log        *zap.Logger
 }
 
-// NewWebhookPaymentService constructs a WebhookPaymentService.
+// NewWebhookPaymentService constructs a WebhookPaymentService. Both providers
+// credit through PaymentIntentRepository.CaptureAndCredit (an atomic
+// pending→captured transition that also writes the balance_ledger row), so
+// no separate BalanceLedgerRepository dependency is needed here.
 func NewWebhookPaymentService(
-	ledgerRepo repository.BalanceLedgerRepository,
 	intentRepo repository.PaymentIntentRepository,
 	audit AuditLogger,
 	log *zap.Logger,
 ) WebhookPaymentService {
 	return &webhookPaymentService{
-		ledgerRepo: ledgerRepo,
 		intentRepo: intentRepo,
 		audit:      audit,
 		log:        log,
@@ -115,51 +115,70 @@ func (s *webhookPaymentService) ResolveAndCreditRecurrenteIntent(ctx context.Con
 	amountCents := intent.AmountCents
 	currency := intent.Currency
 
-	// Credit the amount in the payment currency directly. For USD deposits the
-	// user's balance_currency is set to "USD" atomically by CreditIdempotent, so
-	// that all future balance operations (entry fees, prizes) are also USD-based.
-	// No GTQ conversion is performed here; display conversion is handled by the
-	// frontend using the live exchange rate.
-	opts := creditDirectOpts{
-		kind:        domain.LedgerKindWebhookRecurrente,
-		auditAction: domain.AuditActionWebhookPaymentCredit,
-	}
-	if currency == "USD" {
-		opts.sourceCurrency = "USD"
-		opts.sourceAmountCents = amountCents
+	if err := s.checkRecurrenteKYC(ctx, userID, amountCents, currency); err != nil {
+		return err
 	}
 
-	if err := s.checkRecurrenteKYC(ctx, userID, amountCents); err != nil {
-		return err
+	// Credit the amount in the payment currency directly. For USD deposits the
+	// user's balance_currency is set to "USD" atomically inside CaptureAndCredit,
+	// so that all future balance operations (entry fees, prizes) are also
+	// USD-based. No GTQ conversion is performed here; display conversion is
+	// handled by the frontend using the live exchange rate.
+	sourceCurrency, sourceAmountCents := "", 0
+	if currency == "USD" {
+		sourceCurrency = "USD"
+		sourceAmountCents = amountCents
 	}
-	if err := s.creditDirect(ctx, userID, amountCents, currency, reference, opts); err != nil {
-		return err
-	}
-	// Mark the corresponding payment_intent as captured so the admin panel
-	// reflects the correct status. Failure here is non-fatal: the balance
-	// was already credited; the intent row will stay 'pending' until it
-	// expires, which is acceptable and recoverable.
-	if err := s.intentRepo.MarkCapturedByToken(ctx, reference); err != nil {
-		s.log.Warn("recurrente webhook: failed to mark intent captured",
+
+	// Atomically transition pending→captured and credit in a single
+	// transaction, gated on status — the same guarantee PayPal's
+	// CaptureAndCredit already provides. This closes a double-credit race
+	// against the admin's manual AdminCreditExpired path: if the intent was
+	// already captured by an admin (e.g. a delayed webhook prompted a manual
+	// credit before this delivery arrived), the atomic UPDATE below matches
+	// zero rows and this call returns Conflict instead of crediting a second
+	// time. reference doubles as the idempotency key in place of a
+	// provider-supplied capture ID (Recurrente has no equivalent concept): a
+	// retried delivery of the same webhook always passes the same reference,
+	// so it lands in the "already captured with this same reference" branch
+	// (a harmless no-op) rather than "captured by someone else".
+	captured, err := s.intentRepo.CaptureAndCredit(ctx, reference, reference, amountCents, sourceCurrency, sourceAmountCents)
+	if errors.Is(err, repository.ErrPaymentIntentAlreadyCaptured) {
+		s.log.Debug("recurrente webhook: idempotent re-delivery ignored",
 			zap.String("reference", reference),
-			zap.Error(err),
 		)
+		return nil
 	}
-	s.recordAMLIfNeeded(ctx, userID, amountCents)
+	if err != nil {
+		return err
+	}
+
+	resType := "payment_intent"
+	intentID := int(captured.ID)
+	s.audit.Log(ctx, nil, nil, domain.AuditActionWebhookPaymentCredit, &resType, &intentID, map[string]any{
+		"user_id":      userID,
+		"amount_cents": amountCents,
+		"currency":     currency,
+		"reference":    reference,
+		"kind":         string(domain.LedgerKindWebhookRecurrente),
+	})
+	s.recordAMLIfNeeded(ctx, userID, amountCents, currency)
 	return nil
 }
 
 // checkRecurrenteKYC runs the deposit and deposit-velocity KYC gate checks for
 // a Recurrente credit. No-op when kycGate is not wired (tests without a DB,
-// or the KYC module disabled).
-func (s *webhookPaymentService) checkRecurrenteKYC(ctx context.Context, userID, amountCents int) error {
+// or the KYC module disabled). currency is the intent's own currency (GTQ or
+// USD) — the gate converts to GTQ internally before comparing against the
+// GTQ-denominated tier caps.
+func (s *webhookPaymentService) checkRecurrenteKYC(ctx context.Context, userID, amountCents int, currency string) error {
 	if s.kycGate == nil {
 		return nil
 	}
-	if err := s.kycGate.CheckDeposit(ctx, userID, amountCents); err != nil {
+	if err := s.kycGate.CheckDeposit(ctx, userID, amountCents, currency); err != nil {
 		return err
 	}
-	return s.kycGate.CheckDepositVelocity(ctx, userID, amountCents)
+	return s.kycGate.CheckDepositVelocity(ctx, userID, amountCents, currency)
 }
 
 // checkUserIDMismatch logs and audits when the webhook-declared user_id
@@ -225,48 +244,6 @@ func (s *webhookPaymentService) checkCurrencyMismatch(ctx context.Context, inten
 	})
 }
 
-// creditDirectOpts groups the per-call metadata for creditDirect, keeping its
-// parameter count within the authorised maximum of 7.
-type creditDirectOpts struct {
-	kind              domain.BalanceLedgerKind
-	auditAction       string
-	sourceCurrency    string
-	sourceAmountCents int
-}
-
-func (s *webhookPaymentService) creditDirect(ctx context.Context, userID, amountCents int, currency, reference string, opts creditDirectOpts) error {
-	if amountCents <= 0 {
-		return apperrors.Validation("amount_cents must be positive")
-	}
-	if reference == "" {
-		return apperrors.Validation("reference is required for webhook payments")
-	}
-
-	// Prefix the reference with the provider kind so that identical transaction
-	// IDs from different providers cannot collide in the unique DB index.
-	scopedRef := string(opts.kind) + ":" + reference
-	credited, err := s.ledgerRepo.CreditIdempotent(ctx, userID, amountCents, opts.kind, scopedRef, opts.sourceCurrency, opts.sourceAmountCents)
-	if err != nil {
-		return err
-	}
-	if !credited {
-		s.log.Debug("webhook payment: idempotent re-delivery ignored",
-			zap.String("reference", scopedRef),
-			zap.String("kind", string(opts.kind)),
-		)
-		return nil
-	}
-
-	resType := "user"
-	s.audit.Log(ctx, nil, nil, opts.auditAction, &resType, &userID, map[string]any{
-		"amount_cents": amountCents,
-		"currency":     currency,
-		"reference":    scopedRef,
-		"kind":         string(opts.kind),
-	})
-	return nil
-}
-
 func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context, intentToken, captureID string, webhookAmountCents int) error {
 	if intentToken == "" {
 		return apperrors.Validation("intent token is required")
@@ -327,7 +304,13 @@ func (s *webhookPaymentService) ResolveAndCreditPayPalIntent(ctx context.Context
 		"capture_id":          captureID,
 		"kind":                string(domain.LedgerKindWebhookPayPal),
 	})
-	s.recordAMLIfNeeded(ctx, intent.UserID, creditAmountCents)
+	// Use the intent's own declared amount/currency (always USD for PayPal),
+	// not creditAmountCents: that value may already be GTQ-converted (GTQ-
+	// balance users) or still raw USD (USD-balance users, or a failed
+	// conversion) depending on resolvePayPalCredit's branch — the intent's
+	// own fields are the one server-authoritative, unambiguous record of how
+	// much value this transaction actually moved.
+	s.recordAMLIfNeeded(ctx, intent.UserID, intent.AmountCents, intent.Currency)
 	return nil
 }
 
@@ -392,10 +375,10 @@ func (s *webhookPaymentService) fetchPendingAndCheckKYC(ctx context.Context, tok
 	if s.kycGate == nil {
 		return pending, nil
 	}
-	if err := s.kycGate.CheckDeposit(ctx, pending.UserID, pending.AmountCents); err != nil {
+	if err := s.kycGate.CheckDeposit(ctx, pending.UserID, pending.AmountCents, pending.Currency); err != nil {
 		return nil, err
 	}
-	if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, pending.AmountCents); err != nil {
+	if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, pending.AmountCents, pending.Currency); err != nil {
 		return nil, err
 	}
 	return pending, nil
@@ -404,20 +387,24 @@ func (s *webhookPaymentService) fetchPendingAndCheckKYC(ctx context.Context, tok
 // recordAMLIfNeeded writes AuditActionAMLFlagged when either the single-
 // transaction or cumulative rolling-period AML threshold is exceeded.
 // Non-blocking: the credit is never reversed; only the audit record is created.
-func (s *webhookPaymentService) recordAMLIfNeeded(ctx context.Context, userID, amountCents int) {
+// currency is the currency amountCents is denominated in (GTQ or USD); the
+// gate converts to GTQ internally before comparing against the threshold.
+func (s *webhookPaymentService) recordAMLIfNeeded(ctx context.Context, userID, amountCents int, currency string) {
 	if s.kycGate == nil {
 		return
 	}
 	resType := "user"
-	if exceeded, err := s.kycGate.ExceedsAMLThreshold(ctx, amountCents); err == nil && exceeded {
+	if exceeded, err := s.kycGate.ExceedsAMLThreshold(ctx, amountCents, currency); err == nil && exceeded {
 		s.audit.Log(ctx, nil, nil, domain.AuditActionAMLFlagged, &resType, &userID, map[string]any{
 			"amount_cents":   amountCents,
+			"currency":       currency,
 			"threshold_type": "single_transaction",
 		})
 	}
-	if exceeded, err := s.kycGate.ExceedsCumulativeAMLThreshold(ctx, userID, amountCents); err == nil && exceeded {
+	if exceeded, err := s.kycGate.ExceedsCumulativeAMLThreshold(ctx, userID, amountCents, currency); err == nil && exceeded {
 		s.audit.Log(ctx, nil, nil, domain.AuditActionAMLFlagged, &resType, &userID, map[string]any{
 			"amount_cents":   amountCents,
+			"currency":       currency,
 			"threshold_type": "cumulative",
 		})
 	}

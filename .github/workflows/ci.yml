@@ -279,6 +279,17 @@ jobs:
       # github.com/docker/docker (via testcontainers-go) which carries CVEs
       # with no upstream fix available (GO-2026-4883, GO-2026-4887). Neither
       # package is part of any deployable binary.
+      #
+      # GO-2026-5932 (golang.org/x/crypto/openpgp deprecated-package advisory)
+      # will still print under internal/infrastructure/... — it is a
+      # module-level finding only, not a code-level one: our sole use of
+      # golang.org/x/crypto is the hkdf subpackage, pulled in transitively via
+      # github.com/SherClockHolmes/webpush-go (internal/infrastructure/webpush).
+      # openpgp is never imported, so govulncheck's own symbol/package-level
+      # analysis reports 0 reachable vulnerabilities and does not fail the
+      # step. There is no fixed version to upgrade to (Fixed in: N/A — the
+      # package is permanently unmaintained), so this cannot be resolved by
+      # a dependency bump.
       - name: Vulnerability scan
         run: |
           go tool govulncheck \

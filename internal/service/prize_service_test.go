@@ -43,19 +43,23 @@ type prizeKYCGateStub struct {
 	shouldFreeze bool
 }
 
-func (g *prizeKYCGateStub) CheckWithdrawal(_ context.Context, _, _ int) error { return nil }
-func (g *prizeKYCGateStub) CheckDeposit(_ context.Context, _, _ int) error    { return nil }
+func (g *prizeKYCGateStub) CheckWithdrawal(_ context.Context, _, _ int, _ string) error { return nil }
+func (g *prizeKYCGateStub) CheckDeposit(_ context.Context, _, _ int, _ string) error    { return nil }
 func (g *prizeKYCGateStub) CheckWinFreeze(_ context.Context, _, _ int) (bool, string, error) {
 	return g.shouldFreeze, "KYC required", nil
 }
-func (g *prizeKYCGateStub) ExceedsAMLThreshold(_ context.Context, _ int) (bool, error) {
+func (g *prizeKYCGateStub) ExceedsAMLThreshold(_ context.Context, _ int, _ string) (bool, error) {
 	return false, nil
 }
-func (g *prizeKYCGateStub) ExceedsCumulativeAMLThreshold(_ context.Context, _, _ int) (bool, error) {
+func (g *prizeKYCGateStub) ExceedsCumulativeAMLThreshold(_ context.Context, _, _ int, _ string) (bool, error) {
 	return false, nil
 }
-func (g *prizeKYCGateStub) CheckDepositVelocity(_ context.Context, _, _ int) error      { return nil }
-func (g *prizeKYCGateStub) CheckWithdrawalVelocity(_ context.Context, _, _ int) error   { return nil }
+func (g *prizeKYCGateStub) CheckDepositVelocity(_ context.Context, _, _ int, _ string) error {
+	return nil
+}
+func (g *prizeKYCGateStub) CheckWithdrawalVelocity(_ context.Context, _, _ int, _ string) error {
+	return nil
+}
 func (g *prizeKYCGateStub) CheckIPSubmissionVelocity(_ context.Context, _ string) error { return nil }
 
 type prizeKYCSvcStub struct {
