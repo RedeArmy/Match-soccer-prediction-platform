@@ -52,6 +52,15 @@ type webhookIntentRepoStub struct {
 	intent          *domain.PaymentIntent
 	captureErr      error
 	markCapturedErr error
+
+	// Captured arguments from the last CaptureAndCredit call, for tests that
+	// assert on what the service actually passed through (both Recurrente and
+	// PayPal credit via this single atomic entry point).
+	capturedToken             string
+	capturedCaptureID         string
+	capturedAmountCents       int
+	capturedSourceCurrency    string
+	capturedSourceAmountCents int
 }
 
 func (r *webhookIntentRepoStub) Create(_ context.Context, intent *domain.PaymentIntent) error {
@@ -67,7 +76,12 @@ func (r *webhookIntentRepoStub) GetByToken(_ context.Context, _ string) (*domain
 func (r *webhookIntentRepoStub) GetByID(_ context.Context, _ int64) (*domain.PaymentIntent, error) {
 	return r.intent, nil
 }
-func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, _, _ string, _ int, _ string, _ int) (*domain.PaymentIntent, error) {
+func (r *webhookIntentRepoStub) CaptureAndCredit(_ context.Context, token, captureID string, amountCents int, sourceCurrency string, sourceAmountCents int) (*domain.PaymentIntent, error) {
+	r.capturedToken = token
+	r.capturedCaptureID = captureID
+	r.capturedAmountCents = amountCents
+	r.capturedSourceCurrency = sourceCurrency
+	r.capturedSourceAmountCents = sourceAmountCents
 	return r.intent, r.captureErr
 }
 func (r *webhookIntentRepoStub) MarkCapturedByToken(_ context.Context, _ string) error {
@@ -108,7 +122,7 @@ func newWebhookPaymentSvc(ledger *webhookLedgerRepoStub, intent *webhookIntentRe
 	if intent == nil {
 		intent = &webhookIntentRepoStub{}
 	}
-	return NewWebhookPaymentService(ledger, intent, &noopAuditLogger{}, zap.NewNop())
+	return NewWebhookPaymentService(intent, &noopAuditLogger{}, zap.NewNop())
 }
 
 // ── ResolveAndCreditRecurrenteIntent ──────────────────────────────────────────
@@ -140,63 +154,98 @@ func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_UnknownReference
 
 func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_RepoErrorPropagates(t *testing.T) {
 	intent := &domain.PaymentIntent{ID: 1, UserID: 5, AmountCents: 1000, Currency: "GTQ"}
-	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{creditErr: errors.New("db error")}, &webhookIntentRepoStub{intent: intent})
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{intent: intent, captureErr: errors.New("db error")})
 	if err := svc.ResolveAndCreditRecurrenteIntent(context.Background(), "REF-X", 5, 1000, "GTQ"); err == nil {
 		t.Fatal("expected error from repo, got nil")
 	}
 }
 
-func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_UsesRecurrenteKind(t *testing.T) {
-	ledger := &webhookLedgerRepoStub{}
+// TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_CapturesAtomically
+// verifies the V32 fix: crediting goes through PaymentIntentRepository.
+// CaptureAndCredit — the same atomic pending→captured entry point PayPal
+// uses — rather than a ledger write decoupled from the intent's status. The
+// provider-specific ledger kind is derived inside that repository method
+// (from intent.Provider) and is covered by the real-Postgres repository
+// tests; this test only asserts on what the service layer controls: which
+// token/amount/currency it passes through.
+func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_CapturesAtomically(t *testing.T) {
 	intent := &domain.PaymentIntent{ID: 1, UserID: 1, AmountCents: 1000, Currency: "GTQ"}
-	svc := newWebhookPaymentSvc(ledger, &webhookIntentRepoStub{intent: intent})
-	_ = svc.ResolveAndCreditRecurrenteIntent(context.Background(), "REF", 1, 1000, "GTQ")
-	if ledger.capturedKind != domain.LedgerKindWebhookRecurrente {
-		t.Errorf("kind: got %q, want %q", ledger.capturedKind, domain.LedgerKindWebhookRecurrente)
+	stub := &webhookIntentRepoStub{intent: intent}
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, stub)
+	if err := svc.ResolveAndCreditRecurrenteIntent(context.Background(), "TXN-XYZ", 1, 1000, "GTQ"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// reference is passed as both the token to resolve and the pseudo
+	// capture-ID (Recurrente has no provider-supplied capture ID the way
+	// PayPal does) — no provider-kind scoping prefix is needed here, unlike
+	// the old ledger-reference dedup scheme, because payment_intents.token is
+	// already globally unique and unguessable.
+	if stub.capturedToken != "TXN-XYZ" {
+		t.Errorf("token: got %q, want %q", stub.capturedToken, "TXN-XYZ")
+	}
+	if stub.capturedCaptureID != "TXN-XYZ" {
+		t.Errorf("captureID: got %q, want %q", stub.capturedCaptureID, "TXN-XYZ")
+	}
+	if stub.capturedAmountCents != 1000 {
+		t.Errorf("amountCents: got %d, want 1000", stub.capturedAmountCents)
 	}
 }
 
-func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_PassesReferenceToRepo(t *testing.T) {
-	ledger := &webhookLedgerRepoStub{}
-	intent := &domain.PaymentIntent{ID: 1, UserID: 1, AmountCents: 1000, Currency: "GTQ"}
-	svc := newWebhookPaymentSvc(ledger, &webhookIntentRepoStub{intent: intent})
-	_ = svc.ResolveAndCreditRecurrenteIntent(context.Background(), "TXN-XYZ", 1, 1000, "GTQ")
-	// Reference is scoped with the provider kind to prevent cross-provider collision.
-	want := "webhook_recurrente:TXN-XYZ"
-	if ledger.capturedReference != want {
-		t.Errorf("reference: got %q, want %q", ledger.capturedReference, want)
-	}
-}
-
+// TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_DuplicateReferenceIsNoop
+// verifies that a retried webhook delivery for an already-captured intent
+// (same reference) is a harmless no-op, matching PayPal's
+// ErrPaymentIntentAlreadyCaptured handling.
 func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_DuplicateReferenceIsNoop(t *testing.T) {
-	ledger := &webhookLedgerRepoStub{skipCredit: true}
 	intent := &domain.PaymentIntent{ID: 1, UserID: 1, AmountCents: 1000, Currency: "GTQ"}
-	svc := newWebhookPaymentSvc(ledger, &webhookIntentRepoStub{intent: intent})
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{
+		intent:     intent,
+		captureErr: repository.ErrPaymentIntentAlreadyCaptured,
+	})
 	if err := svc.ResolveAndCreditRecurrenteIntent(context.Background(), "TXN-DUP", 1, 1000, "GTQ"); err != nil {
 		t.Fatalf("duplicate reference must return nil, got %v", err)
 	}
 }
 
+// TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_AlreadyCapturedByAdmin_ReturnsConflict
+// is the direct regression test for V32: an intent already captured by
+// AdminCreditExpired (a different capture reference) must cause the webhook
+// credit to fail with Conflict rather than crediting the balance a second
+// time. PostgresPaymentIntentRepository.CaptureAndCredit is what actually
+// enforces this atomically (see resolveCaptureMissTx and the real-Postgres
+// tests in payment_intent_repository_test.go); this test only verifies the
+// service layer propagates that Conflict rather than swallowing it.
+func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_AlreadyCapturedByAdmin_ReturnsConflict(t *testing.T) {
+	intent := &domain.PaymentIntent{ID: 1, UserID: 1, AmountCents: 1000, Currency: "GTQ"}
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, &webhookIntentRepoStub{
+		intent:     intent,
+		captureErr: apperrors.Conflict("payment intent already captured by a different transaction"),
+	})
+	err := svc.ResolveAndCreditRecurrenteIntent(context.Background(), "TXN-RACE", 1, 1000, "GTQ")
+	if err == nil {
+		t.Fatal("expected Conflict when the intent was already captured by admin, got nil (would double-credit)")
+	}
+}
+
 // TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_ForgedValuesAreIgnored
-// is the core regression test for the fix: even when the webhook payload
-// declares a different user and a wildly larger amount than the intent that
-// was actually created server-side, the credit must use the intent's own
-// values — simulating a forged payload from a compromised HMAC secret.
+// is the core regression test for the original forged-webhook fix: even when
+// the webhook payload declares a different user and a wildly larger amount
+// than the intent that was actually created server-side, the credit must use
+// the intent's own values — simulating a forged payload from a compromised
+// HMAC secret. The forged user_id specifically can no longer reach the
+// credit path at all: CaptureAndCredit resolves the user server-side from
+// the intent row by token and accepts no caller-supplied user_id parameter.
 func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_ForgedValuesAreIgnored(t *testing.T) {
 	intent := &domain.PaymentIntent{ID: 1, UserID: 42, AmountCents: 500, Currency: "GTQ"}
-	ledger := &webhookLedgerRepoStub{}
-	svc := newWebhookPaymentSvc(ledger, &webhookIntentRepoStub{intent: intent})
+	stub := &webhookIntentRepoStub{intent: intent}
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, stub)
 
 	forgedUserID := 999
 	forgedAmountCents := 999999900
 	if err := svc.ResolveAndCreditRecurrenteIntent(context.Background(), "REF-FORGED", forgedUserID, forgedAmountCents, "GTQ"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ledger.capturedUserID != intent.UserID {
-		t.Errorf("credited user_id: got %d, want intent's %d (forged %d must be ignored)", ledger.capturedUserID, intent.UserID, forgedUserID)
-	}
-	if ledger.capturedAmountCents != intent.AmountCents {
-		t.Errorf("credited amount_cents: got %d, want intent's %d (forged %d must be ignored)", ledger.capturedAmountCents, intent.AmountCents, forgedAmountCents)
+	if stub.capturedAmountCents != intent.AmountCents {
+		t.Errorf("credited amount_cents: got %d, want intent's %d (forged %d must be ignored)", stub.capturedAmountCents, intent.AmountCents, forgedAmountCents)
 	}
 }
 
@@ -376,21 +425,25 @@ type webhookKYCGateStub struct {
 	cumulativeExceeded bool
 }
 
-func (g *webhookKYCGateStub) CheckWithdrawal(_ context.Context, _, _ int) error { return nil }
-func (g *webhookKYCGateStub) CheckDeposit(_ context.Context, _, _ int) error    { return g.depositErr }
+func (g *webhookKYCGateStub) CheckWithdrawal(_ context.Context, _, _ int, _ string) error { return nil }
+func (g *webhookKYCGateStub) CheckDeposit(_ context.Context, _, _ int, _ string) error {
+	return g.depositErr
+}
 func (g *webhookKYCGateStub) CheckWinFreeze(_ context.Context, _, _ int) (bool, string, error) {
 	return false, "", nil
 }
-func (g *webhookKYCGateStub) ExceedsAMLThreshold(_ context.Context, _ int) (bool, error) {
+func (g *webhookKYCGateStub) ExceedsAMLThreshold(_ context.Context, _ int, _ string) (bool, error) {
 	return g.amlExceeded, nil
 }
-func (g *webhookKYCGateStub) ExceedsCumulativeAMLThreshold(_ context.Context, _, _ int) (bool, error) {
+func (g *webhookKYCGateStub) ExceedsCumulativeAMLThreshold(_ context.Context, _, _ int, _ string) (bool, error) {
 	return g.cumulativeExceeded, nil
 }
-func (g *webhookKYCGateStub) CheckDepositVelocity(_ context.Context, _, _ int) error {
+func (g *webhookKYCGateStub) CheckDepositVelocity(_ context.Context, _, _ int, _ string) error {
 	return g.velocityErr
 }
-func (g *webhookKYCGateStub) CheckWithdrawalVelocity(_ context.Context, _, _ int) error   { return nil }
+func (g *webhookKYCGateStub) CheckWithdrawalVelocity(_ context.Context, _, _ int, _ string) error {
+	return nil
+}
 func (g *webhookKYCGateStub) CheckIPSubmissionVelocity(_ context.Context, _ string) error { return nil }
 
 // multiSpyAuditLogger accumulates every Log call so tests can assert on multiple events.
@@ -408,7 +461,7 @@ func newWebhookPaymentSvcWithGate(ledger *webhookLedgerRepoStub, intent *webhook
 	if intent == nil {
 		intent = &webhookIntentRepoStub{}
 	}
-	svc := NewWebhookPaymentService(ledger, intent, &noopAuditLogger{}, zap.NewNop())
+	svc := NewWebhookPaymentService(intent, &noopAuditLogger{}, zap.NewNop())
 	if gate != nil {
 		svc.(*webhookPaymentService).SetKYCGate(gate)
 	}
@@ -458,7 +511,7 @@ func newWebhookPaymentSvcWithGateAndAudit(ledger *webhookLedgerRepoStub, intent 
 	if intent == nil {
 		intent = &webhookIntentRepoStub{}
 	}
-	svc := NewWebhookPaymentService(ledger, intent, audit, zap.NewNop())
+	svc := NewWebhookPaymentService(intent, audit, zap.NewNop())
 	if gate != nil {
 		svc.(*webhookPaymentService).SetKYCGate(gate)
 	}
@@ -492,7 +545,7 @@ func newWebhookPaymentSvcWithFX(ledger *webhookLedgerRepoStub, intent *webhookIn
 	if intent == nil {
 		intent = &webhookIntentRepoStub{}
 	}
-	svc := NewWebhookPaymentService(ledger, intent, &noopAuditLogger{}, zap.NewNop())
+	svc := NewWebhookPaymentService(intent, &noopAuditLogger{}, zap.NewNop())
 	if fx != nil {
 		svc.(*webhookPaymentService).SetExchangeRateService(fx)
 	}
@@ -569,28 +622,6 @@ func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_CumulativeAML_Au
 	}
 }
 
-// TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_MarkCapturedError_CreditStillSucceeds
-// verifies that a failure in MarkCapturedByToken is non-fatal: the balance was
-// already credited, so the function must return nil rather than propagating the
-// mark error.
-func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_MarkCapturedError_CreditStillSucceeds(t *testing.T) {
-	ledger := &webhookLedgerRepoStub{}
-	intent := &webhookIntentRepoStub{
-		intent:          &domain.PaymentIntent{ID: 1, UserID: 5, AmountCents: 5000, Currency: "GTQ"},
-		markCapturedErr: errors.New("db write failed"),
-	}
-	svc := newWebhookPaymentSvc(ledger, intent)
-
-	err := svc.ResolveAndCreditRecurrenteIntent(context.Background(), "REF-MARK-ERR", 5, 5000, "GTQ")
-	if err != nil {
-		t.Errorf("MarkCapturedByToken error must be non-fatal, got: %v", err)
-	}
-	// Ledger must still have been credited.
-	if ledger.capturedKind == "" {
-		t.Error("expected credit to be applied despite mark error")
-	}
-}
-
 // ── USD-balance user path (SetUserRepository) ─────────────────────────────────
 
 // webhookUserRepoStub is a minimal UserRepository returning a configurable
@@ -661,15 +692,18 @@ func TestWebhookPaymentService_ResolveAndCreditPayPalIntent_USDBalanceUser_Credi
 }
 
 func TestWebhookPaymentService_ResolveAndCreditRecurrenteIntent_USDCurrency_SetsSourceFields(t *testing.T) {
-	// Recurrente USD payment: sourceCurrency must be set, no conversion applied.
-	ledger := &webhookLedgerRepoStub{}
-	intent := &webhookIntentRepoStub{intent: &domain.PaymentIntent{ID: 1, UserID: 5, AmountCents: 500, Currency: "USD"}}
-	svc := newWebhookPaymentSvc(ledger, intent)
+	// Recurrente USD payment: sourceCurrency/sourceAmountCents must be passed
+	// through to CaptureAndCredit unconverted (no GTQ conversion for Recurrente).
+	stub := &webhookIntentRepoStub{intent: &domain.PaymentIntent{ID: 1, UserID: 5, AmountCents: 500, Currency: "USD"}}
+	svc := newWebhookPaymentSvc(&webhookLedgerRepoStub{}, stub)
 
 	if err := svc.ResolveAndCreditRecurrenteIntent(context.Background(), "REF-USD", 5, 500, "USD"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ledger.capturedKind != domain.LedgerKindWebhookRecurrente {
-		t.Errorf("expected kind %q, got %q", domain.LedgerKindWebhookRecurrente, ledger.capturedKind)
+	if stub.capturedSourceCurrency != "USD" {
+		t.Errorf("sourceCurrency: got %q, want %q", stub.capturedSourceCurrency, "USD")
+	}
+	if stub.capturedSourceAmountCents != 500 {
+		t.Errorf("sourceAmountCents: got %d, want 500", stub.capturedSourceAmountCents)
 	}
 }

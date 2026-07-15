@@ -270,6 +270,47 @@ func TestCORS_MultipleOriginsAllowed(t *testing.T) {
 	}
 }
 
+// TestCORS_EmptyOriginsList_RejectsEverything is the V33 regression test.
+// rs/cors treats a nil/empty AllowedOrigins slice as "allow every origin"
+// unless AllowOriginFunc is also set (verified directly against the vendored
+// github.com/rs/cors@v1.11.1 source) — the exact opposite of what an operator
+// forgetting to set WCQ_CORS_ALLOWEDORIGINS should get. Before this fix,
+// every origin below would have received an Access-Control-Allow-Origin
+// header; now none of them should.
+func TestCORS_EmptyOriginsList_RejectsEverything(t *testing.T) {
+	handler := middleware.CORS(nil)(http.HandlerFunc(okHandler))
+
+	for _, origin := range []string{originLocalhost, "https://myapp.com", "https://evil.example.com", "null"} {
+		t.Run(origin, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Header.Set(headerOrigin, origin)
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if got := rec.Header().Get(headerACAO); got != "" {
+				t.Errorf("expected no Access-Control-Allow-Origin header with an empty allow-list, got %q for origin %q", got, origin)
+			}
+		})
+	}
+}
+
+// TestCORS_EmptyOriginsList_RejectsPreflight verifies the deny-all behaviour
+// also applies to preflight (OPTIONS) requests, not just simple GETs.
+func TestCORS_EmptyOriginsList_RejectsPreflight(t *testing.T) {
+	handler := middleware.CORS([]string{})(http.HandlerFunc(okHandler))
+	req := httptest.NewRequest(http.MethodOptions, pathMatches, nil)
+	req.Header.Set(headerOrigin, originLocalhost)
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get(headerACAO); got != "" {
+		t.Errorf("expected no ACAO header on a rejected preflight, got %q", got)
+	}
+}
+
 // ── WriteError ────────────────────────────────────────────────────────────────
 
 func TestWriteError_AppError_WritesCorrectStatusAndBody(t *testing.T) {
@@ -818,7 +859,10 @@ func TestTrustedClientIP_FallsBackToRemoteAddrWhenHeaderAbsent(t *testing.T) {
 	}
 }
 
-func TestTrustedClientIP_IgnoresForgeableHeaders(t *testing.T) {
+// TestTrustedClientIP_FlyClientIPTakesPriorityOverForwardedFor verifies that
+// when both headers are present, Fly-Client-IP wins — X-Forwarded-For is
+// only ever consulted as a fallback for the non-Fly (Caddy) deployment.
+func TestTrustedClientIP_FlyClientIPTakesPriorityOverForwardedFor(t *testing.T) {
 	const flyIP = "203.0.113.99"
 	var gotRemoteAddr string
 	handler := middleware.TrustedClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -828,11 +872,77 @@ func TestTrustedClientIP_IgnoresForgeableHeaders(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.RemoteAddr = "10.0.0.1:12345"
 	req.Header.Set("Fly-Client-IP", flyIP)
-	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8") // attacker-controlled; must be ignored
-	req.Header.Set("X-Real-IP", "9.9.9.9")                // attacker-controlled; must be ignored
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	if gotRemoteAddr != flyIP {
 		t.Errorf("expected RemoteAddr %q from Fly-Client-IP, got %q", flyIP, gotRemoteAddr)
+	}
+}
+
+// TestTrustedClientIP_IgnoresXRealIP verifies X-Real-IP is never trusted:
+// Caddy (this app's actual reverse proxy) does not manage that header, so
+// unlike X-Forwarded-For it carries no non-forgeable guarantee here.
+func TestTrustedClientIP_IgnoresXRealIP(t *testing.T) {
+	const peerAddr = "192.0.2.7:54321"
+	var gotRemoteAddr string
+	handler := middleware.TrustedClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		gotRemoteAddr = r.RemoteAddr
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = peerAddr
+	req.Header.Set("X-Real-IP", "9.9.9.9") // attacker-controlled; must be ignored
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotRemoteAddr != peerAddr {
+		t.Errorf("expected RemoteAddr %q unchanged (X-Real-IP must be ignored), got %q", peerAddr, gotRemoteAddr)
+	}
+}
+
+// TestTrustedClientIP_UsesLastForwardedForEntry verifies the V31 fix: behind
+// Caddy (no Fly-Client-IP), the LAST entry of X-Forwarded-For is trusted —
+// that is the entry Caddy itself appends and a client cannot influence — not
+// the first, which a client fully controls. Before this fix TrustedClientIP
+// never read X-Forwarded-For at all, so every request proxied through the
+// Next.js BFF collapsed onto the frontend container's single address,
+// letting one abusive client exhaust the shared per-IP rate-limit bucket for
+// every real user.
+func TestTrustedClientIP_UsesLastForwardedForEntry(t *testing.T) {
+	const realClientIP = "198.51.100.23"
+	var gotRemoteAddr string
+	handler := middleware.TrustedClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		gotRemoteAddr = r.RemoteAddr
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "172.18.0.5:41000" // frontend container's docker-internal address
+	// A client-supplied prefix (attacker-controlled) followed by the entry
+	// Caddy appends (trustworthy, always last).
+	req.Header.Set("X-Forwarded-For", "6.6.6.6, "+realClientIP)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotRemoteAddr != realClientIP {
+		t.Errorf("expected RemoteAddr %q (last X-Forwarded-For entry), got %q", realClientIP, gotRemoteAddr)
+	}
+}
+
+// TestTrustedClientIP_SingleForwardedForEntry_Trusted covers the common case
+// where the client sent no X-Forwarded-For of its own and Caddy's is the
+// only entry.
+func TestTrustedClientIP_SingleForwardedForEntry_Trusted(t *testing.T) {
+	const realClientIP = "198.51.100.23"
+	var gotRemoteAddr string
+	handler := middleware.TrustedClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		gotRemoteAddr = r.RemoteAddr
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "172.18.0.5:41000"
+	req.Header.Set("X-Forwarded-For", realClientIP)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotRemoteAddr != realClientIP {
+		t.Errorf("expected RemoteAddr %q, got %q", realClientIP, gotRemoteAddr)
 	}
 }

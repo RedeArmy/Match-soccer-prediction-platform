@@ -104,6 +104,17 @@ func (s *stubScorer) ScoreMatch(_ context.Context, matchID int) error {
 	return s.err
 }
 
+// stubExtraScorer records ScoreExtras calls.
+type stubExtraScorer struct {
+	called []int
+	err    error
+}
+
+func (s *stubExtraScorer) ScoreExtras(_ context.Context, matchID int) error {
+	s.called = append(s.called, matchID)
+	return s.err
+}
+
 // noopAuditLogger satisfies AuditLogger without doing anything.
 type noopAuditLogger struct{}
 
@@ -146,7 +157,7 @@ func (*noopSystemParamService) GetHistory(_ context.Context, _ string, _ reposit
 
 func newMatchSvc(match *domain.Match) (MatchService, *stubPublisher) {
 	pub := &stubPublisher{}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 	return svc, pub
 }
 
@@ -227,7 +238,7 @@ func TestUpdateResult_PenaltiesWinMethod_WithPenaltyScores_PersistsScores(t *tes
 		Status: domain.MatchStatusLive, KickoffAt: time.Now().Add(-time.Hour)}
 	repo := &stubMatchRepo{match: match}
 	pub := &stubPublisher{}
-	svc := NewMatchService(repo, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(repo, pub, &stubScorer{}, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	wm := domain.WinMethodPenalties
 	pw := "away"
@@ -286,7 +297,7 @@ func TestUpdateResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) {
 
 	pub := &stubPublisher{err: errors.New("redis unavailable")}
 	scorer := &stubScorer{}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	result, err := svc.UpdateResult(context.Background(), 42, ScoreUpdate{HomeScore: 2, AwayScore: 1, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
@@ -312,7 +323,7 @@ func TestUpdateResult_PublishFails_ScorerAlsoFails_StillReturnsResult(t *testing
 
 	pub := &stubPublisher{err: errors.New("redis unavailable")}
 	scorer := &stubScorer{err: errors.New("db timeout")}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	result, err := svc.UpdateResult(context.Background(), 7, ScoreUpdate{HomeScore: 1, AwayScore: 0, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
@@ -368,7 +379,7 @@ func TestStartMatch_PublishFails_StillReturnsMatch(t *testing.T) {
 	match := &domain.Match{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
 		Status: domain.MatchStatusScheduled, KickoffAt: time.Now()}
 	pub := &stubPublisher{err: errors.New("redis unavailable")}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	result, err := svc.StartMatch(context.Background(), 1)
 	if err != nil {
@@ -427,7 +438,7 @@ func TestListMatches_ReturnsSlice(t *testing.T) {
 	matches := []*domain.Match{
 		{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina, Status: domain.MatchStatusScheduled},
 	}
-	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	got, err := svc.ListMatches(context.Background())
 	if err != nil {
@@ -443,7 +454,7 @@ func TestListMatchesByPhase_ReturnsFilteredSlice(t *testing.T) {
 	matches := []*domain.Match{
 		{ID: 1, HomeTeam: matchBrazil, AwayTeam: matchArgentina, Phase: domain.PhaseGroupStage},
 	}
-	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	got, err := svc.ListMatchesByPhase(context.Background(), domain.PhaseGroupStage)
 	if err != nil {
@@ -459,7 +470,7 @@ func TestListMatchesByStatus_ReturnsFilteredSlice(t *testing.T) {
 	matches := []*domain.Match{
 		{ID: 1, HomeTeam: matchFrance, AwayTeam: matchGermany, Status: domain.MatchStatusLive},
 	}
-	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{matches: matches}, pub, &stubScorer{}, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	got, err := svc.ListMatchesByStatus(context.Background(), domain.MatchStatusLive)
 	if err != nil {
@@ -478,7 +489,7 @@ func TestCorrectResult_FinishedMatch_UpdatesScoreAndEmitsEvent(t *testing.T) {
 		Status: domain.MatchStatusFinished, HomeScore: &home, AwayScore: &away}
 	pub := &stubPublisher{}
 	scorer := &stubScorer{}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	result, err := svc.CorrectResult(context.Background(), 7, ScoreUpdate{HomeScore: 2, AwayScore: 1, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
@@ -533,7 +544,7 @@ func TestCorrectResult_PublishFails_FallsBackToSynchronousScoring(t *testing.T) 
 		Status: domain.MatchStatusFinished}
 	pub := &stubPublisher{err: errors.New("redis unavailable")}
 	scorer := &stubScorer{}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, scorer, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	_, err := svc.CorrectResult(context.Background(), 11, ScoreUpdate{HomeScore: 2, AwayScore: 1, WinMethod: nil, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
 	if err != nil {
@@ -548,7 +559,7 @@ func TestCorrectResult_WithWinMethod_IncludedInEvent(t *testing.T) {
 	match := &domain.Match{ID: 12, HomeTeam: matchBrazil, AwayTeam: matchArgentina,
 		Status: domain.MatchStatusFinished}
 	pub := &stubPublisher{}
-	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &noopAuditLogger{}, zap.NewNop())
+	svc := NewMatchService(&stubMatchRepo{match: match}, pub, &stubScorer{}, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop())
 
 	wm := domain.WinMethodExtraTime
 	_, err := svc.CorrectResult(context.Background(), 12, ScoreUpdate{HomeScore: 1, AwayScore: 0, WinMethod: &wm, PenaltyWinner: nil, PenaltyHomeScore: nil, PenaltyAwayScore: nil})
@@ -646,7 +657,7 @@ func TestMatchService_UpdateSlots_DelegatesToRepo(t *testing.T) {
 func TestMatchService_UpdateSlots_RepoError_Propagated(t *testing.T) {
 	svc := NewMatchService(
 		&stubMatchRepo{err: apperrors.NotFound("match not found")},
-		&stubPublisher{}, &stubScorer{}, &noopAuditLogger{}, zap.NewNop(),
+		&stubPublisher{}, &stubScorer{}, &stubExtraScorer{}, &noopAuditLogger{}, zap.NewNop(),
 	)
 
 	_, err := svc.UpdateSlots(context.Background(), 99, nil, nil)

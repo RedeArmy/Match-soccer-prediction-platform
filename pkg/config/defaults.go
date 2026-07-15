@@ -67,11 +67,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("logger.level", "info")
 	v.SetDefault("logger.encoding", "json")
 
-	// cors.allowedOrigins intentionally defaults to empty. An empty list means
-	// the rs/cors middleware rejects all cross-origin requests, which is the
-	// safe production default. Deployments must set WCQ_CORS_ALLOWEDORIGINS
-	// explicitly. Localhost origins are permitted in development only and are
-	// rejected by validateProductionConfig when environment != "development".
+	// cors.allowedOrigins intentionally defaults to empty. middleware.CORS
+	// treats an empty list as reject-all (an explicit AllowOriginFunc that
+	// always returns false) — this is NOT rs/cors' own default: the
+	// underlying library treats a nil/empty AllowedOrigins as allow-every-
+	// origin unless AllowOriginFunc is set, so middleware.CORS must not skip
+	// that step. Deployments must set WCQ_CORS_ALLOWEDORIGINS explicitly.
+	// Localhost origins are permitted in development only and are rejected by
+	// validateProductionConfig when environment != "development".
 	v.SetDefault("cors.allowedOrigins", []string{})
 
 	v.SetDefault("clerk.jwksUrl", "")

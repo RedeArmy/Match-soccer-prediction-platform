@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -24,32 +26,54 @@ import (
 // ExceedsAMLThreshold is a non-blocking check: it returns true when the
 // amount meets or exceeds the Guatemalan UAF mandatory reporting threshold.
 // The caller must record an AML audit event but must not reject the transaction.
+//
+// Every method that takes amountCents also takes currency: all tier caps and
+// the AML threshold are denominated in GTQ (system_params, "Q%.2f" in the
+// user-facing messages), but deposits/withdrawals can be USD-denominated
+// (PayPal is always USD; Recurrente and bank transfers can be either). Passing
+// the currency lets the gate convert to a GTQ-equivalent before comparing —
+// omitting it previously meant a USD amount was compared against a GTQ cap
+// 1:1, letting an unverified user move ~7-8x their real GTQ limit in a single
+// USD transaction with no AML flag. currency == "" is treated as GTQ, matching
+// every call site that predates this parameter.
 type KYCGate interface {
-	// CheckWithdrawal returns nil when userID may withdraw amountCents.
+	// CheckWithdrawal returns nil when userID may withdraw amountCents (in currency).
 	// Returns apperrors.Forbidden with an explanation when blocked by KYC tier.
-	CheckWithdrawal(ctx context.Context, userID, amountCents int) error
-	// CheckDeposit returns nil when userID may receive a deposit of amountCents.
-	// Tier 0 and Tier 1 share the Tier-1 per-transaction cap; higher tiers have
-	// their own caps; Tier 3 is unlimited. No tier is fully blocked from depositing.
-	CheckDeposit(ctx context.Context, userID, amountCents int) error
+	CheckWithdrawal(ctx context.Context, userID, amountCents int, currency string) error
+	// CheckDeposit returns nil when userID may receive a deposit of amountCents
+	// (in currency). Tier 0 and Tier 1 share the Tier-1 per-transaction cap;
+	// higher tiers have their own caps; Tier 3 is unlimited. No tier is fully
+	// blocked from depositing.
+	CheckDeposit(ctx context.Context, userID, amountCents int, currency string) error
 	// CheckWinFreeze reports whether a prize credit should be frozen.
 	// Returns (true, reason, nil) for any prize amount when the user is below
 	// Tier 2. Returns (false, "", nil) when the prize can be credited freely.
+	// prizeCents is always GTQ (the entry-fee pool it is drawn from is
+	// GTQ-denominated) — no currency parameter needed.
 	CheckWinFreeze(ctx context.Context, userID, prizeCents int) (bool, string, error)
-	// ExceedsAMLThreshold returns true when amountCents meets or exceeds the
-	// kyc.aml_threshold_cents system parameter (default Q25,000). The caller
-	// must write an audit event; the transaction itself is never blocked.
-	ExceedsAMLThreshold(ctx context.Context, amountCents int) (bool, error)
+	// ExceedsAMLThreshold returns true when amountCents (in currency) meets or
+	// exceeds the kyc.aml_threshold_cents system parameter (default Q25,000).
+	// The caller must write an audit event; the transaction itself is never blocked.
+	ExceedsAMLThreshold(ctx context.Context, amountCents int, currency string) (bool, error)
 	// ExceedsCumulativeAMLThreshold returns true when the user's cumulative
-	// credit transactions in the last 24 hours plus amountCents meet or exceed
-	// the AML threshold. Non-blocking: caller must write an audit event.
-	ExceedsCumulativeAMLThreshold(ctx context.Context, userID, amountCents int) (bool, error)
+	// credit transactions in the last 24 hours plus amountCents (in currency)
+	// meet or exceed the AML threshold. Non-blocking: caller must write an
+	// audit event. NOTE: the historical 24h sum itself is read directly from
+	// balance_ledger.delta_cents, which is not currently normalised to a single
+	// currency at write time (see toGTQCents doc comment) — only the new
+	// transaction passed here is converted. A user with prior USD-denominated
+	// ledger rows can still under-count the rolling total; that is a deeper,
+	// pre-existing ledger-currency issue tracked separately, not fixed by this
+	// parameter.
+	ExceedsCumulativeAMLThreshold(ctx context.Context, userID, amountCents int, currency string) (bool, error)
 	// CheckDepositVelocity returns apperrors.Forbidden when userID has exceeded
 	// the rolling 24-hour deposit limit for their KYC tier. Blocking check.
-	CheckDepositVelocity(ctx context.Context, userID, amountCents int) error
+	// Same historical-sum caveat as ExceedsCumulativeAMLThreshold applies.
+	CheckDepositVelocity(ctx context.Context, userID, amountCents int, currency string) error
 	// CheckWithdrawalVelocity returns apperrors.Forbidden when userID has exceeded
 	// the rolling 24-hour withdrawal limit for their KYC tier. Blocking check.
-	CheckWithdrawalVelocity(ctx context.Context, userID, amountCents int) error
+	// Same historical-sum caveat as ExceedsCumulativeAMLThreshold applies.
+	CheckWithdrawalVelocity(ctx context.Context, userID, amountCents int, currency string) error
 	// CheckIPSubmissionVelocity returns apperrors.RateLimited when the given IP
 	// has submitted more KYC profiles within the velocity window than the
 	// kyc.ip_velocity_max_submissions param allows. Empty ip is a no-op.
@@ -77,6 +101,7 @@ type kycGate struct {
 	metrics     *KYCMetrics
 	ledger      repository.BalanceLedgerRepository // optional; nil disables cumulative checks
 	profileRepo repository.KYCProfileRepository    // optional; nil disables IP velocity check
+	log         *zap.Logger                        // optional; nil disables the unrecognised-currency warning in toGTQCents
 }
 
 // NewKYCGate constructs a KYCGate backed by the given repositories.
@@ -96,7 +121,12 @@ func (g *kycGate) SetMetrics(m *KYCMetrics) { g.metrics = m }
 // Called once at startup; nil disables CheckIPSubmissionVelocity (safe in tests).
 func (g *kycGate) SetProfileRepo(repo repository.KYCProfileRepository) { g.profileRepo = repo }
 
-func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) error {
+// SetLogger wires a logger used to warn on an unrecognised currency in
+// toGTQCents. Called once at startup; nil is safe (the warning is skipped).
+func (g *kycGate) SetLogger(log *zap.Logger) { g.log = log }
+
+func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int, currency string) error {
+	amountCents = g.toGTQCents(ctx, amountCents, currency)
 	u, err := g.userFor(ctx, userID)
 	if err != nil {
 		return err
@@ -144,7 +174,8 @@ func (g *kycGate) CheckWithdrawal(ctx context.Context, userID, amountCents int) 
 	return nil
 }
 
-func (g *kycGate) CheckDeposit(ctx context.Context, userID, amountCents int) error {
+func (g *kycGate) CheckDeposit(ctx context.Context, userID, amountCents int, currency string) error {
+	amountCents = g.toGTQCents(ctx, amountCents, currency)
 	u, err := g.userFor(ctx, userID)
 	if err != nil {
 		return err
@@ -220,6 +251,39 @@ func (g *kycGate) userFor(ctx context.Context, userID int) (*domain.User, error)
 	return u, nil
 }
 
+// toGTQCents converts amountCents (denominated in currency) to GTQ centavos
+// so it can be compared against the GTQ-denominated tier caps and AML
+// threshold below. currency == "" is treated as GTQ (every call site written
+// before this parameter existed implicitly assumed GTQ, so this keeps that
+// behaviour rather than silently reinterpreting old call sites).
+//
+// The conversion uses payment.usd_gtq_rate — the same fixed operational rate
+// WithdrawalService.toGTQCents already uses to compute GTQReservedCents — not
+// the live competitive-margin rate ExchangeRateService uses for actual
+// crediting. This is a compliance/monitoring approximation of transaction
+// value, not a payout amount, so the simpler fixed-rate conversion is the
+// right tool: it only needs to be roughly right, not exact to the centavo.
+//
+// Any currency other than "" / "GTQ" / "USD" is unsupported by this system
+// today (bank transfers and Recurrente/PayPal only ever produce GTQ or USD)
+// and is treated as GTQ with a warning log, rather than silently exempting an
+// unrecognised currency from every KYC/AML check.
+func (g *kycGate) toGTQCents(ctx context.Context, amountCents int, currency string) int {
+	switch currency {
+	case "", "GTQ":
+		return amountCents
+	case "USD":
+		rate := g.intParam(ctx, domain.ParamKeyUSDGTQRate, domain.DefaultUSDGTQRate)
+		return amountCents * rate / 100
+	default:
+		if g.log != nil {
+			g.log.Warn("kyc_gate: unrecognised currency, treating as GTQ for compliance check",
+				zap.String("currency", currency))
+		}
+		return amountCents
+	}
+}
+
 // intParam reads a system param as an integer, falling back to defaultVal when
 // the key is absent or the stored string cannot be parsed. This mirrors the
 // pattern used by WithdrawalService and other param-consuming services.
@@ -235,7 +299,8 @@ func (g *kycGate) intParam(ctx context.Context, key string, defaultVal int) int 
 	return v
 }
 
-func (g *kycGate) ExceedsAMLThreshold(ctx context.Context, amountCents int) (bool, error) {
+func (g *kycGate) ExceedsAMLThreshold(ctx context.Context, amountCents int, currency string) (bool, error) {
+	amountCents = g.toGTQCents(ctx, amountCents, currency)
 	threshold := g.intParam(ctx, domain.ParamKeyKYCAMLThresholdCents, domain.DefaultKYCAMLThresholdCents)
 	exceeds := amountCents >= threshold
 	if exceeds {
@@ -244,7 +309,8 @@ func (g *kycGate) ExceedsAMLThreshold(ctx context.Context, amountCents int) (boo
 	return exceeds, nil
 }
 
-func (g *kycGate) CheckDepositVelocity(ctx context.Context, userID, amountCents int) error {
+func (g *kycGate) CheckDepositVelocity(ctx context.Context, userID, amountCents int, currency string) error {
+	amountCents = g.toGTQCents(ctx, amountCents, currency)
 	if g.ledger == nil {
 		return nil
 	}
@@ -287,7 +353,8 @@ func (g *kycGate) CheckDepositVelocity(ctx context.Context, userID, amountCents 
 	return nil
 }
 
-func (g *kycGate) CheckWithdrawalVelocity(ctx context.Context, userID, amountCents int) error {
+func (g *kycGate) CheckWithdrawalVelocity(ctx context.Context, userID, amountCents int, currency string) error {
+	amountCents = g.toGTQCents(ctx, amountCents, currency)
 	if g.ledger == nil {
 		return nil
 	}
@@ -338,7 +405,8 @@ func (g *kycGate) CheckWithdrawalVelocity(ctx context.Context, userID, amountCen
 	return nil
 }
 
-func (g *kycGate) ExceedsCumulativeAMLThreshold(ctx context.Context, userID, amountCents int) (bool, error) {
+func (g *kycGate) ExceedsCumulativeAMLThreshold(ctx context.Context, userID, amountCents int, currency string) (bool, error) {
+	amountCents = g.toGTQCents(ctx, amountCents, currency)
 	threshold := g.intParam(ctx, domain.ParamKeyKYCAMLThresholdCents, domain.DefaultKYCAMLThresholdCents)
 	if amountCents >= threshold {
 		return true, nil

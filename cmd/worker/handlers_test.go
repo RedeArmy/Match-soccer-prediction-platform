@@ -185,7 +185,7 @@ func TestMatchStartedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 
 func TestMatchFinishedHandler_MapPayload_CallsScorer(t *testing.T) {
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, postScoringDeps{}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, postScoringDeps{}, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithMap(99)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -200,7 +200,7 @@ func TestMatchFinishedHandler_MapPayload_CallsScorer(t *testing.T) {
 
 func TestMatchFinishedHandler_StructPayload_CallsScorer(t *testing.T) {
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, postScoringDeps{}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, postScoringDeps{}, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithStruct(5)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
@@ -212,7 +212,7 @@ func TestMatchFinishedHandler_StructPayload_CallsScorer(t *testing.T) {
 
 func TestMatchFinishedHandler_ScorerError_PropagatesError(t *testing.T) {
 	scorer := &stubScorer{err: errors.New("db down")}
-	h := newMatchFinishedHandler(scorer, postScoringDeps{}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, postScoringDeps{}, zap.NewNop())
 
 	err := h(context.Background(), envelopeWithMap(1))
 	if err == nil {
@@ -225,7 +225,7 @@ func TestMatchFinishedHandler_UndecodablePayload_ReturnsNil(t *testing.T) {
 	// return nil rather than propagating the error, because retrying a
 	// structurally invalid message would burn retry budget uselessly.
 	scorer := &stubScorer{}
-	h := newMatchFinishedHandler(scorer, postScoringDeps{}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, postScoringDeps{}, zap.NewNop())
 
 	env := events.Envelope{
 		Type:    events.EventMatchFinished,
@@ -375,7 +375,7 @@ func TestMatchFinishedHandler_WithSnapshot_ScoresAndSnapshots(t *testing.T) {
 	scorer := &stubScorer{}
 	predRepo := &stubWorkerPredRepo{ids: []int{1, 2}}
 	snap := &stubSnapshotter{snap: &domain.LeaderboardSnapshot{ID: 1}}
-	h := newMatchFinishedHandler(scorer, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
+	h := newMatchFinishedHandler(scorer, nil, postScoringDeps{snapshotter: snap, predRepo: predRepo}, zap.NewNop())
 
 	if err := h(context.Background(), envelopeWithStruct(10)); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)

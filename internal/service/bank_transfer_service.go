@@ -65,10 +65,13 @@ func NewBankTransferService(
 }
 
 func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents int, currency, storageKey, contentType string, fileSize int) (*domain.BankTransferProof, error) {
-	if err := s.kycGate.CheckDeposit(ctx, userID, amountCents); err != nil {
+	if currency == "" {
+		currency = "GTQ"
+	}
+	if err := s.kycGate.CheckDeposit(ctx, userID, amountCents, currency); err != nil {
 		return nil, err
 	}
-	if err := s.kycGate.CheckDepositVelocity(ctx, userID, amountCents); err != nil {
+	if err := s.kycGate.CheckDepositVelocity(ctx, userID, amountCents, currency); err != nil {
 		return nil, err
 	}
 	if amountCents <= 0 {
@@ -86,9 +89,6 @@ func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents in
 		ContentType: contentType,
 		FileSize:    fileSize,
 	}
-	if proof.Currency == "" {
-		proof.Currency = "GTQ"
-	}
 
 	if err := s.proofRepo.Create(ctx, proof); err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func (s *bankTransferService) Upload(ctx context.Context, userID, amountCents in
 		"file_size":    fileSize,
 	})
 
-	if exceeds, _ := s.kycGate.ExceedsAMLThreshold(ctx, amountCents); exceeds {
+	if exceeds, _ := s.kycGate.ExceedsAMLThreshold(ctx, amountCents, currency); exceeds {
 		s.audit.Log(ctx, &userID, nil, domain.AuditActionAMLFlagged, &resType, &proofID, map[string]any{
 			"amount_cents": amountCents,
 			"currency":     proof.Currency,
@@ -155,7 +155,7 @@ func (s *bankTransferService) ApproveTransfer(ctx context.Context, proofID, admi
 	if overrideAmountCents != nil {
 		velocityAmount = *overrideAmountCents
 	}
-	if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, velocityAmount); err != nil {
+	if err := s.kycGate.CheckDepositVelocity(ctx, pending.UserID, velocityAmount, pending.Currency); err != nil {
 		return nil, err
 	}
 

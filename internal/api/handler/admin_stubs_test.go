@@ -281,3 +281,21 @@ func (s *stubScoringRuleSvc) GetByPhase(_ context.Context, _ domain.MatchPhase) 
 func (s *stubScoringRuleSvc) Update(_ context.Context, _ domain.MatchPhase, _ domain.ScoringRuleInput, _ int) (*domain.ScoringRule, error) {
 	return s.rule, s.err
 }
+
+// ── ExtraRuleService stub ─────────────────────────────────────────────────────
+
+type stubExtraRuleSvc struct {
+	rule  *domain.ExtraRule
+	rules []*domain.ExtraRule
+	err   error
+}
+
+func (s *stubExtraRuleSvc) List(_ context.Context) ([]*domain.ExtraRule, error) {
+	return s.rules, s.err
+}
+func (s *stubExtraRuleSvc) GetByType(_ context.Context, _ domain.ExtraType) (*domain.ExtraRule, error) {
+	return s.rule, s.err
+}
+func (s *stubExtraRuleSvc) Update(_ context.Context, _ domain.ExtraType, _ domain.ExtraRuleInput, _ int) (*domain.ExtraRule, error) {
+	return s.rule, s.err
+}

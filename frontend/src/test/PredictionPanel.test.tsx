@@ -28,6 +28,8 @@ vi.mock("@/lib/api", () => ({
     submitPrediction: vi.fn(),
     updatePrediction: vi.fn(),
     getSlots: vi.fn().mockResolvedValue([]),
+    getMyExtras: vi.fn().mockResolvedValue([]),
+    submitExtra: vi.fn(),
   },
 }));
 
@@ -268,6 +270,103 @@ describe("PredictionPanel", () => {
     expect(
       await screen.findByText("No se pudo guardar la prediccion"),
     ).toBeInTheDocument();
+  });
+
+  it("renders both extra selectors for a scheduled match", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    await screen.findByText("Canadá");
+
+    expect(
+      screen.getByRole("combobox", { name: "Primer equipo en anotar" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Resultado al medio tiempo" }),
+    ).toBeInTheDocument();
+  });
+
+  it("submits a first-scorer extra guess", async () => {
+    vi.mocked(api.getMatches).mockResolvedValueOnce([scheduledMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+    vi.mocked(api.submitExtra).mockResolvedValueOnce({
+      id: 1,
+      user_id: 1,
+      match_id: scheduledMatch.id,
+      extra_type: "first_scorer",
+      answer: "home",
+      points: null,
+      created_at: "",
+      updated_at: "",
+    });
+
+    renderPanel();
+    await screen.findByText("Canadá");
+
+    const select = screen.getByRole("combobox", {
+      name: "Primer equipo en anotar",
+    });
+    fireEvent.change(select, { target: { value: "home" } });
+
+    await waitFor(() => {
+      expect(api.submitExtra).toHaveBeenCalledWith("tok", {
+        match_id: scheduledMatch.id,
+        extra_type: "first_scorer",
+        answer: "home",
+      });
+    });
+  });
+
+  it("shows the resolved first-scorer answer and points for a finished match", async () => {
+    const finishedMatch = {
+      ...scheduledMatch,
+      id: 31,
+      status: "finished",
+      home_score: 1,
+      away_score: 0,
+      first_scoring_team: "home",
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([finishedMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+    vi.mocked(api.getMyExtras).mockResolvedValueOnce([
+      {
+        id: 5,
+        user_id: 1,
+        match_id: finishedMatch.id,
+        extra_type: "first_scorer",
+        answer: "home",
+        points: 3,
+        created_at: "",
+        updated_at: "",
+      },
+    ] as never);
+
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Pasados" }));
+
+    expect(await screen.findByText("+3 pts extra")).toBeInTheDocument();
+  });
+
+  it("shows extraUnavailable for a finished match without a resolved first-scorer answer", async () => {
+    const finishedMatch = {
+      ...scheduledMatch,
+      id: 32,
+      status: "finished",
+      home_score: 1,
+      away_score: 0,
+      first_scoring_team: null,
+    };
+    vi.mocked(api.getMatches).mockResolvedValueOnce([finishedMatch] as never);
+    vi.mocked(api.getMyPredictions).mockResolvedValueOnce([]);
+
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Pasados" }));
+
+    // Both extras are unresolved for this match (first_scoring_team is null
+    // and halftime scores were never set), so the placeholder appears twice.
+    const placeholders = await screen.findAllByText("No disponible");
+    expect(placeholders).toHaveLength(2);
   });
 
   it("shows points placeholder when finished match has no scored prediction", async () => {
@@ -1066,7 +1165,7 @@ describe("PredictionPanel", () => {
     renderPanel();
     await screen.findByText("Ganador en penales");
 
-    const select = screen.getByRole("combobox");
+    const select = screen.getByRole("combobox", { name: "Ganador en penales" });
     fireEvent.change(select, { target: { value: "home" } });
 
     // Saving now should not show the validation error.
@@ -1092,7 +1191,7 @@ describe("PredictionPanel", () => {
     renderPanel();
     await screen.findByText("Ganador en penales");
 
-    const select = screen.getByRole("combobox");
+    const select = screen.getByRole("combobox", { name: "Ganador en penales" });
     // Select a team first, then clear back to blank.
     fireEvent.change(select, { target: { value: "away" } });
     fireEvent.change(select, { target: { value: "" } });

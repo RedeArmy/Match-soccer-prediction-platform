@@ -105,6 +105,16 @@ type Match struct {
 	HomeSlotID *int    // nil for group-stage matches; links to tournament_slots for knockout
 	AwaySlotID *int    // nil for group-stage matches; links to tournament_slots for knockout
 	MatchCode  *string // FIFA match code e.g. "M73"; nil for non-seeded matches
+
+	// Extras result fields — the "correct answers" for match extras (bonus
+	// predictions), auto-resolved by the sync worker once the match finishes
+	// (or set manually by an admin via CorrectResult when the provider is
+	// missing this data). All three are nil until resolved; a nil value after
+	// the match has finished means the extra is not scorable for that match
+	// (e.g. legacy matches finished before this feature existed).
+	HalftimeHomeScore *int
+	HalftimeAwayScore *int
+	FirstScoringTeam  *string // "home", "away", or "none" (0-0 at full time)
 }
 
 // ── Scoring rule ──────────────────────────────────────────────────────────────

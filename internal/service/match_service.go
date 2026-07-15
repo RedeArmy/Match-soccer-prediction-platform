@@ -26,6 +26,16 @@ type ScoreUpdate struct {
 	PenaltyWinner    *string
 	PenaltyHomeScore *int
 	PenaltyAwayScore *int
+
+	// HalftimeHomeScore, HalftimeAwayScore, and FirstScoringTeam feed the
+	// "extras" scoring engine (ExtraScorer). All three are optional: the sync
+	// worker populates them from provider data when available, and an admin
+	// may supply them via the same PATCH/correct-result endpoints when the
+	// provider is missing this data. Leaving them nil means the corresponding
+	// extra stays unscored for this match.
+	HalftimeHomeScore *int
+	HalftimeAwayScore *int
+	FirstScoringTeam  *string // "home", "away", or "none"
 }
 
 // UpdateResult enforces the transition rules: a result may only be set when
@@ -63,20 +73,25 @@ type matchService struct {
 	// confirmation. The fallback does not apply to MatchStarted: that event
 	// only triggers notifications, which are best-effort by design.
 	scorer MatchScorer
-	log    *zap.Logger
+	// extraScorer is the same synchronous fallback for match extras (bonus
+	// predictions). Its failure is logged but never blocks or overrides the
+	// scorer fallback above — extras are a bonus feature, not core scoring.
+	extraScorer ExtraScorer
+	log         *zap.Logger
 }
 
 // NewMatchService constructs a matchService with the given dependencies.
-// scorer is invoked as a synchronous fallback when publishing MatchFinished
-// fails; it must not be nil.
+// scorer and extraScorer are invoked as synchronous fallbacks when publishing
+// MatchFinished fails; neither may be nil.
 func NewMatchService(
 	repo repository.MatchRepository,
 	pub events.Publisher,
 	scorer MatchScorer,
+	extraScorer ExtraScorer,
 	audit AuditLogger,
 	log *zap.Logger,
 ) MatchService {
-	return &matchService{repo: repo, pub: pub, scorer: scorer, audit: audit, log: log}
+	return &matchService{repo: repo, pub: pub, scorer: scorer, extraScorer: extraScorer, audit: audit, log: log}
 }
 
 func (s *matchService) CreateMatch(ctx context.Context, match *domain.Match) error {
@@ -222,6 +237,9 @@ func (s *matchService) applyScoreAndPublish(
 	m.PenaltyWinner = score.PenaltyWinner
 	m.PenaltyHomeScore = score.PenaltyHomeScore
 	m.PenaltyAwayScore = score.PenaltyAwayScore
+	m.HalftimeHomeScore = score.HalftimeHomeScore
+	m.HalftimeAwayScore = score.HalftimeAwayScore
+	m.FirstScoringTeam = score.FirstScoringTeam
 	m.Period = nil // clear live-period code when finalising the match
 	m.Status = domain.MatchStatusFinished
 	if err := s.repo.Update(ctx, m); err != nil {
@@ -260,6 +278,10 @@ func (s *matchService) applyScoreAndPublish(
 		if scoreErr := s.scorer.ScoreMatch(ctx, m.ID); scoreErr != nil {
 			s.log.Error("synchronous fallback scoring failed"+suffix,
 				append([]zap.Field{zap.Int("match_id", m.ID), zap.Error(scoreErr)}, tracing.LogFields(ctx)...)...)
+		}
+		if extraErr := s.extraScorer.ScoreExtras(ctx, m.ID); extraErr != nil {
+			s.log.Error("synchronous fallback extras scoring failed"+suffix,
+				append([]zap.Field{zap.Int("match_id", m.ID), zap.Error(extraErr)}, tracing.LogFields(ctx)...)...)
 		}
 	}
 	return m, nil
