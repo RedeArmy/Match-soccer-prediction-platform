@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
 	"github.com/rede/world-cup-quiniela/internal/repository"
-	"github.com/rede/world-cup-quiniela/pkg/apperrors"
 	"github.com/rede/world-cup-quiniela/pkg/tracing"
 )
 
@@ -111,17 +109,9 @@ func (s *extraScoringService) ScoreExtras(ctx context.Context, matchID int) erro
 	span.SetAttributes(attribute.Int("match_id", matchID))
 	defer span.End()
 
-	match, err := s.matchRepo.GetByID(ctx, matchID)
+	match, err := loadFinishedMatch(ctx, s.matchRepo, span, matchID, "extras scoring requires a finished match")
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "match lookup failed")
 		return err
-	}
-	if match == nil {
-		return apperrors.NotFound(fmt.Sprintf("match %d not found", matchID))
-	}
-	if match.Status != domain.MatchStatusFinished {
-		return apperrors.Validation("extras scoring requires a finished match")
 	}
 
 	answers := correctExtraAnswers(match)
