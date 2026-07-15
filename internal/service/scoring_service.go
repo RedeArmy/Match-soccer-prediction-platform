@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/rede/world-cup-quiniela/internal/domain"
@@ -195,17 +196,9 @@ func (s *scoringService) ScoreMatch(ctx context.Context, matchID int) error {
 	span.SetAttributes(attribute.Int("match_id", matchID))
 	defer span.End()
 
-	match, err := s.matchRepo.GetByID(ctx, matchID)
+	match, err := loadFinishedMatch(ctx, s.matchRepo, span, matchID, "scoring requires a finished match with a confirmed result")
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "match lookup failed")
 		return err
-	}
-	if match == nil {
-		return apperrors.NotFound(fmt.Sprintf("match %d not found", matchID))
-	}
-	if match.Status != domain.MatchStatusFinished {
-		return apperrors.Validation("scoring requires a finished match with a confirmed result")
 	}
 	if match.HomeScore == nil || match.AwayScore == nil {
 		return apperrors.Validation("match result is missing home or away score")
@@ -399,6 +392,26 @@ func goalDiff(home, away int) int {
 		return -d
 	}
 	return d
+}
+
+// loadFinishedMatch fetches matchID and validates it exists and is finished,
+// recording any lookup error on span. Shared by ScoreMatch and
+// extraScoringService.ScoreExtras, whose match-existence and finished-status
+// validation is otherwise identical bar the "not finished" error message.
+func loadFinishedMatch(ctx context.Context, matchRepo repository.MatchRepository, span trace.Span, matchID int, notFinishedMsg string) (*domain.Match, error) {
+	match, err := matchRepo.GetByID(ctx, matchID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "match lookup failed")
+		return nil, err
+	}
+	if match == nil {
+		return nil, apperrors.NotFound(fmt.Sprintf("match %d not found", matchID))
+	}
+	if match.Status != domain.MatchStatusFinished {
+		return nil, apperrors.Validation(notFinishedMsg)
+	}
+	return match, nil
 }
 
 var _ MatchScorer = (*scoringService)(nil)

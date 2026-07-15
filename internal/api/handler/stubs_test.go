@@ -86,10 +86,12 @@ const (
 
 // stubMatchSvc implements service.MatchService with configurable returns.
 type stubMatchSvc struct {
-	match     *domain.Match
-	matches   []*domain.Match
-	err       error
-	lastScore service.ScoreUpdate
+	match            *domain.Match
+	matches          []*domain.Match
+	err              error
+	lastScore        service.ScoreUpdate // last value passed to UpdateResult
+	corrected        int                 // number of CorrectResult calls
+	lastCorrectScore service.ScoreUpdate // last value passed to CorrectResult
 }
 
 func (s *stubMatchSvc) CreateMatch(_ context.Context, _ *domain.Match) error {
@@ -115,7 +117,8 @@ func (s *stubMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, erro
 	return s.match, s.err
 }
 func (s *stubMatchSvc) CorrectResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
-	s.lastScore = score
+	s.corrected++
+	s.lastCorrectScore = score
 	return s.match, s.err
 }
 func (s *stubMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {

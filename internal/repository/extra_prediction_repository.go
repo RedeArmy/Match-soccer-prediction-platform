@@ -115,41 +115,8 @@ func (r *PostgresExtraPredictionRepository) ScoreMatchBatch(ctx context.Context,
 		if err != nil {
 			return err
 		}
-		return applyExtraPointsUpdate(ctx, tx, points, chunkSize)
+		return applyChunkedPointsUpdate(ctx, tx, "extra_predictions", points, chunkSize)
 	})
-}
-
-// applyExtraPointsUpdate converts points into parallel id/pts slices and
-// executes the UPDATE in chunkSize-row UNNEST batches, all inside the
-// caller's open transaction. An empty points map is a no-op.
-func applyExtraPointsUpdate(ctx context.Context, tx pgx.Tx, points map[int]int, chunkSize int) error {
-	if len(points) == 0 {
-		return nil
-	}
-
-	ids := make([]int, 0, len(points))
-	pts := make([]int, 0, len(points))
-	for id, p := range points {
-		ids = append(ids, id)
-		pts = append(pts, p)
-	}
-
-	for i := 0; i < len(ids); i += chunkSize {
-		end := min(i+chunkSize, len(ids))
-		if _, err := tx.Exec(ctx,
-			`UPDATE extra_predictions
-			    SET points     = v.points,
-			        scored_at  = NOW(),
-			        updated_at = NOW()
-			   FROM UNNEST($1::int[], $2::int[]) AS v(id, points)
-			  WHERE extra_predictions.id = v.id
-			    AND extra_predictions.scored_at IS NULL`,
-			ids[i:end], pts[i:end],
-		); err != nil {
-			return apperrors.Internal(err)
-		}
-	}
-	return nil
 }
 
 var _ ExtraPredictionRepository = (*PostgresExtraPredictionRepository)(nil)
