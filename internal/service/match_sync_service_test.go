@@ -113,8 +113,10 @@ type stubSyncMatchSvc struct {
 	startErr           error
 	finishErr          error
 	correctErr         error
-	lastPenaltyWinner  *string // last value passed to UpdateResult
-	lastCorrectPWinner *string // last value passed to CorrectResult
+	lastPenaltyWinner  *string             // last value passed to UpdateResult
+	lastCorrectPWinner *string             // last value passed to CorrectResult
+	lastScore          service.ScoreUpdate // last value passed to UpdateResult
+	lastCorrectScore   service.ScoreUpdate // last value passed to CorrectResult
 }
 
 func (s *stubSyncMatchSvc) CreateMatch(_ context.Context, _ *domain.Match) error { return nil }
@@ -135,11 +137,13 @@ func (s *stubSyncMatchSvc) StartMatch(_ context.Context, _ int) (*domain.Match, 
 func (s *stubSyncMatchSvc) UpdateResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
 	s.finished++
 	s.lastPenaltyWinner = score.PenaltyWinner
+	s.lastScore = score
 	return &domain.Match{Status: domain.MatchStatusFinished}, s.finishErr
 }
 func (s *stubSyncMatchSvc) CorrectResult(_ context.Context, _ int, score service.ScoreUpdate) (*domain.Match, error) {
 	s.corrected++
 	s.lastCorrectPWinner = score.PenaltyWinner
+	s.lastCorrectScore = score
 	return &domain.Match{Status: domain.MatchStatusFinished}, s.correctErr
 }
 func (s *stubSyncMatchSvc) CancelMatch(_ context.Context, _ int) (*domain.Match, error) {
@@ -157,6 +161,9 @@ type stubProvider struct {
 	byDateErr        error
 	byDateCallCount  int
 	byDateDatesAsked []string
+	events           []footballprovider.MatchEvent
+	eventsErr        error
+	eventsCallCount  int
 }
 
 func (p *stubProvider) GetFixture(_ context.Context, _ int64) (*footballprovider.Fixture, error) {
@@ -170,6 +177,10 @@ func (p *stubProvider) GetFixturesByDate(_ context.Context, _, _ int, date strin
 	p.byDateCallCount++
 	p.byDateDatesAsked = append(p.byDateDatesAsked, date)
 	return p.byDateFixtures, p.byDateErr
+}
+func (p *stubProvider) GetFixtureEvents(_ context.Context, _ int64) ([]footballprovider.MatchEvent, error) {
+	p.eventsCallCount++
+	return p.events, p.eventsErr
 }
 
 func extID(n int64) *int64 { return &n }
@@ -670,6 +681,9 @@ func (p *stubProviderFn) GetLiveFixtures(_ context.Context, _, _ int) ([]*footba
 	return nil, nil
 }
 func (p *stubProviderFn) GetFixturesByDate(_ context.Context, _, _ int, _ string) ([]*footballprovider.Fixture, error) {
+	return nil, nil
+}
+func (p *stubProviderFn) GetFixtureEvents(_ context.Context, _ int64) ([]footballprovider.MatchEvent, error) {
 	return nil, nil
 }
 
@@ -1496,6 +1510,152 @@ func TestMatchSync_PollAndApply_FinishedMatch_RecordsResult(t *testing.T) {
 	}
 	if matchSvc.finished != 1 {
 		t.Errorf("UpdateResult calls: want 1, got %d", matchSvc.finished)
+	}
+}
+
+// ── Extras fields (halftime score / first scorer) ────────────────────────────
+
+func TestMatchSync_PollAndApply_HalftimeScore_CopiedFromFixture(t *testing.T) {
+	id := int64(900)
+	candidate := &domain.Match{
+		ID: 90, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+	}
+	htHome, htAway := 1, 0
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id, Status: footballprovider.StatusFullTime,
+		HomeScore: 2, AwayScore: 1,
+		HalftimeHomeScore: &htHome, HalftimeAwayScore: &htAway,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	if _, err := svc.PollAndApply(context.Background(), 0); err != nil {
+		t.Fatalf("PollAndApply: %v", err)
+	}
+	if matchSvc.lastScore.HalftimeHomeScore == nil || *matchSvc.lastScore.HalftimeHomeScore != 1 {
+		t.Errorf("HalftimeHomeScore: got %v, want 1", matchSvc.lastScore.HalftimeHomeScore)
+	}
+	if matchSvc.lastScore.HalftimeAwayScore == nil || *matchSvc.lastScore.HalftimeAwayScore != 0 {
+		t.Errorf("HalftimeAwayScore: got %v, want 0", matchSvc.lastScore.HalftimeAwayScore)
+	}
+	if provider.eventsCallCount != 1 {
+		t.Errorf("expected GetFixtureEvents called once, got %d", provider.eventsCallCount)
+	}
+}
+
+func TestMatchSync_PollAndApply_ZeroZeroResult_FirstScorerIsNone_NoEventsCall(t *testing.T) {
+	id := int64(901)
+	candidate := &domain.Match{
+		ID: 91, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id, Status: footballprovider.StatusFullTime,
+		HomeScore: 0, AwayScore: 0,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	if _, err := svc.PollAndApply(context.Background(), 0); err != nil {
+		t.Fatalf("PollAndApply: %v", err)
+	}
+	if matchSvc.lastScore.FirstScoringTeam == nil || *matchSvc.lastScore.FirstScoringTeam != "none" {
+		t.Errorf("FirstScoringTeam: got %v, want \"none\"", matchSvc.lastScore.FirstScoringTeam)
+	}
+	if provider.eventsCallCount != 0 {
+		t.Errorf("expected GetFixtureEvents NOT called for a 0-0 result, got %d calls", provider.eventsCallCount)
+	}
+}
+
+func TestMatchSync_PollAndApply_GoalsScored_ResolvesFirstScorerFromEvents(t *testing.T) {
+	id := int64(902)
+	candidate := &domain.Match{
+		ID: 92, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+		HomeTeam:         "Mexico", AwayTeam: "Canada",
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{
+		fixture: &footballprovider.Fixture{
+			ExternalID: id, Status: footballprovider.StatusFullTime,
+			HomeScore: 1, AwayScore: 0, HomeTeam: "Mexico", AwayTeam: "Canada",
+		},
+		events: []footballprovider.MatchEvent{{TeamName: "Mexico", ElapsedMin: 30}},
+	}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	if _, err := svc.PollAndApply(context.Background(), 0); err != nil {
+		t.Fatalf("PollAndApply: %v", err)
+	}
+	if matchSvc.lastScore.FirstScoringTeam == nil || *matchSvc.lastScore.FirstScoringTeam != "home" {
+		t.Errorf("FirstScoringTeam: got %v, want \"home\"", matchSvc.lastScore.FirstScoringTeam)
+	}
+}
+
+func TestMatchSync_PollAndApply_GetFixtureEventsFails_FirstScorerLeftNil_NoOverallError(t *testing.T) {
+	id := int64(903)
+	candidate := &domain.Match{
+		ID: 93, Status: domain.MatchStatusLive,
+		ExternalProvider: strPtr("api-football"),
+		ExternalMatchID:  &id,
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{candidates: []*domain.Match{candidate}}
+	provider := &stubProvider{
+		fixture: &footballprovider.Fixture{
+			ExternalID: id, Status: footballprovider.StatusFullTime,
+			HomeScore: 1, AwayScore: 0,
+		},
+		eventsErr: errors.New("api-football events endpoint unavailable"),
+	}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	if _, err := svc.PollAndApply(context.Background(), 0); err != nil {
+		t.Fatalf("PollAndApply: %v", err)
+	}
+	if matchSvc.lastScore.FirstScoringTeam != nil {
+		t.Errorf("expected nil FirstScoringTeam on provider error, got %v", *matchSvc.lastScore.FirstScoringTeam)
+	}
+	if matchSvc.finished != 1 {
+		t.Errorf("UpdateResult should still be called despite events failure, got %d calls", matchSvc.finished)
+	}
+}
+
+func TestMatchSync_RepairPenaltyData_AlreadyResolvedFirstScorer_SkipsEventsRefetch(t *testing.T) {
+	id := int64(904)
+	firstScorer := "away"
+	toRepair := &domain.Match{
+		ID: 94, Status: domain.MatchStatusFinished,
+		ExternalMatchID:  &id,
+		PenaltyWinner:    nil,
+		FirstScoringTeam: &firstScorer,
+	}
+	matchSvc := &stubSyncMatchSvc{}
+	repo := &stubSyncMatchRepo{finishedPenaltyMissingWinner: []*domain.Match{toRepair}}
+	penHome, penAway := 4, 3
+	provider := &stubProvider{fixture: &footballprovider.Fixture{
+		ExternalID: id, Status: footballprovider.StatusAfterPEN,
+		HomeScore: 1, AwayScore: 1,
+		PenaltyHomeScore: &penHome, PenaltyAwayScore: &penAway,
+	}}
+	svc := buildSyncSvc(repo, matchSvc, provider)
+
+	_, err := svc.DailyFixtureSync(context.Background(), 1, 2026, nil, nil)
+	if err != nil {
+		t.Fatalf("DailyFixtureSync: %v", err)
+	}
+	if provider.eventsCallCount != 0 {
+		t.Errorf("expected GetFixtureEvents NOT called when FirstScoringTeam already resolved, got %d calls", provider.eventsCallCount)
+	}
+	if matchSvc.lastCorrectScore.FirstScoringTeam == nil || *matchSvc.lastCorrectScore.FirstScoringTeam != "away" {
+		t.Errorf("expected the already-resolved value \"away\" to be preserved, got %v", matchSvc.lastCorrectScore.FirstScoringTeam)
 	}
 }
 

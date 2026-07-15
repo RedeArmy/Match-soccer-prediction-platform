@@ -356,6 +356,38 @@ definitions:
       stale:
         type: boolean
     type: object
+  internal_api_handler.ExtraPredictionResponse:
+    properties:
+      answer:
+        type: string
+      created_at:
+        type: string
+      extra_type:
+        type: string
+      id:
+        type: integer
+      match_id:
+        type: integer
+      points:
+        type: integer
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  internal_api_handler.ExtraRuleResponse:
+    properties:
+      extra_type:
+        type: string
+      id:
+        type: integer
+      is_active:
+        type: boolean
+      points:
+        type: integer
+      updated_at:
+        type: string
+    type: object
   internal_api_handler.GlobalLeaderboardEntryResponse:
     properties:
       rank:
@@ -524,8 +556,20 @@ definitions:
         type: string
       external_match_id:
         type: integer
+      first_scoring_team:
+        type: string
       group_label:
         type: string
+      halftime_away_score:
+        type: integer
+      halftime_home_score:
+        description: |-
+          Extras result fields — the "correct answers" for match extras (bonus
+          predictions). Nil until the sync worker (or an admin correction)
+          resolves them; the frontend renders a nil value as "unavailable" rather
+          than guessing, which also covers matches finished before this feature
+          existed (their columns are simply NULL).
+        type: integer
       home_score:
         type: integer
       home_slot_id:
@@ -1322,6 +1366,15 @@ definitions:
       dropped:
         type: integer
     type: object
+  internal_api_handler.submitExtraPredictionRequest:
+    properties:
+      answer:
+        type: string
+      extra_type:
+        type: string
+      match_id:
+        type: integer
+    type: object
   internal_api_handler.submitPredictionRequest:
     properties:
       away_score:
@@ -1394,6 +1447,13 @@ definitions:
             type: integer
         type: object
     type: object
+  internal_api_handler.updateExtraRuleRequest:
+    properties:
+      is_active:
+        type: boolean
+      points:
+        type: integer
+    type: object
   internal_api_handler.updateGroupSettingsRequest:
     properties:
       entry_fee:
@@ -1420,6 +1480,18 @@ definitions:
   internal_api_handler.updateResultRequest:
     properties:
       away_score:
+        type: integer
+      first_scoring_team:
+        type: string
+      halftime_away_score:
+        type: integer
+      halftime_home_score:
+        description: |-
+          Extras result fields — optional. The sync worker normally populates
+          these from provider data; an admin may supply them here as a manual
+          correction/escape-hatch when the provider is missing this data (e.g.
+          the goal-events feed failed for a fixture). first_scoring_team must be
+          "home", "away", or "none" when present.
         type: integer
       home_score:
         type: integer
@@ -2110,6 +2182,124 @@ paths:
       summary: Refresh exchange rate (admin)
       tags:
       - admin-exchange-rate
+  /api/v1/admin/extra-rules:
+    get:
+      description: Returns the point configuration for both match extras
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.ExtraRuleResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List extra rules
+      tags:
+      - admin-extra-rules
+  /api/v1/admin/extra-rules/{extraType}:
+    get:
+      description: Returns the point configuration for the requested extra type.
+      parameters:
+      - description: Extra type (first_scorer, halftime_result)
+        in: path
+        name: extraType
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.ExtraRuleResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Type not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get extra rule for a type
+      tags:
+      - admin-extra-rules
+    patch:
+      consumes:
+      - application/json
+      description: Sets a new point value and active flag for the requested extra
+      parameters:
+      - description: Extra type
+        in: path
+        name: extraType
+        required: true
+        type: string
+      - description: New point value
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.updateExtraRuleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.ExtraRuleResponse'
+        "400":
+          description: Invalid JSON
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "403":
+          description: Caller is not an admin
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Type not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Validation error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update extra rule for a type
+      tags:
+      - admin-extra-rules
   /api/v1/admin/groups/{id}:
     delete:
       description: Soft-deletes the quiniela group. All memberships and predictions
@@ -4580,6 +4770,81 @@ paths:
       summary: Download bank transfer proof file
       tags:
       - balance
+  /api/v1/extras:
+    post:
+      consumes:
+      - application/json
+      description: Submits (or updates) a guess for one match extra — a bonus
+      parameters:
+      - description: Extra guess
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_handler.submitExtraPredictionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_handler.ExtraPredictionResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "404":
+          description: Match not found
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Submit a match extra guess
+      tags:
+      - extras
+  /api/v1/extras/me:
+    get:
+      description: Returns the authenticated caller's extra guesses for the given
+      parameters:
+      - description: Comma-separated match IDs
+        in: query
+        name: match_ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api_handler.ExtraPredictionResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "422":
+          description: Invalid match_ids
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my match extra guesses
+      tags:
+      - extras
   /api/v1/groups:
     post:
       consumes:

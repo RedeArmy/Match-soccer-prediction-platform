@@ -25,12 +25,14 @@ import (
 // and forwarded to buildHandlers. Grouping them reduces the parameter count and
 // makes future additions a single-field change.
 type coreRepos struct {
-	user     repository.UserRepository
-	match    repository.MatchRepository
-	pred     repository.PredictionRepository
-	member   repository.GroupMembershipRepository
-	sysParam repository.SystemParamRepository
-	session  repository.SessionRepository
+	user      repository.UserRepository
+	match     repository.MatchRepository
+	pred      repository.PredictionRepository
+	member    repository.GroupMembershipRepository
+	sysParam  repository.SystemParamRepository
+	session   repository.SessionRepository
+	extraPred repository.ExtraPredictionRepository
+	extraRule repository.ExtraRuleRepository
 }
 
 // kycModuleDeps groups the shared dependencies forwarded from buildHandlers to
@@ -54,6 +56,7 @@ type appHandlers struct {
 	auth               *handler.AuthHandler
 	match              *handler.MatchHandler
 	prediction         *handler.PredictionHandler
+	extraPrediction    *handler.ExtraPredictionHandler
 	group              *handler.GroupHandler
 	leaderboard        *handler.LeaderboardHandler
 	userStats          *handler.UserStatsHandler
@@ -77,6 +80,7 @@ type appHandlers struct {
 	adminConflict      *handler.AdminConflictHandler
 	adminStats         *handler.AdminStatsHandler
 	adminScoringRules  *handler.AdminScoringRuleHandler
+	adminExtraRules    *handler.AdminExtraRuleHandler
 	adminNotifTemplate *handler.AdminNotificationTemplateHandler
 	adminNotifDLQ      *handler.AdminNotificationDLQHandler
 	adminSSEStats      *handler.AdminSSEStatsHandler
@@ -111,6 +115,7 @@ func (s *Server) buildHandlers(
 	repos coreRepos,
 	params service.SystemParamService,
 	scorer service.MatchScorer,
+	extraScorer service.ExtraScorer,
 ) appHandlers {
 	quinielaRepo := repository.NewPostgresQuinielaRepository(s.db, repository.WithQuinielaLogger(s.log))
 	if err := quinielaRepo.RegisterMetrics(otel.GetMeterProvider().Meter("wcq")); err != nil {
@@ -124,6 +129,7 @@ func (s *Server) buildHandlers(
 	paymentRepo := repository.NewPostgresPaymentRecordRepository(s.db)
 	snapRepo := repository.NewPostgresLeaderboardSnapshotRepository(s.db)
 	scoringRuleRepo := repository.NewPostgresScoringRuleRepository(s.db)
+	extraRuleRepo := repository.NewPostgresExtraRuleRepository(s.db)
 	ledgerRepo := repository.NewPostgresBalanceLedgerRepository(s.db)
 	proofRepo := repository.NewPostgresBankTransferProofRepository(s.db)
 	withdrawalRepo := repository.NewPostgresWithdrawalRequestRepository(s.db).
@@ -160,7 +166,7 @@ func (s *Server) buildHandlers(
 		service.WithParamHistory(paramHistoryRepo),
 	)
 
-	matchSvc := service.NewMatchService(repos.match, s.bus, scorer, auditSvc, s.log)
+	matchSvc := service.NewMatchService(repos.match, s.bus, scorer, extraScorer, auditSvc, s.log)
 	if cacheStore != nil {
 		matchSvc = service.NewCachedMatchService(matchSvc, cacheStore, matchTTL, s.log)
 	}
@@ -178,6 +184,7 @@ func (s *Server) buildHandlers(
 	outboxWriter := outbox.NewWriter(s.db)
 
 	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log)
+	extraPredSvc := service.NewExtraPredictionService(repos.extraPred, repos.match, params, clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log)
 	groupAuthz := service.NewGroupAuthzService(repos.member)
 	quinielaSvc := service.WithMemberRepo(
 		service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{}),
@@ -217,6 +224,7 @@ func (s *Server) buildHandlers(
 	)
 	conflictSvc := service.NewConflictService(quinielaRepo, repos.member, paymentRepo, params, auditSvc, s.log)
 	scoringRuleSvc := service.NewScoringRuleService(scoringRuleRepo, auditSvc, s.log)
+	extraRuleSvc := service.NewExtraRuleService(extraRuleRepo, auditSvc, s.log)
 
 	dlqSvc := s.dlqSvc
 	if dlqSvc == nil {
@@ -282,7 +290,7 @@ func (s *Server) buildHandlers(
 	// so that any future handler needing prize credits can reference it.
 	var prizeSvc service.PrizeCrediter
 	paymentIntentSvc := service.NewPaymentIntentService(intentRepo, params, s.log)
-	webhookPaymentSvc := service.NewWebhookPaymentService(ledgerRepo, intentRepo, auditSvc, s.log)
+	webhookPaymentSvc := service.NewWebhookPaymentService(intentRepo, auditSvc, s.log)
 	withdrawalSvc := service.NewWithdrawalService(withdrawalRepo, repos.sysParam, kycGate, outboxWriter, auditSvc, s.log)
 
 	h := appHandlers{
@@ -302,6 +310,7 @@ func (s *Server) buildHandlers(
 		match:              handler.NewMatchHandler(matchSvc, s.log),
 		adminMatchSync:     handler.NewAdminMatchSyncHandler(matchSyncSvc, s.log),
 		prediction:         handler.NewPredictionHandler(predSvc, s.log),
+		extraPrediction:    handler.NewExtraPredictionHandler(extraPredSvc, s.log),
 		group:              handler.NewGroupHandler(quinielaSvc, memberSvc, groupAuthz, params, matchSvc, repos.pred, s.log),
 		leaderboard:        handler.NewLeaderboardHandler(ranker, groupAuthz, s.log),
 		publicGroup:        handler.NewPublicGroupHandler(quinielaSvc, ranker, s.log),
@@ -328,6 +337,7 @@ func (s *Server) buildHandlers(
 		adminConflict:      handler.NewAdminConflictHandler(conflictSvc, s.log),
 		adminStats:         handler.NewAdminStatsHandler(adminReadSvc, s.log),
 		adminScoringRules:  handler.NewAdminScoringRuleHandler(scoringRuleSvc, s.log),
+		adminExtraRules:    handler.NewAdminExtraRuleHandler(extraRuleSvc, s.log),
 		adminNotifTemplate: handler.NewAdminNotificationTemplateHandler(tmplRepo, s.log),
 		adminNotifDLQ:      handler.NewAdminNotificationDLQHandler(repository.NewPostgresNotificationDLQRepository(s.db), s.log),
 		adminSSEStats:      handler.NewAdminSSEStatsHandler(s.notifHub, s.log),

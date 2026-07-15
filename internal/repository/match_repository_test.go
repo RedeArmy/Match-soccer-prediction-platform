@@ -265,6 +265,53 @@ func TestMatchRepository_Update_PersistsWinMethod(t *testing.T) {
 	}
 }
 
+func TestMatchRepository_Update_PersistsExtraResultFields(t *testing.T) {
+	cleanTables(t)
+	m := seedMatchWithPhase(t, domain.PhaseGroupStage)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	home, away := 2, 1
+	htHome, htAway := 1, 0
+	firstScorer := "home"
+	m.Status = domain.MatchStatusFinished
+	m.HomeScore = &home
+	m.AwayScore = &away
+	m.HalftimeHomeScore = &htHome
+	m.HalftimeAwayScore = &htAway
+	m.FirstScoringTeam = &firstScorer
+	if err := repo.Update(context.Background(), m); err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+
+	got, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.HalftimeHomeScore == nil || *got.HalftimeHomeScore != 1 {
+		t.Errorf("HalftimeHomeScore: got %v, want 1", got.HalftimeHomeScore)
+	}
+	if got.HalftimeAwayScore == nil || *got.HalftimeAwayScore != 0 {
+		t.Errorf("HalftimeAwayScore: got %v, want 0", got.HalftimeAwayScore)
+	}
+	if got.FirstScoringTeam == nil || *got.FirstScoringTeam != "home" {
+		t.Errorf("FirstScoringTeam: got %v, want \"home\"", got.FirstScoringTeam)
+	}
+}
+
+func TestMatchRepository_Update_ExtraResultFieldsDefaultNil(t *testing.T) {
+	cleanTables(t)
+	m := seedMatch(t)
+	repo := repository.NewPostgresMatchRepository(testDB)
+
+	got, err := repo.GetByID(context.Background(), m.ID)
+	if err != nil {
+		t.Fatalf(fmtUnexpectedErr, err)
+	}
+	if got.HalftimeHomeScore != nil || got.HalftimeAwayScore != nil || got.FirstScoringTeam != nil {
+		t.Error("expected extra result fields to default to nil for a newly-seeded match")
+	}
+}
+
 func TestMatchRepository_Update_NilWinMethod_RemainsNil(t *testing.T) {
 	cleanTables(t)
 	m := seedMatch(t) // group_stage — WinMethod must stay nil

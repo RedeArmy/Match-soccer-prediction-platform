@@ -253,7 +253,7 @@ func TestBankTransferService_ApproveTransfer_ProofNotFound_ReturnsNotFound(t *te
 // velocityBlockGate is a KYCGate stub that rejects CheckDepositVelocity.
 type velocityBlockGate struct{ NoopKYCGate }
 
-func (g velocityBlockGate) CheckDepositVelocity(_ context.Context, _, _ int) error {
+func (g velocityBlockGate) CheckDepositVelocity(_ context.Context, _, _ int, _ string) error {
 	return apperrors.Forbidden("deposit velocity cap exceeded for this tier")
 }
 
@@ -377,7 +377,7 @@ func TestBankTransferService_Upload_OutboxWriteError_StillReturnsProof(t *testin
 // blocking the transaction.
 type amlTriggerGate struct{ NoopKYCGate }
 
-func (g amlTriggerGate) ExceedsAMLThreshold(_ context.Context, _ int) (bool, error) {
+func (g amlTriggerGate) ExceedsAMLThreshold(_ context.Context, _ int, _ string) (bool, error) {
 	return true, nil
 }
 

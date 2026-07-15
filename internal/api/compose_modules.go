@@ -130,6 +130,9 @@ func (s *Server) buildKYCModule(ctx context.Context, deps kycModuleDeps) (*handl
 	}); ok {
 		sp.SetProfileRepo(kycProfileRepo)
 	}
+	if slg, ok := deps.kycGate.(interface{ SetLogger(*zap.Logger) }); ok {
+		slg.SetLogger(s.log)
+	}
 
 	kycSvc := service.NewKYCService(kycProfileRepo, kycDocRepo, kycEventRepo, deps.paramSvcWithAudit, deps.auditSvc, s.log, kycMetrics)
 	if sc, ok := kycSvc.(interface{ SetCache(cache.Store) }); ok {

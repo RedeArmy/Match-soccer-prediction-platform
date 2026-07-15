@@ -80,15 +80,14 @@ func NewWithdrawalService(
 }
 
 func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int, currency string, method domain.WithdrawalMethod, payoutDetails map[string]string) (*domain.WithdrawalRequest, error) {
-	if err := s.kycGate.CheckWithdrawal(ctx, userID, amountCents); err != nil {
-		return nil, err
-	}
-	if err := s.kycGate.CheckWithdrawalVelocity(ctx, userID, amountCents); err != nil {
-		return nil, err
-	}
-
 	if currency == "" {
 		currency = "GTQ"
+	}
+	if err := s.kycGate.CheckWithdrawal(ctx, userID, amountCents, currency); err != nil {
+		return nil, err
+	}
+	if err := s.kycGate.CheckWithdrawalVelocity(ctx, userID, amountCents, currency); err != nil {
+		return nil, err
 	}
 	minCents, maxCents, minUSDCents, err := s.withdrawalLimits(ctx)
 	if err != nil {
@@ -127,7 +126,7 @@ func (s *withdrawalService) Create(ctx context.Context, userID, amountCents int,
 		"method":       string(method),
 	})
 
-	if exceeds, _ := s.kycGate.ExceedsAMLThreshold(ctx, amountCents); exceeds {
+	if exceeds, _ := s.kycGate.ExceedsAMLThreshold(ctx, amountCents, currency); exceeds {
 		s.audit.Log(ctx, &userID, nil, domain.AuditActionAMLFlagged, &resType, &reqID, map[string]any{
 			"amount_cents": amountCents,
 			"currency":     currency,

@@ -33,6 +33,7 @@ import (
 
 const (
 	routePredictions      = "/predictions"
+	routeExtras           = "/extras"
 	routeUsers            = "/users"
 	routeBanks            = "/banks"
 	routeBankAccountTypes = "/bank-account-types"
@@ -74,12 +75,14 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	// Construct repository instances once and share them across the event bus,
 	// webhook handler, and API handler layers.
 	repos := coreRepos{
-		user:     repository.NewPostgresUserRepository(s.db),
-		match:    repository.NewPostgresMatchRepository(s.db),
-		pred:     repository.NewPostgresPredictionRepository(s.db),
-		member:   repository.NewPostgresGroupMembershipRepository(s.db),
-		sysParam: repository.NewPostgresSystemParamRepository(s.db),
-		session:  repository.NewPostgresSessionRepository(s.db),
+		user:      repository.NewPostgresUserRepository(s.db),
+		match:     repository.NewPostgresMatchRepository(s.db),
+		pred:      repository.NewPostgresPredictionRepository(s.db),
+		member:    repository.NewPostgresGroupMembershipRepository(s.db),
+		sysParam:  repository.NewPostgresSystemParamRepository(s.db),
+		session:   repository.NewPostgresSessionRepository(s.db),
+		extraPred: repository.NewPostgresExtraPredictionRepository(s.db),
+		extraRule: repository.NewPostgresExtraRuleRepository(s.db),
 	}
 
 	paramSvc := service.NewSystemParamService(repos.sysParam, nil, s.log)
@@ -117,8 +120,9 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 	scorer := service.NewScoringService(repos.match, repos.pred, ruleRepo, paramSvc, s.log,
 		service.WithScoringMeter(otel.GetMeterProvider().Meter("wcq")),
 	)
+	extraScorer := service.NewExtraScoringService(repos.match, repos.extraPred, repos.extraRule, s.log)
 	if s.cfg.EventBus.Driver != "redis" {
-		s.registerLocalSubscribers(ctx, scorer)
+		s.registerLocalSubscribers(ctx, scorer, extraScorer)
 	}
 
 	// SSE hub — created once and shared by the notification handler and the
@@ -138,7 +142,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		s.log.Warn("hub.RegisterMetrics failed (metrics may be unavailable)", zap.Error(err))
 	}
 
-	h := s.buildHandlers(ctx, repos, paramSvc, scorer)
+	h := s.buildHandlers(ctx, repos, paramSvc, scorer, extraScorer)
 
 	// Register per-handler metrics after construction so every handler that
 	// exposes OTel instruments is wired to the global meter.
@@ -335,6 +339,7 @@ func (s *Server) Routes(ctx context.Context) http.Handler {
 		s.registerAuthRoutes(r, d)
 		s.registerMatchRoutes(r, d)
 		s.registerPredictionRoutes(r, d)
+		s.registerExtraPredictionRoutes(r, d)
 		s.registerGroupRoutes(r, d)
 		s.registerTiebreakerAdminRoutes(r, d)
 		s.registerTournamentRoutes(r, d)
@@ -553,9 +558,9 @@ func (s *Server) buildIPRateStore(meter metric.Meter, ratePerSec float64, burst 
 // registerLocalSubscribers wires domain event handlers onto the in-process bus.
 // It is only called when EventBus.Driver != "redis"; with the Redis driver, the
 // worker process owns all event consumption exclusively and the API server only
-// publishes. scorer is passed in - not re-constructed here - so the same
-// stateless scoring instance is shared with the match service.
-func (s *Server) registerLocalSubscribers(ctx context.Context, scorer service.MatchScorer) {
+// publishes. scorer and extraScorer are passed in - not re-constructed here -
+// so the same stateless scoring instances are shared with the match service.
+func (s *Server) registerLocalSubscribers(ctx context.Context, scorer service.MatchScorer, extraScorer service.ExtraScorer) {
 	s.bus.Subscribe(ctx, events.EventMatchFinished, func(ctx context.Context, env events.Envelope) error {
 		mf, ok := env.Payload.(events.MatchFinished)
 		if !ok {
@@ -571,6 +576,15 @@ func (s *Server) registerLocalSubscribers(ctx context.Context, scorer service.Ma
 				zap.Error(err),
 			)
 			return err
+		}
+		// Extras (bonus predictions) are scored best-effort: a failure here is
+		// logged but must never cause the bus to retry/DLQ the whole event,
+		// since the core prediction scoring above has already committed.
+		if err := extraScorer.ScoreExtras(ctx, mf.MatchID); err != nil {
+			s.log.Warn("extras scoring failed after MatchFinished event",
+				zap.Int("match_id", mf.MatchID),
+				zap.Error(err),
+			)
 		}
 		return nil
 	})

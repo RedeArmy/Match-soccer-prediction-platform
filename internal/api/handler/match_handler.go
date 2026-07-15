@@ -60,6 +60,15 @@ type updateResultRequest struct {
 	PenaltyWinner    *string `json:"penalty_winner"`
 	PenaltyHomeScore *int    `json:"penalty_home_score"`
 	PenaltyAwayScore *int    `json:"penalty_away_score"`
+
+	// Extras result fields — optional. The sync worker normally populates
+	// these from provider data; an admin may supply them here as a manual
+	// correction/escape-hatch when the provider is missing this data (e.g.
+	// the goal-events feed failed for a fixture). first_scoring_team must be
+	// "home", "away", or "none" when present.
+	HalftimeHomeScore *int    `json:"halftime_home_score"`
+	HalftimeAwayScore *int    `json:"halftime_away_score"`
+	FirstScoringTeam  *string `json:"first_scoring_team"`
 }
 
 // ListMatches handles GET /api/v1/matches.
@@ -313,13 +322,24 @@ func (h *MatchHandler) parseScoreChange(w http.ResponseWriter, r *http.Request) 
 		}
 		winMethod = &wm
 	}
+	if req.FirstScoringTeam != nil {
+		// first_scoring_team shares its answer domain ("home"/"away"/"none")
+		// with the first_scorer extra, so the same validator applies here.
+		if err := domain.ValidateExtraAnswer(domain.ExtraTypeFirstScorer, *req.FirstScoringTeam); err != nil {
+			writeError(w, r, h.log, err)
+			return
+		}
+	}
 	score = service.ScoreUpdate{
-		HomeScore:        *req.HomeScore,
-		AwayScore:        *req.AwayScore,
-		WinMethod:        winMethod,
-		PenaltyWinner:    req.PenaltyWinner,
-		PenaltyHomeScore: req.PenaltyHomeScore,
-		PenaltyAwayScore: req.PenaltyAwayScore,
+		HomeScore:         *req.HomeScore,
+		AwayScore:         *req.AwayScore,
+		WinMethod:         winMethod,
+		PenaltyWinner:     req.PenaltyWinner,
+		PenaltyHomeScore:  req.PenaltyHomeScore,
+		PenaltyAwayScore:  req.PenaltyAwayScore,
+		HalftimeHomeScore: req.HalftimeHomeScore,
+		HalftimeAwayScore: req.HalftimeAwayScore,
+		FirstScoringTeam:  req.FirstScoringTeam,
 	}
 	return id, score, true
 }

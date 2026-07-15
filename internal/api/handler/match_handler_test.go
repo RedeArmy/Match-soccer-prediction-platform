@@ -267,6 +267,32 @@ func TestUpdateResult_PenaltiesWithScores_Returns200(t *testing.T) {
 	}
 }
 
+func TestUpdateResult_ExtraFields_ThreadedToScoreUpdate(t *testing.T) {
+	svc := &stubMatchSvc{match: &domain.Match{ID: 1}}
+	w := do(newMatchRouter(svc), http.MethodPatch, "/1",
+		`{"home_score":1,"away_score":0,"halftime_home_score":1,"halftime_away_score":0,"first_scoring_team":"home"}`)
+	if w.Code != http.StatusOK {
+		t.Errorf(fmtExpect200, w.Code)
+	}
+	if svc.lastScore.HalftimeHomeScore == nil || *svc.lastScore.HalftimeHomeScore != 1 {
+		t.Errorf("HalftimeHomeScore: got %v, want 1", svc.lastScore.HalftimeHomeScore)
+	}
+	if svc.lastScore.HalftimeAwayScore == nil || *svc.lastScore.HalftimeAwayScore != 0 {
+		t.Errorf("HalftimeAwayScore: got %v, want 0", svc.lastScore.HalftimeAwayScore)
+	}
+	if svc.lastScore.FirstScoringTeam == nil || *svc.lastScore.FirstScoringTeam != "home" {
+		t.Errorf("FirstScoringTeam: got %v, want \"home\"", svc.lastScore.FirstScoringTeam)
+	}
+}
+
+func TestUpdateResult_InvalidFirstScoringTeam_Returns422(t *testing.T) {
+	w := do(newMatchRouter(&stubMatchSvc{}), http.MethodPatch, "/1",
+		`{"home_score":1,"away_score":0,"first_scoring_team":"referee"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf(fmtExpect422, w.Code)
+	}
+}
+
 // ── StartMatch ────────────────────────────────────────────────────────────────
 
 func TestStartMatch_Success_Returns200(t *testing.T) {
