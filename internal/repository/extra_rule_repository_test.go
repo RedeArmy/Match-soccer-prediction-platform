@@ -15,15 +15,15 @@ import (
 // scoring_rules). Tests that call Update must restore the original values via
 // t.Cleanup to avoid cross-test pollution.
 
-func TestExtraRuleRepository_List_ReturnsBothTypes(t *testing.T) {
+func TestExtraRuleRepository_List_ReturnsAllFourTypes(t *testing.T) {
 	repo := repository.NewPostgresExtraRuleRepository(testDB)
 
 	rules, err := repo.List(context.Background())
 	if err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
-	if len(rules) != 2 {
-		t.Fatalf("expected 2 extra-type rows, got %d", len(rules))
+	if len(rules) != 4 {
+		t.Fatalf("expected 4 extra-type rows, got %d", len(rules))
 	}
 }
 

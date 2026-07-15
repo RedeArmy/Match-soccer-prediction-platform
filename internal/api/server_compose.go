@@ -184,7 +184,7 @@ func (s *Server) buildHandlers(
 	outboxWriter := outbox.NewWriter(s.db)
 
 	predSvc := service.NewPredictionService(repos.pred, repos.match, params, clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log)
-	extraPredSvc := service.NewExtraPredictionService(repos.extraPred, repos.match, params, clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log)
+	extraPredSvc := service.NewExtraPredictionService(repos.extraPred, repos.match, repos.pred, params, clock.NewParamClock(params, domain.ParamKeySystemDate, s.cfg.IsDevelopment()), s.log)
 	groupAuthz := service.NewGroupAuthzService(repos.member)
 	quinielaSvc := service.WithMemberRepo(
 		service.NewQuinielaService(quinielaRepo, groupAuthz, params, auditSvc, randcode.Crypto{}),

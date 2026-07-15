@@ -34,6 +34,7 @@ type ExtraPredictionService interface {
 type extraPredictionService struct {
 	extraRepo repository.ExtraPredictionRepository
 	matchRepo repository.MatchRepository
+	predRepo  repository.PredictionRepository
 	params    SystemParamService
 	clock     clock.Nower
 	log       *zap.Logger
@@ -43,6 +44,7 @@ type extraPredictionService struct {
 func NewExtraPredictionService(
 	extraRepo repository.ExtraPredictionRepository,
 	matchRepo repository.MatchRepository,
+	predRepo repository.PredictionRepository,
 	params SystemParamService,
 	clk clock.Nower,
 	log *zap.Logger,
@@ -50,6 +52,7 @@ func NewExtraPredictionService(
 	return &extraPredictionService{
 		extraRepo: extraRepo,
 		matchRepo: matchRepo,
+		predRepo:  predRepo,
 		params:    params,
 		clock:     clk,
 		log:       log,
@@ -68,6 +71,14 @@ func (s *extraPredictionService) deadlineOffset(ctx context.Context) time.Durati
 // answer are validated against the fixed, known value sets (domain.ParseExtraType
 // / domain.ValidateExtraAnswer) before the match lock is checked, so a bad
 // request never reaches the repository layer.
+//
+// The extra answer must also be logically consistent with the user's own
+// scoreline prediction for this match (e.g. a team predicted to score 0
+// goals cannot be picked as first scorer, and a half-time scoreline can't
+// exceed the predicted final score) — see domain.ValidateExtraAnswerAgainstPrediction.
+// This requires a Prediction to already exist for (userID, matchID); extras
+// are bonus guesses about how the scoreline plays out, so the scoreline
+// itself must be submitted first.
 func (s *extraPredictionService) Submit(ctx context.Context, userID, matchID int, extraType domain.ExtraType, answer string) (*domain.ExtraPrediction, error) {
 	if _, err := domain.ParseExtraType(string(extraType)); err != nil {
 		return nil, err
@@ -87,6 +98,17 @@ func (s *extraPredictionService) Submit(ctx context.Context, userID, matchID int
 		return nil, apperrors.Validation("cannot submit an extra for a match that has already started")
 	}
 	if err := domain.ValidatePredictionDeadline(match.KickoffAt, s.clock.Now(), s.deadlineOffset(ctx)); err != nil {
+		return nil, err
+	}
+
+	existingPrediction, err := s.predRepo.GetByUserAndMatch(ctx, userID, matchID)
+	if err != nil {
+		return nil, err
+	}
+	if existingPrediction == nil {
+		return nil, apperrors.Validation("submit your scoreline prediction for this match before submitting extras")
+	}
+	if err := domain.ValidateExtraAnswerAgainstPrediction(extraType, answer, existingPrediction.HomeScore, existingPrediction.AwayScore); err != nil {
 		return nil, err
 	}
 

@@ -26,8 +26,9 @@ func NewExtraPredictionHandler(svc service.ExtraPredictionService, log *zap.Logg
 }
 
 // submitExtraPredictionRequest is the JSON body accepted by POST /api/v1/extras.
-// extra_type must be one of: "first_scorer", "halftime_result". The allowed
-// values for answer depend on extra_type — see domain.ValidateExtraAnswer.
+// extra_type must be one of: "first_scorer", "halftime_result",
+// "home_team_scores", "away_team_scores". The allowed values for answer
+// depend on extra_type — see domain.ValidateExtraAnswer.
 type submitExtraPredictionRequest struct {
 	MatchID   int    `json:"match_id"`
 	ExtraType string `json:"extra_type"`

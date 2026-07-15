@@ -69,7 +69,7 @@ func TestExtraPredictionRepository_Upsert_DifferentExtraTypes_BothPersist(t *tes
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if _, err := repo.Upsert(context.Background(), &domain.ExtraPrediction{
-		UserID: u.ID, MatchID: m.ID, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "draw",
+		UserID: u.ID, MatchID: m.ID, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "1-1",
 	}); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
@@ -111,7 +111,7 @@ func TestExtraPredictionRepository_ListByUserAndMatches_BulkFetch(t *testing.T) 
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
 	if _, err := repo.Upsert(context.Background(), &domain.ExtraPrediction{
-		UserID: u.ID, MatchID: m2.ID, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "away",
+		UserID: u.ID, MatchID: m2.ID, ExtraType: domain.ExtraTypeHalftimeResult, Answer: "0-1",
 	}); err != nil {
 		t.Fatalf(fmtUnexpectedErr, err)
 	}
