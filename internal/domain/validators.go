@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/rede/world-cup-quiniela/pkg/apperrors"
@@ -221,16 +222,34 @@ func ParseWinMethod(s string) (WinMethod, error) {
 var validExtraTypes = map[ExtraType]struct{}{
 	ExtraTypeFirstScorer:    {},
 	ExtraTypeHalftimeResult: {},
+	ExtraTypeHomeTeamScores: {},
+	ExtraTypeAwayTeamScores: {},
 }
 
-// validExtraAnswers maps each ExtraType to its allowed answer values. The two
-// types intentionally have different answer domains (first_scorer allows
-// "none" for a 0-0 result; halftime_result does not), so answer validation
-// cannot be a single shared enum.
+// teamScoresAnswers is the answer set shared by ExtraTypeHomeTeamScores and
+// ExtraTypeAwayTeamScores: which period (if any) the team scores in.
+var teamScoresAnswers = map[string]struct{}{
+	"first_half": {}, "second_half": {}, "both_halves": {}, "none": {},
+}
+
+// validExtraAnswers maps each fixed-set ExtraType to its allowed answer
+// values. ExtraTypeHalftimeResult is deliberately absent: its answer is a
+// "<home>-<away>" scoreline, not a fixed enum, and is validated separately
+// by validateHalftimeScoreAnswer.
 var validExtraAnswers = map[ExtraType]map[string]struct{}{
 	ExtraTypeFirstScorer:    {"home": {}, "away": {}, "none": {}},
-	ExtraTypeHalftimeResult: {"home": {}, "draw": {}, "away": {}},
+	ExtraTypeHomeTeamScores: teamScoresAnswers,
+	ExtraTypeAwayTeamScores: teamScoresAnswers,
 }
+
+// maxHalftimeGoals caps each side's predicted (and resolved) half-time score
+// at a generous-but-sane bound, rejecting typos (e.g. "99-0") before they
+// reach the database.
+const maxHalftimeGoals = 20
+
+// halftimeScoreRE matches the "<home>-<away>" encoding used for
+// ExtraTypeHalftimeResult answers, e.g. "1-0", "0-0", "12-3".
+var halftimeScoreRE = regexp.MustCompile(`^(\d{1,2})-(\d{1,2})$`)
 
 // ParseExtraType validates s against the known ExtraType constants and
 // returns the typed value. Returns a validation error for any unrecognised
@@ -238,7 +257,7 @@ var validExtraAnswers = map[ExtraType]map[string]struct{}{
 func ParseExtraType(s string) (ExtraType, error) {
 	et := ExtraType(s)
 	if _, ok := validExtraTypes[et]; !ok {
-		return "", apperrors.Validation(`extra_type must be one of: "first_scorer", "halftime_result"`)
+		return "", apperrors.Validation(`extra_type must be one of: "first_scorer", "halftime_result", "home_team_scores", "away_team_scores"`)
 	}
 	return et, nil
 }
@@ -246,6 +265,9 @@ func ParseExtraType(s string) (ExtraType, error) {
 // ValidateExtraAnswer checks answer against the allowed value set for
 // extraType (assumed already validated by ParseExtraType).
 func ValidateExtraAnswer(extraType ExtraType, answer string) error {
+	if extraType == ExtraTypeHalftimeResult {
+		return validateHalftimeScoreAnswer(answer)
+	}
 	allowed, ok := validExtraAnswers[extraType]
 	if !ok {
 		return apperrors.Validation("unrecognised extra_type")
@@ -254,13 +276,128 @@ func ValidateExtraAnswer(extraType ExtraType, answer string) error {
 		switch extraType {
 		case ExtraTypeFirstScorer:
 			return apperrors.Validation(`answer must be one of: "home", "away", "none"`)
-		case ExtraTypeHalftimeResult:
-			return apperrors.Validation(`answer must be one of: "home", "draw", "away"`)
+		case ExtraTypeHomeTeamScores, ExtraTypeAwayTeamScores:
+			return apperrors.Validation(`answer must be one of: "first_half", "second_half", "both_halves", "none"`)
 		default:
 			return apperrors.Validation("invalid answer for extra_type")
 		}
 	}
 	return nil
+}
+
+// validateHalftimeScoreAnswer checks that answer is a "<home>-<away>"
+// half-time scoreline with both sides within [0, maxHalftimeGoals].
+func validateHalftimeScoreAnswer(answer string) error {
+	home, away, ok := parseScorelineAnswer(answer)
+	if !ok {
+		return apperrors.Validation(`answer must be a half-time scoreline in "home-away" format, e.g. "1-0"`)
+	}
+	if home > maxHalftimeGoals || away > maxHalftimeGoals {
+		return apperrors.Validation(fmt.Sprintf("half-time score must not exceed %d per side", maxHalftimeGoals))
+	}
+	return nil
+}
+
+// parseScorelineAnswer parses the "<home>-<away>" encoding shared by
+// validateHalftimeScoreAnswer and ValidateExtraAnswerAgainstPrediction into
+// its two integer sides. ok is false when answer doesn't match the format.
+func parseScorelineAnswer(answer string) (home, away int, ok bool) {
+	m := halftimeScoreRE.FindStringSubmatch(answer)
+	if m == nil {
+		return 0, 0, false
+	}
+	home, _ = strconv.Atoi(m[1])
+	away, _ = strconv.Atoi(m[2])
+	return home, away, true
+}
+
+// ValidateExtraAnswerAgainstPrediction rejects an extra-prediction answer
+// that is logically impossible given the user's own predicted scoreline for
+// the match (predictedHome, predictedAway — the same values in their
+// Prediction row for this match). For example, a team predicted to score 0
+// goals cannot be the first scorer, cannot answer anything but "none" for
+// "scores in", and a half-time scoreline can never exceed either side's
+// predicted final score. Called after ValidateExtraAnswer (which only checks
+// the fixed value-set/format), so a malformed answer never reaches here.
+func ValidateExtraAnswerAgainstPrediction(extraType ExtraType, answer string, predictedHome, predictedAway int) error {
+	switch extraType {
+	case ExtraTypeFirstScorer:
+		return validateFirstScorerAgainstPrediction(answer, predictedHome, predictedAway)
+	case ExtraTypeHomeTeamScores:
+		return validateTeamScoresAgainstPrediction(answer, predictedHome)
+	case ExtraTypeAwayTeamScores:
+		return validateTeamScoresAgainstPrediction(answer, predictedAway)
+	case ExtraTypeHalftimeResult:
+		return validateHalftimeAgainstPrediction(answer, predictedHome, predictedAway)
+	default:
+		return nil
+	}
+}
+
+func validateFirstScorerAgainstPrediction(answer string, predictedHome, predictedAway int) error {
+	switch {
+	case predictedHome == 0 && predictedAway == 0:
+		if answer != "none" {
+			return apperrors.Validation(`with a predicted 0-0 scoreline, first_scorer must be "none"`)
+		}
+	case predictedHome == 0:
+		if answer != "away" {
+			return apperrors.Validation("home is predicted to score 0 goals, so it cannot be the first scorer")
+		}
+	case predictedAway == 0:
+		if answer != "home" {
+			return apperrors.Validation("away is predicted to score 0 goals, so it cannot be the first scorer")
+		}
+	default:
+		if answer == "none" {
+			return apperrors.Validation(`first_scorer cannot be "none" when the predicted scoreline has goals`)
+		}
+	}
+	return nil
+}
+
+// validateTeamScoresAgainstPrediction checks a home_team_scores/away_team_scores
+// answer against that side's own predicted goal count. The number of goals a
+// team is predicted to score bounds which periods are even possible: 0 goals
+// forces "none"; exactly 1 goal rules out "none" (they do score) and
+// "both_halves" (needs at least 2 goals, one per half); 2+ goals only rules
+// out "none".
+func validateTeamScoresAgainstPrediction(answer string, predictedGoals int) error {
+	switch predictedGoals {
+	case 0:
+		if answer != "none" {
+			return apperrors.Validation(`a team predicted to score 0 goals must answer "none"`)
+		}
+	case 1:
+		if answer != "first_half" && answer != "second_half" {
+			return apperrors.Validation(`a team predicted to score exactly 1 goal must answer "first_half" or "second_half"`)
+		}
+	default: // predictedGoals >= 2
+		if answer == "none" {
+			return apperrors.Validation(`a team predicted to score cannot answer "none"`)
+		}
+	}
+	return nil
+}
+
+func validateHalftimeAgainstPrediction(answer string, predictedHome, predictedAway int) error {
+	home, away, ok := parseScorelineAnswer(answer)
+	if !ok {
+		return nil // format already validated by validateHalftimeScoreAnswer
+	}
+	if home > predictedHome || away > predictedAway {
+		return apperrors.Validation("half-time score cannot exceed the predicted final scoreline")
+	}
+	return nil
+}
+
+// FormatScorelineAnswer encodes a half-time scoreline into the "<home>-<away>"
+// string format used as ExtraTypeHalftimeResult's answer. Shared by the
+// submission path (client-supplied guess) and the scoring service (deriving
+// the correct answer from Match.HalftimeHomeScore/AwayScore), so both sides
+// of the comparison use exactly the same encoding.
+func FormatScorelineAnswer(home, away int) string {
+	return strconv.Itoa(home) + "-" + strconv.Itoa(away)
 }
 
 // validPhases is the set of recognised MatchPhase values. It is used by

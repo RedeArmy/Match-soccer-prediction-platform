@@ -70,9 +70,43 @@ func defaultExtraPoints(extraType domain.ExtraType) int {
 		return domain.DefaultExtraFirstScorerPoints
 	case domain.ExtraTypeHalftimeResult:
 		return domain.DefaultExtraHalftimeResultPoints
+	case domain.ExtraTypeHomeTeamScores, domain.ExtraTypeAwayTeamScores:
+		return domain.DefaultExtraTeamScoresPoints
 	default:
 		return 0
 	}
+}
+
+// teamScoresAnswer derives "first_half"/"second_half"/"both_halves"/"none"
+// for one team from its half-time and full-time goal tallies. Both signals
+// are derivable from data the sync worker already captures — no separate
+// goal-event timeline is needed:
+//   - the team scored in the first half iff its half-time tally is > 0
+//   - the team scored in the second half iff its full-time tally exceeds its
+//     half-time tally
+//
+// Returns nil (unresolved — leave the prediction unscored) when halftimeGoals
+// is nil, or when fulltimeGoals is somehow less than halftimeGoals, a data
+// inconsistency that should never occur for a correctly-synced match and is
+// treated as unresolved rather than guessed at.
+func teamScoresAnswer(halftimeGoals, fulltimeGoals *int) *string {
+	if halftimeGoals == nil || fulltimeGoals == nil || *fulltimeGoals < *halftimeGoals {
+		return nil
+	}
+	scoredFirstHalf := *halftimeGoals > 0
+	scoredSecondHalf := *fulltimeGoals > *halftimeGoals
+	var result string
+	switch {
+	case scoredFirstHalf && scoredSecondHalf:
+		result = "both_halves"
+	case scoredFirstHalf:
+		result = "first_half"
+	case scoredSecondHalf:
+		result = "second_half"
+	default:
+		result = "none"
+	}
+	return &result
 }
 
 // correctExtraAnswers derives the resolved "correct answer" for each extra
@@ -82,18 +116,12 @@ func defaultExtraPoints(extraType domain.ExtraType) int {
 // type are left unscored rather than guessed at.
 func correctExtraAnswers(m *domain.Match) map[domain.ExtraType]*string {
 	answers := map[domain.ExtraType]*string{
-		domain.ExtraTypeFirstScorer: m.FirstScoringTeam,
+		domain.ExtraTypeFirstScorer:    m.FirstScoringTeam,
+		domain.ExtraTypeHomeTeamScores: teamScoresAnswer(m.HalftimeHomeScore, m.HomeScore),
+		domain.ExtraTypeAwayTeamScores: teamScoresAnswer(m.HalftimeAwayScore, m.AwayScore),
 	}
 	if m.HalftimeHomeScore != nil && m.HalftimeAwayScore != nil {
-		var result string
-		switch {
-		case *m.HalftimeHomeScore > *m.HalftimeAwayScore:
-			result = "home"
-		case *m.HalftimeHomeScore < *m.HalftimeAwayScore:
-			result = "away"
-		default:
-			result = "draw"
-		}
+		result := domain.FormatScorelineAnswer(*m.HalftimeHomeScore, *m.HalftimeAwayScore)
 		answers[domain.ExtraTypeHalftimeResult] = &result
 	}
 	return answers
@@ -115,9 +143,9 @@ func (s *extraScoringService) ScoreExtras(ctx context.Context, matchID int) erro
 	}
 
 	answers := correctExtraAnswers(match)
-	points := map[domain.ExtraType]int{
-		domain.ExtraTypeFirstScorer:    s.pointsForType(ctx, domain.ExtraTypeFirstScorer),
-		domain.ExtraTypeHalftimeResult: s.pointsForType(ctx, domain.ExtraTypeHalftimeResult),
+	points := make(map[domain.ExtraType]int, len(domain.AllExtraTypes))
+	for _, et := range domain.AllExtraTypes {
+		points[et] = s.pointsForType(ctx, et)
 	}
 
 	var scoredCount int

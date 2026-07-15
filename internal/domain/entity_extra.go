@@ -14,22 +14,39 @@ const (
 	// ExtraTypeFirstScorer asks which team scores first. Valid answers are
 	// "home", "away", or "none" (the match finished 0-0).
 	ExtraTypeFirstScorer ExtraType = "first_scorer"
-	// ExtraTypeHalftimeResult asks who is ahead at half-time. Valid answers
-	// are "home", "draw", or "away".
+	// ExtraTypeHalftimeResult asks the exact score at half-time. The answer
+	// is stored as "<home>-<away>" (e.g. "1-0"), the same format used to
+	// derive the resolved answer from Match.HalftimeHomeScore/AwayScore.
 	ExtraTypeHalftimeResult ExtraType = "halftime_result"
+	// ExtraTypeHomeTeamScores asks in which period the home team scores.
+	// Valid answers are "first_half", "second_half", "both_halves", or
+	// "none" (the team did not score at all).
+	ExtraTypeHomeTeamScores ExtraType = "home_team_scores"
+	// ExtraTypeAwayTeamScores is ExtraTypeHomeTeamScores for the away team.
+	ExtraTypeAwayTeamScores ExtraType = "away_team_scores"
 )
 
 // AllExtraTypes is the ordered list of every ExtraType. Single source of
 // truth for admin listing endpoints and validation.
-var AllExtraTypes = [...]ExtraType{ExtraTypeFirstScorer, ExtraTypeHalftimeResult}
+var AllExtraTypes = [...]ExtraType{
+	ExtraTypeFirstScorer,
+	ExtraTypeHalftimeResult,
+	ExtraTypeHomeTeamScores,
+	ExtraTypeAwayTeamScores,
+}
 
 // Default point values used when no active extra_rules row exists for a
 // type. Mirrors the ScoringRule IsActive fallback safety net, but skips the
 // intermediate system_params layer scoring_rules needed for seven phases —
-// two fixed, global knobs don't warrant that extra plumbing.
+// these fixed, global knobs don't warrant that extra plumbing.
 const (
 	DefaultExtraFirstScorerPoints    = 3 // 3-way guess resolved from goal-event data
-	DefaultExtraHalftimeResultPoints = 2 // 3-way guess, comparable odds to a basic outcome pick
+	DefaultExtraHalftimeResultPoints = 4 // exact half-time scoreline, harder than a 3-way guess
+	// DefaultExtraTeamScoresPoints applies to both ExtraTypeHomeTeamScores and
+	// ExtraTypeAwayTeamScores — a symmetric 4-way guess (first half/second
+	// half/both/none) per team, seeded as two independent extra_rules rows
+	// sharing this same default.
+	DefaultExtraTeamScoresPoints = 3
 )
 
 // ExtraRule defines the point value awarded for correctly guessing one

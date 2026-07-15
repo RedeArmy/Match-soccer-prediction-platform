@@ -667,3 +667,205 @@ func TestValidatePayoutDetails_PayPal_InvalidEmail_ReturnsValidation(t *testing.
 		t.Errorf("expected validation error for invalid PayPal email, got %v", err)
 	}
 }
+
+// ── ParseExtraType / ValidateExtraAnswer ──────────────────────────────────────
+
+func TestParseExtraType_AllKnownTypes_ReturnValue(t *testing.T) {
+	for _, et := range domain.AllExtraTypes {
+		got, err := domain.ParseExtraType(string(et))
+		if err != nil {
+			t.Errorf("ParseExtraType(%q): unexpected error: %v", et, err)
+		}
+		if got != et {
+			t.Errorf("ParseExtraType(%q): got %q", et, got)
+		}
+	}
+}
+
+func TestParseExtraType_UnknownValue_ReturnsValidation(t *testing.T) {
+	_, err := domain.ParseExtraType("bogus_type")
+	if !isValidation(err) {
+		t.Errorf("expected validation error for unknown extra_type, got %v", err)
+	}
+}
+
+func TestValidateExtraAnswer_FirstScorer_ValidValues(t *testing.T) {
+	for _, answer := range []string{"home", "away", "none"} {
+		if err := domain.ValidateExtraAnswer(domain.ExtraTypeFirstScorer, answer); err != nil {
+			t.Errorf("answer %q: unexpected error: %v", answer, err)
+		}
+	}
+}
+
+func TestValidateExtraAnswer_FirstScorer_InvalidValue_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateExtraAnswer(domain.ExtraTypeFirstScorer, "draw"); !isValidation(err) {
+		t.Errorf("expected validation error, got %v", err)
+	}
+}
+
+func TestValidateExtraAnswer_TeamScores_ValidValues(t *testing.T) {
+	for _, et := range []domain.ExtraType{domain.ExtraTypeHomeTeamScores, domain.ExtraTypeAwayTeamScores} {
+		for _, answer := range []string{"first_half", "second_half", "both_halves", "none"} {
+			if err := domain.ValidateExtraAnswer(et, answer); err != nil {
+				t.Errorf("%s/%q: unexpected error: %v", et, answer, err)
+			}
+		}
+	}
+}
+
+func TestValidateExtraAnswer_TeamScores_InvalidValue_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateExtraAnswer(domain.ExtraTypeHomeTeamScores, "extra_time"); !isValidation(err) {
+		t.Errorf("expected validation error, got %v", err)
+	}
+}
+
+func TestValidateExtraAnswer_HalftimeResult_ValidScorelines(t *testing.T) {
+	for _, answer := range []string{"0-0", "1-0", "0-1", "3-2", "12-3"} {
+		if err := domain.ValidateExtraAnswer(domain.ExtraTypeHalftimeResult, answer); err != nil {
+			t.Errorf("answer %q: unexpected error: %v", answer, err)
+		}
+	}
+}
+
+func TestValidateExtraAnswer_HalftimeResult_MalformedString_ReturnsValidation(t *testing.T) {
+	for _, answer := range []string{"home", "1", "1-", "-1", "1--1", "a-b", "1:0", ""} {
+		if err := domain.ValidateExtraAnswer(domain.ExtraTypeHalftimeResult, answer); !isValidation(err) {
+			t.Errorf("answer %q: expected validation error, got %v", answer, err)
+		}
+	}
+}
+
+func TestValidateExtraAnswer_HalftimeResult_ExceedsMaxGoals_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateExtraAnswer(domain.ExtraTypeHalftimeResult, "21-0"); !isValidation(err) {
+		t.Errorf("expected validation error for score exceeding max, got %v", err)
+	}
+	if err := domain.ValidateExtraAnswer(domain.ExtraTypeHalftimeResult, "0-21"); !isValidation(err) {
+		t.Errorf("expected validation error for score exceeding max, got %v", err)
+	}
+}
+
+func TestValidateExtraAnswer_UnrecognisedExtraType_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateExtraAnswer(domain.ExtraType("bogus"), "home"); !isValidation(err) {
+		t.Errorf("expected validation error, got %v", err)
+	}
+}
+
+func TestFormatScorelineAnswer_EncodesHomeDashAway(t *testing.T) {
+	cases := []struct {
+		home, away int
+		want       string
+	}{
+		{0, 0, "0-0"},
+		{1, 0, "1-0"},
+		{0, 1, "0-1"},
+		{3, 2, "3-2"},
+	}
+	for _, c := range cases {
+		got := domain.FormatScorelineAnswer(c.home, c.away)
+		if got != c.want {
+			t.Errorf("FormatScorelineAnswer(%d, %d): got %q, want %q", c.home, c.away, got, c.want)
+		}
+		// Round-trip: the formatted answer must itself validate as a legal
+		// halftime_result answer.
+		if err := domain.ValidateExtraAnswer(domain.ExtraTypeHalftimeResult, got); err != nil {
+			t.Errorf("formatted answer %q failed validation: %v", got, err)
+		}
+	}
+}
+
+// ── ValidateExtraAnswerAgainstPrediction ──────────────────────────────────────
+
+func TestValidateExtraAnswerAgainstPrediction_FirstScorer_ZeroZero_OnlyNoneAllowed(t *testing.T) {
+	if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeFirstScorer, "none", 0, 0); err != nil {
+		t.Errorf("unexpected error for \"none\" against 0-0: %v", err)
+	}
+	for _, answer := range []string{"home", "away"} {
+		if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeFirstScorer, answer, 0, 0); !isValidation(err) {
+			t.Errorf("answer %q: expected validation error against 0-0, got %v", answer, err)
+		}
+	}
+}
+
+func TestValidateExtraAnswerAgainstPrediction_FirstScorer_OneSided_ForcesScoringTeam(t *testing.T) {
+	if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeFirstScorer, "home", 1, 0); err != nil {
+		t.Errorf("unexpected error for \"home\" against 1-0: %v", err)
+	}
+	for _, answer := range []string{"away", "none"} {
+		if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeFirstScorer, answer, 1, 0); !isValidation(err) {
+			t.Errorf("answer %q: expected validation error against 1-0, got %v", answer, err)
+		}
+	}
+	if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeFirstScorer, "away", 0, 2); err != nil {
+		t.Errorf("unexpected error for \"away\" against 0-2: %v", err)
+	}
+	for _, answer := range []string{"home", "none"} {
+		if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeFirstScorer, answer, 0, 2); !isValidation(err) {
+			t.Errorf("answer %q: expected validation error against 0-2, got %v", answer, err)
+		}
+	}
+}
+
+func TestValidateExtraAnswerAgainstPrediction_FirstScorer_BothScore_NoneForbidden(t *testing.T) {
+	for _, answer := range []string{"home", "away"} {
+		if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeFirstScorer, answer, 1, 1); err != nil {
+			t.Errorf("answer %q: unexpected error against 1-1: %v", answer, err)
+		}
+	}
+	if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeFirstScorer, "none", 1, 1); !isValidation(err) {
+		t.Errorf(`expected validation error for "none" against 1-1, got %v`, err)
+	}
+}
+
+func TestValidateExtraAnswerAgainstPrediction_TeamScores_ZeroGoals_OnlyNoneAllowed(t *testing.T) {
+	for _, et := range []domain.ExtraType{domain.ExtraTypeHomeTeamScores, domain.ExtraTypeAwayTeamScores} {
+		if err := domain.ValidateExtraAnswerAgainstPrediction(et, "none", 0, 0); err != nil {
+			t.Errorf("%s: unexpected error for \"none\" against 0 goals: %v", et, err)
+		}
+		for _, answer := range []string{"first_half", "second_half", "both_halves"} {
+			if err := domain.ValidateExtraAnswerAgainstPrediction(et, answer, 0, 0); !isValidation(err) {
+				t.Errorf("%s: answer %q: expected validation error against 0 goals, got %v", et, answer, err)
+			}
+		}
+	}
+}
+
+func TestValidateExtraAnswerAgainstPrediction_TeamScores_OneGoal_ExcludesNoneAndBoth(t *testing.T) {
+	for _, answer := range []string{"first_half", "second_half"} {
+		if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeHomeTeamScores, answer, 1, 0); err != nil {
+			t.Errorf("answer %q: unexpected error against 1 goal: %v", answer, err)
+		}
+	}
+	for _, answer := range []string{"none", "both_halves"} {
+		if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeHomeTeamScores, answer, 1, 0); !isValidation(err) {
+			t.Errorf("answer %q: expected validation error against 1 goal, got %v", answer, err)
+		}
+	}
+}
+
+func TestValidateExtraAnswerAgainstPrediction_TeamScores_TwoOrMoreGoals_ExcludesNoneOnly(t *testing.T) {
+	for _, answer := range []string{"first_half", "second_half", "both_halves"} {
+		if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeAwayTeamScores, answer, 0, 3); err != nil {
+			t.Errorf("answer %q: unexpected error against 3 goals: %v", answer, err)
+		}
+	}
+	if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeAwayTeamScores, "none", 0, 3); !isValidation(err) {
+		t.Errorf(`expected validation error for "none" against 3 goals, got %v`, err)
+	}
+}
+
+func TestValidateExtraAnswerAgainstPrediction_Halftime_WithinBounds_Passes(t *testing.T) {
+	for _, answer := range []string{"0-0", "1-0", "0-2", "2-2"} {
+		if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeHalftimeResult, answer, 2, 2); err != nil {
+			t.Errorf("answer %q: unexpected error against predicted 2-2: %v", answer, err)
+		}
+	}
+}
+
+func TestValidateExtraAnswerAgainstPrediction_Halftime_ExceedsPredictedScore_ReturnsValidation(t *testing.T) {
+	if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeHalftimeResult, "2-0", 1, 0); !isValidation(err) {
+		t.Errorf("expected validation error for halftime home exceeding predicted home, got %v", err)
+	}
+	if err := domain.ValidateExtraAnswerAgainstPrediction(domain.ExtraTypeHalftimeResult, "0-2", 0, 1); !isValidation(err) {
+		t.Errorf("expected validation error for halftime away exceeding predicted away, got %v", err)
+	}
+}

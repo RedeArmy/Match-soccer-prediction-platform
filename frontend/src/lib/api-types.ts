@@ -192,9 +192,19 @@ export interface PredictionResponse {
 }
 
 // ── Match extras (bonus predictions) ─────────────────────────────────────────
-export type ExtraType = "first_scorer" | "halftime_result";
+export type ExtraType =
+  | "first_scorer"
+  | "halftime_result"
+  | "home_team_scores"
+  | "away_team_scores";
 export type ExtraFirstScorerAnswer = "home" | "away" | "none";
-export type ExtraHalftimeResultAnswer = "home" | "draw" | "away";
+// halftime_result answers are "<home>-<away>" scorelines (e.g. "1-0"), not a
+// fixed enum — see domain.FormatScorelineAnswer on the backend.
+export type ExtraTeamScoresAnswer =
+  | "first_half"
+  | "second_half"
+  | "both_halves"
+  | "none";
 
 export interface ExtraPredictionResponse {
   id: number;
