@@ -5,7 +5,7 @@
 # this step is only re-executed when go.mod or go.sum changes — not on every
 # source file change. In a typical CI pipeline this saves 30–60 seconds per
 # build by reusing the cached dependency layer.
-FROM golang:1.26.5-alpine3.22 AS builder
+FROM golang:1.26.5-alpine3.23 AS builder
 
 WORKDIR /app
 
@@ -33,7 +33,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 #
 # If image size is a critical constraint, switch to scratch and COPY the
 # required certificate bundles and timezone data from the builder stage.
-FROM alpine:3.22
+FROM alpine:3.23
 
 RUN apk --no-cache add ca-certificates tzdata
 

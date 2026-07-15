@@ -5,7 +5,7 @@
 # this step is only re-executed when go.mod or go.sum changes — not on every
 # source file change. In a typical CI pipeline this saves 30–60 seconds per
 # build by reusing the cached dependency layer.
-FROM golang:1.26.5-alpine3.22 AS builder
+FROM golang:1.26.5-alpine3.23 AS builder
 
 WORKDIR /app
 
@@ -31,7 +31,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 #   - /etc/ssl/certs   Required for TLS connections to PostgreSQL and Redis.
 #   - tzdata           Required for time-zone-aware scheduling operations.
 #   - A POSIX shell    Useful for exec-ing into the container during incidents.
-FROM alpine:3.22
+FROM alpine:3.23
 
 RUN apk --no-cache add ca-certificates tzdata
 
