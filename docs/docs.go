@@ -1007,7 +1007,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the point configuration for both match extras",
+                "description": "Returns the point configuration for all match extras",
                 "produces": [
                     "application/json"
                 ],
@@ -1064,7 +1064,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Extra type (first_scorer, halftime_result)",
+                        "description": "Extra type (first_scorer, halftime_result, home_team_scores, away_team_scores)",
                         "name": "extraType",
                         "in": "path",
                         "required": true

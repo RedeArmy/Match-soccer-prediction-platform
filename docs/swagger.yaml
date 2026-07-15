@@ -2184,7 +2184,7 @@ paths:
       - admin-exchange-rate
   /api/v1/admin/extra-rules:
     get:
-      description: Returns the point configuration for both match extras
+      description: Returns the point configuration for all match extras
       produces:
       - application/json
       responses:
@@ -2215,7 +2215,8 @@ paths:
     get:
       description: Returns the point configuration for the requested extra type.
       parameters:
-      - description: Extra type (first_scorer, halftime_result)
+      - description: Extra type (first_scorer, halftime_result, home_team_scores,
+          away_team_scores)
         in: path
         name: extraType
         required: true
